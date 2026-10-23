@@ -1,1195 +1,153 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#080d18">
-<meta name="description" content="BAGEN KEIBA - 中央・地方競馬データ分析と予想ランキング">
-<title>BAGEN KEIBA | 馬玄</title>
-
+<meta name="theme-color" content="#09111f">
+<title>馬玄 BAGEN｜競馬予想ラボ</title>
 <style>
-:root {
-  color-scheme: dark;
-  --bg: #080d18;
-  --panel: #111a2a;
-  --panel2: #172238;
-  --gold: #e8c77b;
-  --gold2: #b58b3c;
-  --text: #f5f3ed;
-  --muted: #a0abc0;
-  --line: #29354b;
-  --green: #6de0b0;
-  --red: #ff8d91;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html {
-  background: var(--bg);
-  scroll-behavior: smooth;
-}
-
-body {
-  margin: 0;
-  color: var(--text);
-  background:
-    radial-gradient(ellipse at top, #1a2942 0, transparent 52%),
-    var(--bg);
-  font-family:
-    -apple-system, BlinkMacSystemFont,
-    "Hiragino Kaku Gothic ProN",
-    "Yu Gothic", sans-serif;
-  min-height: 100vh;
-  padding-bottom: calc(30px + env(safe-area-inset-bottom));
-}
-
-button {
-  font: inherit;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-button:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 3px;
-}
-
-header {
-  padding: 22px 17px 18px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(8, 13, 24, .9);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 15px;
-  color: #17120a;
-  font-size: 25px;
-  font-weight: 900;
-  background: linear-gradient(145deg, #ffe8a5, #b58b3c);
-  box-shadow: 0 5px 22px #d3a84b25;
-}
-
-.brand h1 {
-  margin: 0;
-  font-size: 21px;
-  letter-spacing: 2px;
-  line-height: 1.3;
-}
-
-.brand p {
-  margin: 4px 0 0;
-  font-size: 11px;
-  letter-spacing: 1.2px;
-  color: var(--muted);
-}
-
-.header-date {
-  margin-top: 17px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  background: #111a2a;
-  padding: 7px 10px;
-  border-radius: 30px;
-  white-space: nowrap;
-}
-
-.dot {
-  width: 7px;
-  height: 7px;
-  background: var(--green);
-  border-radius: 50%;
-}
-
-main {
-  width: min(100%, 760px);
-  margin: 0 auto;
-  padding: 17px 14px;
-}
-
-.hero {
-  padding: 20px 17px;
-  border-radius: 19px;
-  border: 1px solid #8f713c66;
-  background:
-    radial-gradient(ellipse at right top, #8e6d302c, transparent 60%),
-    linear-gradient(140deg, #18243a, #101827);
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-kicker {
-  color: var(--gold);
-  font-size: 10px;
-  letter-spacing: 2px;
-  font-weight: 800;
-}
-
-.hero h2 {
-  margin: 10px 0 8px;
-  font-size: 25px;
-  line-height: 1.4;
-  letter-spacing: .5px;
-}
-
-.hero h2 span {
-  color: var(--gold);
-}
-
-.hero p {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.8;
-  color: var(--muted);
-}
-
-.hero-mark {
-  position: absolute;
-  right: 11px;
-  bottom: -23px;
-  font-size: 100px;
-  opacity: .09;
-  pointer-events: none;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 9px;
-  margin: 14px 0 21px;
-}
-
-.stat {
-  padding: 13px 10px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: #101827;
-}
-
-.stat-label {
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.stat-value {
-  font-size: 21px;
-  font-weight: 800;
-  margin-top: 7px;
-  overflow-wrap: anywhere;
-}
-
-.stat-value small {
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 22px 0 12px;
-}
-
-.section-head h2 {
-  margin: 0;
-  font-size: 17px;
-  letter-spacing: .5px;
-}
-
-.section-head span {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.filters {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.filter {
-  min-height: 43px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--muted);
-  border-radius: 11px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.filter.active {
-  background: #3a3020;
-  border-color: var(--gold2);
-  color: var(--gold);
-}
-
-.notice {
-  border: 1px solid #725c35;
-  background: #241e14;
-  color: #e9d6a9;
-  border-radius: 12px;
-  padding: 12px;
-  font-size: 12px;
-  line-height: 1.8;
-  margin-bottom: 12px;
-  overflow-wrap: anywhere;
-}
-
-.notice.hidden {
-  display: none;
-}
-
-.race-list {
-  display: grid;
-  gap: 10px;
-}
-
-.race-card {
-  width: 100%;
-  display: block;
-  text-align: left;
-  border: 1px solid var(--line);
-  border-radius: 15px;
-  background: linear-gradient(145deg, #141f32, #101827);
-  padding: 15px;
-  color: var(--text);
-  transition: border-color .15s;
-}
-
-.race-card:active {
-  border-color: var(--gold);
-  transform: scale(.995);
-}
-
-.race-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.race-kind {
-  display: inline-block;
-  padding: 5px 8px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 800;
-  background: #1f3048;
-  color: #bcd4ff;
-}
-
-.race-kind.local {
-  color: #e8c77b;
-  background: #392f1d;
-}
-
-.race-number {
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.race-title {
-  font-size: 16px;
-  font-weight: 800;
-  margin: 10px 0 7px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.race-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.race-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-top: 1px solid var(--line);
-  margin-top: 13px;
-  padding-top: 12px;
-}
-
-.race-bottom small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.view-link {
-  color: var(--gold);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.empty {
-  text-align: center;
-  padding: 30px 16px;
-  border: 1px dashed #35435b;
-  border-radius: 15px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 2;
-}
-
-.empty strong {
-  display: block;
-  color: var(--text);
-  font-size: 15px;
-  margin-bottom: 8px;
-}
-
-.secondary {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #18243a;
-  color: var(--text);
-  padding: 10px 12px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-button:disabled {
-  opacity: .5;
-  cursor: not-allowed;
-}
-
-.detail {
-  margin-top: 16px;
-  border: 1px solid var(--gold2);
-  background: #101827;
-  border-radius: 17px;
-  padding: 15px;
-  scroll-margin-top: 12px;
-}
-
-.detail.hidden {
-  display: none;
-}
-
-.detail-title {
-  font-size: 20px;
-  line-height: 1.5;
-  margin: 12px 0 7px;
-}
-
-.detail-sub {
-  font-size: 11px;
-  line-height: 1.8;
-  color: var(--muted);
-}
-
-.top5 {
-  display: grid;
-  gap: 9px;
-  margin-top: 16px;
-}
-
-.pick {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 12px 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #141f32;
-  min-width: 0;
-}
-
-.rank {
-  width: 35px;
-  height: 35px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font-size: 17px;
-  font-weight: 900;
-  background: #263247;
-  color: #d8e1f1;
-}
-
-.pick:nth-child(1) .rank {
-  background: linear-gradient(145deg, #ffe7a0, #c09340);
-  color: #1c160a;
-}
-
-.pick:nth-child(2) .rank {
-  background: #b8c3d4;
-  color: #101827;
-}
-
-.pick:nth-child(3) .rank {
-  background: #bd8159;
-  color: #1d1008;
-}
-
-.pick-name {
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-
-.pick-info {
-  font-size: 10px;
-  color: var(--muted);
-  line-height: 1.8;
-  overflow-wrap: anywhere;
-}
-
-.pick-score {
-  text-align: right;
-  font-size: 16px;
-  font-weight: 900;
-  color: var(--gold);
-  white-space: nowrap;
-}
-
-.pick-score small {
-  display: block;
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.explain {
-  margin-top: 14px;
-  padding: 12px;
-  border-radius: 11px;
-  background: #172238;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.9;
-}
-
-footer {
-  border-top: 1px solid var(--line);
-  padding: 20px 17px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 2;
-}
-
-footer strong {
-  color: var(--gold);
-  letter-spacing: 1.5px;
-}
-
-@media (min-width: 600px) {
-  header {
-    padding-left: max(22px, calc((100% - 720px) / 2));
-    padding-right: max(22px, calc((100% - 720px) / 2));
-  }
-
-  main {
-    padding: 24px 20px;
-  }
-
-  .race-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 350px) {
-  .hero h2 {
-    font-size: 22px;
-  }
-
-  .stat-value {
-    font-size: 18px;
-  }
-
-  .pick {
-    grid-template-columns: 34px minmax(0, 1fr) auto;
-    gap: 7px;
-    padding: 10px 7px;
-  }
-}
+:root{color-scheme:dark;--bg:#09111f;--panel:#111d30;--panel2:#17263d;--gold:#e9c56a;--text:#f5f7fb;--muted:#9cacc2;--line:#283750;--green:#65d6a1;--red:#ff7d8b}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at top,#172945 0,#09111f 55%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:24px 16px 18px;border-bottom:1px solid var(--line);background:#09111fee;position:sticky;top:0;z-index:5;backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#f7dfa0,#b88732);color:#111;font-weight:1000;font-size:24px}
+h1{font-size:22px;margin:0;letter-spacing:2px}
+.sub{font-size:11px;color:var(--muted);letter-spacing:2px;margin-top:3px}
+.status{margin-top:14px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--gold);display:inline-block}
+main{max-width:950px;margin:auto;padding:16px 13px 60px}
+h2{font-size:16px;margin:0 0 13px}
+h3{font-size:14px;margin:0}
+section{margin-bottom:22px}
+.panel{background:linear-gradient(145deg,#142239,#0f1a2c);border:1px solid var(--line);border-radius:17px;padding:16px}
+.filters{display:flex;gap:8px;margin-bottom:14px}
+.filters button,.smallbtn{border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:10px 13px;border-radius:10px;font-weight:700}
+.filters button.active{background:var(--gold);color:#17130a;border-color:var(--gold)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.metric{padding:13px;background:#0b1627;border:1px solid var(--line);border-radius:13px;min-width:0}
+.metric .label{font-size:11px;color:var(--muted)}
+.metric .value{font-size:22px;font-weight:850;margin-top:6px;overflow-wrap:anywhere}
+.metric .unit{font-size:11px;color:var(--muted);margin-left:3px}
+.race{border:1px solid var(--line);border-radius:15px;padding:14px;margin-top:11px;background:#0c1728}
+.racehead{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.tag{font-size:10px;color:var(--gold);border:1px solid #8c7135;border-radius:6px;padding:4px 7px;white-space:nowrap}
+.meta{font-size:12px;color:var(--muted);line-height:1.7;margin-top:7px}
+.horses{margin-top:13px;border-top:1px solid var(--line);padding-top:10px}
+.horse{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid #243148}
+.horse:last-child{border:0}
+.num{width:26px;height:26px;display:grid;place-items:center;border-radius:7px;background:#263a56;font-weight:800;font-size:12px}
+.hname{font-weight:750;font-size:13px}
+.hdetail{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
+.odds{text-align:right;font-size:13px;font-weight:800}
+.odds small{display:block;font-size:10px;color:var(--muted);font-weight:500;margin-top:4px}
+.note{font-size:12px;color:var(--muted);line-height:1.7}
+.empty{padding:22px 10px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8}
+.error{color:var(--red)}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:20px}
+@media(min-width:650px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.racegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.race{margin-top:0}}
 </style>
 </head>
-
 <body>
 <header>
   <div class="brand">
-    <div class="logo" aria-hidden="true">馬</div>
-    <div>
-      <h1>BAGEN KEIBA</h1>
-      <p>馬玄 — RACING ANALYSIS ENGINE</p>
-    </div>
+    <div class="logo">玄</div>
+    <div><h1>馬玄 BAGEN</h1><div class="sub">KEIBA PREDICTION LAB</div></div>
   </div>
-
-  <div class="header-date">
-    <span id="today">開催データを確認中...</span>
-    <span class="status">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText">接続確認中</span>
-    </span>
-  </div>
+  <div class="status"><span class="dot"></span><span id="status">データを読み込み中…</span></div>
 </header>
-
 <main>
-  <section class="hero">
-    <div class="hero-kicker">DATA-DRIVEN RACING ANALYSIS</div>
-    <h2>勝負の兆しを、<br><span>データから読み解く。</span></h2>
-    <p>
-      JRA中央競馬・地方競馬に対応。<br>
-      取得できた出走情報から予想ランキングを表示します。
-    </p>
-    <div class="hero-mark" aria-hidden="true">♞</div>
-  </section>
-
-  <section class="stats" aria-label="データ概要">
-    <div class="stat">
-      <div class="stat-label">対象レース</div>
-      <div class="stat-value" id="raceCount">—</div>
-    </div>
-    <div class="stat">
-      <div class="stat-label">出走馬データ</div>
-      <div class="stat-value" id="horseCount">—</div>
-    </div>
-    <div class="stat">
-      <div class="stat-label">最終更新</div>
-      <div class="stat-value" id="updatedAt" style="font-size:14px">—</div>
+  <section>
+    <h2>📊 仮想ベッティング成績</h2>
+    <div class="panel">
+      <div class="grid">
+        <div class="metric"><div class="label">総仮想収支</div><div class="value" id="profit">—</div></div>
+        <div class="metric"><div class="label">回収率</div><div class="value" id="roi">—</div></div>
+        <div class="metric"><div class="label">単勝的中率</div><div class="value" id="winrate">—</div></div>
+        <div class="metric"><div class="label">複勝的中率</div><div class="value" id="placerate">—</div></div>
+        <div class="metric"><div class="label">仮想残高</div><div class="value" id="balance">—</div></div>
+        <div class="metric"><div class="label">確定レース数</div><div class="value" id="settled">—</div></div>
+        <div class="metric"><div class="label">仮想購入総額</div><div class="value" id="stake">—</div></div>
+        <div class="metric"><div class="label">仮想払戻総額</div><div class="value" id="returns">—</div></div>
+      </div>
+      <p class="note" style="margin:13px 0 0">単勝100円＋複勝100円／レースを基準にしたシミュレーション。実際の購入・送金は行いません。</p>
     </div>
   </section>
 
-  <div class="section-head">
-    <h2>開催レース</h2>
-    <span id="raceCountLabel">0レース</span>
-  </div>
-
-  <div class="filters" role="group" aria-label="競馬場区分">
-    <button class="filter active" data-filter="all" type="button">すべて</button>
-    <button class="filter" data-filter="中央" type="button">JRA中央</button>
-    <button class="filter" data-filter="地方" type="button">地方競馬</button>
-  </div>
-
-  <div class="notice hidden" id="notice" role="status"></div>
-
-  <div class="section-head">
-    <h2>レース一覧</h2>
-    <button class="secondary" id="reloadBtn" type="button">↻ 更新</button>
-  </div>
-
-  <div class="race-list" id="raceList">
-    <div class="empty">
-      <strong>データを読み込んでいます</strong>
-      しばらくお待ちください。
+  <section>
+    <h2>🏇 レース一覧</h2>
+    <div class="filters">
+      <button class="active" data-filter="all">すべて</button>
+      <button data-filter="central">中央競馬</button>
+      <button data-filter="local">地方競馬</button>
     </div>
-  </div>
+    <div id="races"><div class="panel empty">レースデータを読み込み中…</div></div>
+  </section>
 
-  <section class="detail hidden" id="raceDetail" aria-live="polite">
-    <button class="secondary" id="closeDetail" type="button">← レース一覧に戻る</button>
-    <div class="race-meta" style="margin-top:14px">
-      <span class="race-kind" id="detailKind">競馬</span>
-      <span id="detailRaceNo"></span>
-    </div>
-    <h2 class="detail-title" id="detailTitle">レース詳細</h2>
-    <div class="detail-sub" id="detailMeta"></div>
-
-    <div class="section-head">
-      <h2>予想ランキング TOP5</h2>
-      <span>スコア順</span>
-    </div>
-
-    <div class="top5" id="top5"></div>
-
-    <div class="explain" id="scoreExplain">
-      スコアは取得できた情報に基づく参考値です。
-    </div>
-
-    <div class="detail-actions">
-      <button class="secondary" id="sourceBtn" type="button">出典ページを開く</button>
-      <button class="secondary" id="copyBtn" type="button">TOP5をコピー</button>
+  <section>
+    <h2>🧭 予想の見方</h2>
+    <div class="panel note">
+      <p>・予想順位やオッズは、取得できたデータに基づく参考情報です。</p>
+      <p>・単勝／複勝は1種類につき100円の仮想購入として集計します。</p>
+      <p>・確定成績は結果照合が正常に完了したレースだけが対象です。データ取得に失敗した場合、的中・払戻を推定で確定しません。</p>
+      <p>・このサイトは検証用です。実際の馬券購入を勧めるものではありません。</p>
     </div>
   </section>
 </main>
-
-<footer>
-  <strong>BAGEN KEIBA</strong><br>
-  馬玄 — FREE RACING DATA ANALYSIS<br>
-  <p>
-    予想順位は的中を保証するものではありません。<br>
-    オッズや人気に基づく簡易スコアであり、<br>
-    実証済みの勝率・期待回収率ではありません。<br>
-    取得データの正確性・最新性は保証されません。
-  </p>
-</footer>
-
+<footer>馬玄 BAGEN · PAPER SIMULATION ONLY</footer>
 <script>
-"use strict";
-
-const DATA_URL = "./data.json";
-
-const state = {
-  data: null,
-  filter: "all",
-  selectedRace: null,
-  loading: false
-};
-
-const $ = (id) => document.getElementById(id);
-
-function escapeHTML(value) {
-  return String(value ?? "").replace(
-    /[&<>"']/g,
-    (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    })[char]
-  );
+let allRaces=[];
+let filter="all";
+const yen=n=>Number.isFinite(Number(n))?Math.round(Number(n)).toLocaleString("ja-JP")+"円":"—";
+const pct=n=>Number.isFinite(Number(n))?Number(n).toFixed(1)+"%":"—";
+function setText(id,value){document.getElementById(id).textContent=value}
+function renderStats(stats={}){
+  const profit=Number(stats.profit_yen||0);
+  setText("profit",(profit>0?"+":"")+yen(profit));
+  setText("roi",pct(Number(stats.roi_pct||0)));
+  setText("winrate",pct(stats.win_bets?100*Number(stats.win_hits||0)/Number(stats.win_bets):0));
+  setText("placerate",pct(stats.place_bets?100*Number(stats.place_hits||0)/Number(stats.place_bets):0));
+  setText("balance",yen(stats.virtual_balance_yen||0));
+  setText("settled",Number(stats.races_settled||0)+"レース");
+  setText("stake",yen(stats.total_stake_yen||0));
+  setText("returns",yen(stats.total_return_yen||0));
 }
-
-function displayNumber(value, digits = 1) {
-  const n = Number(value);
-
-  if (!Number.isFinite(n)) {
-    return "—";
-  }
-
-  return n.toFixed(digits);
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-
-  return new Intl.DateTimeFormat("ja-JP", {
-    timeZone: "Asia/Tokyo",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(date);
-}
-
-function allRaces() {
-  const races = state.data?.races;
-
-  return Array.isArray(races) ? races : [];
-}
-
-function filteredRaces() {
-  const races = allRaces();
-
-  if (state.filter === "all") {
-    return races;
-  }
-
-  return races.filter(
-    (race) => race.kind === state.filter
-  );
-}
-
-function showNotice(message) {
-  const notice = $("notice");
-
-  if (!message) {
-    notice.classList.add("hidden");
-    notice.textContent = "";
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function renderRaces(){
+  const root=document.getElementById("races");
+  let races=allRaces.filter(r=>filter==="all"||r.category===filter);
+  if(!races.length){
+    root.innerHTML='<div class="panel empty">表示できるレースデータがありません。<br>GitHub Actionsの実行結果とデータ更新を確認してください。</div>';
     return;
   }
-
-  notice.textContent = message;
-  notice.classList.remove("hidden");
+  root.innerHTML='<div class="racegrid">'+races.map(r=>{
+    const horses=Array.isArray(r.horses)?r.horses:[];
+    return '<article class="race"><div class="racehead"><div><h3>'+esc(r.name||"レース名未取得")+'</h3><div class="meta">'+esc(r.course||"競馬場未取得")+' · '+esc(r.post_time||"発走時刻未取得")+'</div></div><span class="tag">'+(r.category==="local"?"地方競馬":"中央競馬")+'</span></div><div class="meta">📅 '+esc(r.date||"日付未取得")+'<br>🌦 '+esc(r.weather||"天候未取得")+'　 ·　 馬場 '+esc(r.track_condition||"未取得")+'</div><div class="horses">'+(horses.length?horses.slice(0,8).map((h,i)=>'<div class="horse"><div class="num">'+esc(h.number??i+1)+'</div><div><div class="hname">'+esc(h.name||"馬名未取得")+'</div><div class="hdetail">予想 '+esc(h.predicted_rank??"—")+'位 · 馬体重 '+esc(h.weight??"未取得")+' · '+esc(h.surface_fit||"適性データ未取得")+'</div></div><div class="odds">'+(h.odds!=null?esc(h.odds)+"倍":"—")+'<small>'+(h.odds!=null?"単勝オッズ":"オッズ未取得")+'</small></div></div>').join(""):'<div class="empty">出走馬データはまだありません</div>')+'</div></article>';
+  }).join("")+'</div>';
 }
-
-function updateStatus() {
-  const data = state.data;
-  const ok = Boolean(
-    data &&
-    data.status === "OK" &&
-    allRaces().length > 0
-  );
-
-  $("statusDot").style.background = ok
-    ? "var(--green)"
-    : "var(--red)";
-
-  $("statusText").textContent = ok
-    ? "データ取得済み"
-    : "データ未確認";
-}
-
-function renderStats() {
-  const races = allRaces();
-
-  const horses = races.reduce(
-    (sum, race) => sum + (
-      Array.isArray(race.runners)
-        ? race.runners.length
-        : Number(race.runner_count || 0)
-    ),
-    0
-  );
-
-  $("raceCount").textContent = races.length;
-  $("horseCount").textContent = horses;
-  $("updatedAt").textContent = formatDate(
-    state.data?.generated_at
-  );
-  $("raceCountLabel").textContent =
-    `${filteredRaces().length}レース`;
-
-  $("today").textContent = state.data?.race_date
-    ? `${state.data.race_date} のデータ`
-    : "開催データ";
-}
-
-function renderRaces() {
-  const list = $("raceList");
-  const races = filteredRaces();
-
-  $("raceCountLabel").textContent =
-    `${races.length}レース`;
-
-  if (!races.length) {
-    const hasData = Boolean(state.data);
-
-    list.innerHTML = `
-      <div class="empty">
-        <strong>${
-          hasData
-            ? "表示できるレースがありません"
-            : "データを読み込めません"
-        }</strong>
-        ${
-          hasData
-            ? "対象日の開催情報がないか、データを取得できていません。"
-            : "更新ボタンを押して、もう一度確認してください。"
-        }
-      </div>
-    `;
-    return;
-  }
-
-  list.innerHTML = races.map((race) => {
-    const kindClass = race.kind === "地方"
-      ? "local"
-      : "";
-
-    const meta = [
-      race.course,
-      race.post_time,
-      race.surface,
-      race.distance_m
-        ? `${race.distance_m}m`
-        : ""
-    ].filter(Boolean);
-
-    const label = race.race_no
-      ? `${race.race_no}R`
-      : "レース";
-
-    return `
-      <button
-        class="race-card"
-        type="button"
-        data-race-id="${escapeHTML(race.id)}"
-      >
-        <div class="race-top">
-          <span class="race-kind ${kindClass}">
-            ${escapeHTML(race.kind || "競馬")}
-          </span>
-          <span class="race-number">
-            ${escapeHTML(label)}
-          </span>
-        </div>
-
-        <div class="race-title">
-          ${escapeHTML(race.race_name || "レース名未取得")}
-        </div>
-
-        <div class="race-meta">
-          ${
-            meta.length
-              ? meta.map(
-                  (item) => `<span>${escapeHTML(item)}</span>`
-                ).join("")
-              : "<span>詳細情報は未取得</span>"
-          }
-        </div>
-
-        <div class="race-bottom">
-          <small>
-            出走馬 ${Number(race.runner_count || race.runners?.length || 0)}頭
-          </small>
-          <span class="view-link">予想を見る →</span>
-        </div>
-      </button>
-    `;
-  }).join("");
-
-  list.querySelectorAll("[data-race-id]").forEach(
-    (button) => {
-      button.addEventListener("click", () => {
-        openRace(button.dataset.raceId);
-      });
-    }
-  );
-}
-
-function getRankedRunners(race) {
-  const runners = Array.isArray(race.runners)
-    ? race.runners
-    : [];
-
-  return [...runners].sort((a, b) => {
-    const rankA = Number(a.prediction_rank || 999);
-    const rankB = Number(b.prediction_rank || 999);
-
-    if (rankA !== rankB) return rankA - rankB;
-
-    return Number(b.score || 0) - Number(a.score || 0);
-  });
-}
-
-function renderDetail(race) {
-  state.selectedRace = race;
-
-  $("raceDetail").classList.remove("hidden");
-  $("detailKind").textContent = race.kind || "競馬";
-
-  $("detailKind").className =
-    "race-kind" + (race.kind === "地方" ? " local" : "");
-
-  $("detailRaceNo").textContent = race.race_no
-    ? `${race.race_no}R`
-    : "";
-
-  $("detailTitle").textContent =
-    race.race_name || "レース名未取得";
-
-  const meta = [
-    race.course,
-    race.post_time,
-    race.surface,
-    race.distance_m
-      ? `${race.distance_m}m`
-      : "",
-    race.track_condition
-      ? `馬場：${race.track_condition}`
-      : ""
-  ].filter(Boolean);
-
-  $("detailMeta").textContent = meta.length
-    ? meta.join(" / ")
-    : "コース・距離などの詳細情報は未取得";
-
-  const top5 = getRankedRunners(race).slice(0, 5);
-  const container = $("top5");
-
-  if (!top5.length) {
-    container.innerHTML = `
-      <div class="empty">
-        <strong>予想データがありません</strong>
-        出走馬のデータが取得できていません。
-      </div>
-    `;
-  } else {
-    container.innerHTML = top5.map((horse, index) => {
-      const odds = horse.odds
-        ? `${displayNumber(horse.odds, 1)}倍`
-        : "未取得";
-
-      const numberLabel = horse.horse_no
-        ? `${horse.horse_no}番`
-        : "馬番未取得";
-
-      const popularity = horse.popularity
-        ? `${horse.popularity}番人気`
-        : "人気未取得";
-
-      const score = Number(horse.score);
-
-      const scoreLabel = Number.isFinite(score)
-        ? displayNumber(score, 1)
-        : "—";
-
-      const info = [
-        numberLabel,
-        odds,
-        popularity,
-        horse.jockey || ""
-      ].filter(Boolean).join(" / ");
-
-      return `
-        <div class="pick">
-          <div class="rank">${index + 1}</div>
-
-          <div>
-            <div class="pick-name">
-              ${escapeHTML(horse.horse || "馬名未取得")}
-            </div>
-            <div class="pick-info">
-              ${escapeHTML(info)}
-            </div>
-          </div>
-
-          <div class="pick-score">
-            ${escapeHTML(scoreLabel)}
-            <small>参考スコア</small>
-          </div>
-        </div>
-      `;
-    }).join("");
-  }
-
-  $("scoreExplain").textContent =
-    "この順位は取得できたオッズ・人気などに基づく簡易評価です。" +
-    "近走成績や展開、騎手・馬場適性などを十分に検証した予測モデルではありません。" +
-    "スコアは勝率や的中率を意味しません。";
-
-  const sourceUrl = race.source_url;
-
-  $("sourceBtn").disabled = !isSafeHttpUrl(sourceUrl);
-  $("copyBtn").disabled = !top5.length;
-
-  $("raceDetail").scrollIntoView({
-    behavior: "smooth",
-    block: "start"
-  });
-}
-
-function isSafeHttpUrl(value) {
-  try {
-    const url = new URL(value);
-
-    return (
-      url.protocol === "https:" &&
-      (
-        url.hostname === "race.netkeiba.com" ||
-        url.hostname === "nar.netkeiba.com"
-      )
-    );
-  } catch {
-    return false;
+async function init(){
+  try{
+    const res=await fetch("./data.json?v="+Date.now(),{cache:"no-store"});
+    if(!res.ok)throw new Error("data.json HTTP "+res.status);
+    const data=await res.json();
+    const stats=data.paper_betting?.stats||{};
+    renderStats(stats);
+    allRaces=Array.isArray(data.races)?data.races:[];
+    renderRaces();
+    const stamp=data.generated_at?new Date(data.generated_at).toLocaleString("ja-JP"):"更新日時未取得";
+    setText("status",(data.status==="OK"?"データ更新済み":data.status==="waiting_for_first_update"?"初回更新待ち":"データ読み込み完了")+" · "+stamp);
+  }catch(e){
+    setText("status","データ読み込みエラー");
+    document.getElementById("races").innerHTML='<div class="panel empty error">data.jsonを読み込めませんでした。<br>ファイル名と公開先を確認してください。<br>'+esc(e.message)+'</div>';
   }
 }
-
-function openRace(id) {
-  const race = allRaces().find(
-    (item) => String(item.id) === String(id)
-  );
-
-  if (!race) return;
-
-  renderDetail(race);
-}
-
-function renderAll() {
-  updateStatus();
-  renderStats();
-  renderRaces();
-}
-
-async function loadData() {
-  if (state.loading) return;
-
-  state.loading = true;
-
-  const button = $("reloadBtn");
-  button.disabled = true;
-  button.textContent = "読込中…";
-
-  try {
-    const response = await fetch(
-      `${DATA_URL}?t=${Date.now()}`,
-      {
-        cache: "no-store",
-        headers: {
-          "Accept": "application/json"
-        }
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(
-        `data.json の取得に失敗しました（HTTP ${response.status}）`
-      );
-    }
-
-    const data = await response.json();
-
-    if (!data || !Array.isArray(data.races)) {
-      throw new Error(
-        "data.json の形式が正しくありません。"
-      );
-    }
-
-    state.data = data;
-
-    if (
-      data.status !== "OK" ||
-      data.races.length === 0
-    ) {
-      showNotice(
-        "競馬データがまだ取得できていません。" +
-        "GitHub Actionsの実行結果とdocs/data.jsonを確認してください。"
-      );
-    } else {
-      showNotice("");
-    }
-
-    renderAll();
-
-    if (state.selectedRace) {
-      const refreshed = allRaces().find(
-        (race) => race.id === state.selectedRace.id
-      );
-
-      if (refreshed) {
-        renderDetail(refreshed);
-      } else {
-        state.selectedRace = null;
-        $("raceDetail").classList.add("hidden");
-      }
-    }
-
-  } catch (error) {
-    console.error(error);
-
-    state.data = null;
-    renderAll();
-
-    showNotice(
-      "データを読み込めませんでした。" +
-      "GitHub Pagesが有効か、docs/data.jsonが存在するか確認してください。" +
-      " 詳細: " + error.message
-    );
-
-  } finally {
-    state.loading = false;
-    button.disabled = false;
-    button.textContent = "↻ 更新";
-  }
-}
-
-document.querySelectorAll("[data-filter]").forEach(
-  (button) => {
-    button.addEventListener("click", () => {
-      state.filter = button.dataset.filter;
-
-      document.querySelectorAll("[data-filter]").forEach(
-        (item) => {
-          item.classList.toggle(
-            "active",
-            item === button
-          );
-        }
-      );
-
-      renderStats();
-      renderRaces();
-    });
-  }
-);
-
-$("reloadBtn").addEventListener("click", loadData);
-
-$("closeDetail").addEventListener("click", () => {
-  $("raceDetail").classList.add("hidden");
-  state.selectedRace = null;
-
-  $("raceList").scrollIntoView({
-    behavior: "smooth",
-    block: "start"
-  });
-});
-
-$("sourceBtn").addEventListener("click", () => {
-  const url = state.selectedRace?.source_url;
-
-  if (isSafeHttpUrl(url)) {
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-});
-
-$("copyBtn").addEventListener("click", async () => {
-  const race = state.selectedRace;
-
-  if (!race) return;
-
-  const top5 = getRankedRunners(race).slice(0, 5);
-
-  const text = [
-    `BAGEN KEIBA｜${race.race_name || "レース"}`,
-    ...top5.map((horse, index) => {
-      const odds = horse.odds
-        ? `${horse.odds}倍`
-        : "オッズ未取得";
-
-      return `${index + 1}位 ${horse.horse} / ${odds}`;
-    }),
-    "",
-    "※参考順位。的中を保証するものではありません。"
-  ].join("\n");
-
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      $("copyBtn").textContent = "コピーしました";
-    } else {
-      window.prompt("この内容をコピーしてください", text);
-    }
-  } catch {
-    window.prompt("この内容をコピーしてください", text);
-  }
-
-  window.setTimeout(() => {
-    $("copyBtn").textContent = "TOP5をコピー";
-  }, 1800);
-});
-
-loadData();
+document.querySelectorAll("[data-filter]").forEach(btn=>btn.addEventListener("click",()=>{
+  document.querySelectorAll("[data-filter]").forEach(b=>b.classList.toggle("active",b===btn));
+  filter=btn.dataset.filter;renderRaces();
+}));
+init();
+setInterval(init,120000);
 </script>
 </body>
 </html>
