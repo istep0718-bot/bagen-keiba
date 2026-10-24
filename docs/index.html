@@ -4,10 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#07101d">
-<title>馬玄 BAGEN｜中央・地方競馬 AI予想＆結果ラボ</title>
+<title>馬玄 BAGEN｜中央・地方競馬 予想＆結果</title>
 <style>
 :root {
-  color-scheme: dark;
   --bg: #07101d;
   --panel: #101d30;
   --panel-border: #233750;
@@ -25,237 +24,75 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: radial-gradient(ellipse at 50% -10%, #1a2f4c 0%, #0a1424 50%, #07101d 100%);
+  background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   padding-bottom: 40px;
 }
 header {
   padding: 14px 16px;
-  background: rgba(8, 19, 33, 0.92);
+  background: #081321;
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
   z-index: 100;
-  backdrop-filter: blur(12px);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.brand { display: flex; align-items: center; gap: 8px; }
 .logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 32px; height: 32px; border-radius: 8px;
   background: linear-gradient(135deg, #fff0b5, #d3a342);
-  color: #17130a;
-  font-weight: 900;
-  font-size: 20px;
-  display: grid;
-  place-items: center;
+  color: #17130a; font-weight: 900; font-size: 18px;
+  display: grid; place-items: center;
 }
-.brand-title {
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: 1px;
-}
+.brand-title { font-size: 16px; font-weight: 800; }
 .refresh-btn {
-  background: #14243a;
-  border: 1px solid var(--panel-border);
-  color: var(--text);
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
+  background: #14243a; border: 1px solid var(--panel-border);
+  color: var(--text); padding: 6px 12px; border-radius: 8px;
+  font-size: 11px; font-weight: 700; cursor: pointer;
 }
-main {
-  max-width: 1050px;
-  margin: auto;
-  padding: 16px 12px;
-}
+main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 16px;
-  padding: 16px;
-  margin-bottom: 18px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: 14px; padding: 14px; margin-bottom: 16px;
 }
-.panel-title {
-  font-size: 14px;
-  font-weight: 800;
-  margin: 0 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-.metric {
-  padding: 12px;
-  background: #091525;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-}
-.metric-label {
-  font-size: 10px;
-  color: var(--muted);
-}
-.metric-val {
-  font-size: 20px;
-  font-weight: 900;
-  margin-top: 4px;
-  font-variant-numeric: tabular-nums;
-}
+.panel-title { font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.metric { padding: 10px; background: #091525; border-radius: 10px; border: 1px solid var(--line); }
+.metric-label { font-size: 10px; color: var(--muted); }
+.metric-val { font-size: 18px; font-weight: 900; margin-top: 4px; }
 .metric-val.pos { color: var(--green); }
 .metric-val.neg { color: var(--red); }
 
-.filter-group {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
+.filter-group { display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto; }
 .filter-btn {
-  background: #14243a;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  padding: 8px 14px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
+  background: #14243a; border: 1px solid var(--line); color: var(--muted);
+  padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
+  white-space: nowrap; cursor: pointer;
 }
-.filter-btn.active {
-  background: var(--gold);
-  color: #17130a;
-  border-color: var(--gold);
-}
+.filter-btn.active { background: var(--gold); color: #17130a; border-color: var(--gold); }
 
-.racegrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-}
+.racegrid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .race-card {
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 15px;
-  background: #0d1829;
-  position: relative;
-  overflow: hidden;
+  border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; background: #0d1829; position: relative;
 }
-.race-card.finished {
-  border-color: #213045;
-  background: #09111c;
-}
-.race-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 6px;
-}
-.race-title {
-  font-size: 16px;
-  font-weight: 800;
-  margin: 0;
-}
-.tag-cat {
-  font-size: 10px;
-  border: 1px solid var(--gold);
-  color: var(--gold);
-  padding: 2px 6px;
-  border-radius: 6px;
-  font-weight: 700;
-}
-.badge-status {
-  font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-weight: 800;
-}
+.race-card.finished { border-color: #213045; background: #09111c; }
+.race-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.race-title { font-size: 15px; font-weight: 800; margin: 0; }
+.tag-cat { font-size: 10px; border: 1px solid var(--gold); color: var(--gold); padding: 2px 5px; border-radius: 4px; }
+.badge-status { font-size: 10px; padding: 3px 6px; border-radius: 4px; font-weight: 800; }
 .badge-status.upcoming { background: #183e29; color: var(--green); }
 .badge-status.finished { background: #223247; color: var(--muted); }
 
-.race-meta {
-  font-size: 11px;
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-
-.section-box {
-  border-radius: 12px;
-  padding: 11px;
-  margin-top: 10px;
-  font-size: 12px;
-}
-.box-top3 {
-  background: var(--gold-bg);
-  border: 1px solid #574421;
-}
-.box-top3-title {
-  color: var(--gold);
-  font-weight: 800;
-  font-size: 11px;
-  margin-bottom: 6px;
-}
-.top3-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-weight: 700;
-}
-
-.box-outsider {
-  background: var(--blue-bg);
-  border: 1px solid #23436d;
-  color: var(--blue);
-  margin-top: 8px;
-}
-.outsider-item {
-  margin-top: 4px;
-}
-.outsider-item small {
-  display: block;
-  font-size: 10px;
-  color: var(--muted);
-  font-weight: normal;
-}
-
-.box-ticket {
-  background: #142236;
-  border: 1px solid #2d4568;
-}
-.box-ticket-title {
-  color: var(--gold);
-  font-weight: 800;
-  font-size: 11px;
-  margin-bottom: 6px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.box-result {
-  background: var(--green-bg);
-  border: 1px solid #235238;
-}
-.box-result-title {
-  color: var(--green);
-  font-weight: 800;
-  font-size: 11px;
-  margin-bottom: 6px;
-}
+.race-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.box-section { border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 11px; }
+.box-top3 { background: var(--gold-bg); border: 1px solid #574421; }
+.box-outsider { background: var(--blue-bg); border: 1px solid #23436d; color: var(--blue); }
+.box-ticket { background: #142236; border: 1px solid #2d4568; }
+.box-result { background: var(--green-bg); border: 1px solid #235238; }
 
 @media(min-width: 680px) {
   .grid { grid-template-columns: repeat(4, 1fr); }
@@ -274,7 +111,6 @@ main {
 </header>
 
 <main>
-  <!-- 仮想収支成績パネル -->
   <section class="panel">
     <div class="panel-title">📊 仮想投資シミュレーション成績 (自動確定照合)</div>
     <div class="grid">
@@ -285,7 +121,6 @@ main {
     </div>
   </section>
 
-  <!-- フィルターコントロール -->
   <section>
     <div class="filter-group">
       <button class="filter-btn active" onclick="setTab('today', this)">本日発走レース</button>
@@ -297,7 +132,6 @@ main {
       <button class="filter-btn" onclick="setCategory('local', this)">地方競馬</button>
     </div>
 
-    <!-- レース一覧コンテナ -->
     <div id="races" class="racegrid">
       <div style="text-align:center; padding:40px; color:var(--muted)">データを読み込み中…</div>
     </div>
@@ -326,36 +160,28 @@ function setCategory(c, btn) {
   render();
 }
 
-function renderTickets(tickets = []) {
-  if (!tickets.length) return '';
-  return '<div class="section-box box-ticket">' +
-    '<div class="box-ticket-title"><span>🎯 推奨買い目 (3連単フォーメーション)</span></div>' +
-    tickets.map(t => 
-      '<div style="margin-top:4px">' +
-        '<b>1着:</b> ' + t.first.join(',') + ' → <b>2着:</b> ' + t.second.join(',') + ' → <b>3着:</b> ' + t.third.join(',') + '<br>' +
-        '<span style="color:var(--gold); font-weight:800">計 ' + t.points + '点 (' + (t.points * 100) + '円)</span> ' +
-        '<span style="color:var(--muted); font-size:10px; margin-left:6px">' + t.note + '</span>' +
-      '</div>'
-    ).join('') +
-  '</div>';
-}
-
-function renderResults(r) {
-  const finishes = r.result_finishes || [];
-  return '<div class="section-box box-result">' +
-    '<div class="box-result-title">🏁 レース確定結果</div>' +
-    '<div><b>確定1〜3着:</b> ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果確認中…') + '</div>' +
-    (r.win_hit !== null && r.win_hit !== undefined ? 
-      '<div style="margin-top:4px; font-weight:bold; color:' + (r.win_hit ? 'var(--green)' : 'var(--red)') + '">' +
-        '本命単勝判定: ' + (r.win_hit ? '🎯 的中！ (払戻: ' + yen(r.win_return) + ')' : '❌ 不的中') +
-      '</div>' : ''
-    ) +
-  '</div>';
-}
-
 function renderRace(r) {
   const top3 = (r.top5 || []).slice(0, 3);
   const isFinished = r.is_finished;
+
+  let ticketHtml = '';
+  if (r.tickets && r.tickets.length) {
+    const t = r.tickets[0];
+    ticketHtml = '<div class="box-section box-ticket">' +
+      '<b style="color:var(--gold)">🎯 予想買い目 (3連単フォーメーション)</b><br>' +
+      '1着:' + t.first.join(',') + ' → 2着:' + t.second.join(',') + ' → 3着:' + t.third.join(',') + '<br>' +
+      '<span style="color:var(--gold); font-weight:bold">計 ' + t.points + '点 (' + (t.points * 100) + '円)</span>' +
+    '</div>';
+  }
+
+  let resultHtml = '';
+  if (isFinished) {
+    const finishes = r.result_finishes || [];
+    resultHtml = '<div class="box-section box-result">' +
+      '<b style="color:var(--green)">🏁 レース確定結果</b><br>' +
+      '確定1〜3着: ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果取得中…') +
+    '</div>';
+  }
 
   return '<article class="race-card ' + (isFinished ? 'finished' : '') + '">' +
     '<div class="race-header">' +
@@ -364,4 +190,62 @@ function renderRace(r) {
         '<h3 class="race-title" style="display:inline">' + r.race_no + 'R ' + r.name + '</h3>' +
       '</div>' +
       '<span class="badge-status ' + (isFinished ? 'finished' : 'upcoming') + '">' +
-        (isFinished ? '
+        (isFinished ? 'レース終了' : '発走前') +
+      '</span>' +
+    '</div>' +
+    '<div class="race-meta">' + r.course + ' ' + (r.surface || '') + ' ' + (r.distance_m ? r.distance_m + 'm' : '') + ' 発走:' + (r.post_time || '未定') + '</div>' +
+
+    '<div class="box-section box-top3">' +
+      '<b style="color:var(--gold)">🏆 本命 TOP 3:</b> ' +
+      (top3.length ? top3.map(h => h.horse_no + '.' + h.name).join(' / ') : '解析中') +
+    '</div>' +
+
+    (r.outsiders && r.outsiders.length ? 
+      '<div class="box-section box-outsider">' +
+        '<b>⚡ 穴馬注意:</b> ' + r.outsiders.map(h => h.horse_no + '.' + h.name).join(', ') +
+      '</div>' : ''
+    ) +
+
+    (isFinished ? resultHtml : ticketHtml) +
+  '</article>';
+}
+
+function render() {
+  if (!data) return;
+  let list = currentTab === 'today' ? (data.races || []) : (data.tomorrow_races || []);
+  if (currentCat !== 'all') {
+    list = list.filter(r => r.category === currentCat);
+  }
+
+  const root = $('races');
+  if (!list || !list.length) {
+    root.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted); grid-column: 1/-1">該当するレースデータはありません</div>';
+    return;
+  }
+  root.innerHTML = list.map(renderRace).join('');
+}
+
+async function init() {
+  try {
+    const res = await fetch('./data.json?v=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+    
+    const st = (data.paper_betting && data.paper_betting.stats) ? data.paper_betting.stats : {};
+    
+    $('profit').textContent = (st.profit_yen > 0 ? '+' : '') + yen(st.profit_yen);
+    $('profit').className = 'metric-val ' + (st.profit_yen > 0 ? 'pos' : st.profit_yen < 0 ? 'neg' : '');
+    $('roi').textContent = (st.roi_pct || 0) + '%';
+    $('hitrate').textContent = (st.win_hit_rate_pct || 0) + '%';
+    $('balance').textContent = yen(st.virtual_balance_yen || 10000);
+
+    render();
+  } catch (e) {
+    $('races').innerHTML = '<div style="text-align:center; padding:40px; color:var(--red); grid-column: 1/-1">data.json の読み込みに失敗しました。<br>Actionsの完了をご確認ください。</div>';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
