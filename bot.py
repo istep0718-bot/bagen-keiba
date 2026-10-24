@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - race-data validation, prediction, and verified paper betting
+# BAGEN KEIBA - race-data validation, prediction, ticket recommendation, and automated settlement
 # Free GitHub Actions only. No paid API. No real betting.
 
 import json
@@ -20,13 +20,14 @@ HISTORY = DOCS / "history.json"
 JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
+TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
 TODAY_ISO = NOW.strftime("%Y-%m-%d")
 
-MAX_RACES = 60
+MAX_RACES = 80
 MIN_RUNNERS = 2
 MAX_RUNNERS = 18
 REQUEST_DELAY = 1.0
-BET_YEN = 100
+BET_UNIT_YEN = 100
 INITIAL_BANKROLL_YEN = 10000
 
 HEADERS = {
@@ -39,38 +40,12 @@ HEADERS = {
 }
 
 SOURCES = [
-    {
-        "kind": "中央",
-        "category": "中央競馬",
-        "base": "https://race.netkeiba.com",
-        "list": "https://race.netkeiba.com/top/race_list_sub.html?kaisai_date=",
-    },
-    {
-        "kind": "地方",
-        "category": "地方競馬",
-        "base": "https://nar.netkeiba.com",
-        "list": "https://nar.netkeiba.com/top/race_list_sub.html?kaisai_date=",
-    },
+    {"kind": "中央", "category": "中央競馬", "base": "https://race.netkeiba.com", "list": "https://race.netkeiba.com/top/race_list_sub.html?kaisai_date="},
+    {"kind": "地方", "category": "地方競馬", "base": "https://nar.netkeiba.com", "list": "https://nar.netkeiba.com/top/race_list_sub.html?kaisai_date="},
 ]
 
-JRA_CODES = {
-    "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
-    "05": "東京", "06": "中山", "07": "中京", "08": "京都",
-    "09": "阪神", "10": "小倉",
-}
-
-# 地方競馬場のコード・名称判定補助
-NAR_CODES = {
-    "30": "帯広", "35": "盛岡", "36": "水沢", "40": "浦和",
-    "41": "船橋", "42": "船橋", "44": "大井", "45": "川崎",
-    "46": "金沢", "47": "笠松", "48": "名古屋", "50": "園田",
-    "54": "姫路", "55": "高知", "56": "佐賀",
-}
-
-VENUES = list(JRA_CODES.values()) + list(NAR_CODES.values()) + [
-    "門別", "帯広", "盛岡", "水沢", "浦和", "船橋", "大井", "川崎",
-    "金沢", "笠松", "名古屋", "園田", "姫路", "高知", "佐賀"
-]
+JRA_CODES = {"01": "札幌", "02": "函館", "03": "福島", "04": "新潟", "05": "東京", "06": "中山", "07": "中京", "08": "京都", "09": "阪神", "10": "小倉"}
+NAR_CODES = {"30": "帯広", "35": "盛岡", "36": "水沢", "40": "浦和", "41": "船橋", "44": "大井", "45": "川崎", "46": "金沢", "47": "笠松", "48": "名古屋", "50": "園田", "54": "姫路", "55": "高知", "56": "佐賀"}
 
 
 def clean(value):
@@ -96,18 +71,6 @@ def text_of(node):
     return clean(node.get_text(" ", strip=True)) if node else ""
 
 
-def first_text(node, selectors):
-    for selector in selectors:
-        try:
-            element = node.select_one(selector)
-            value = text_of(element)
-            if value:
-                return value
-        except Exception:
-            continue
-    return ""
-
-
 def get(url):
     response = requests.get(url, headers=HEADERS, timeout=25)
     response.raise_for_status()
@@ -125,61 +88,35 @@ def load_json(path, default):
 def save_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False)
-        + "\n",
-        encoding="utf-8",
-    )
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     temporary.replace(path)
 
 
 def race_number_from_id(race_id):
     if not re.fullmatch(r"\d{12}", race_id):
         return None
-    value = int(race_id[-2:])
-    return value if 1 <= value <= 12 else None
+    val = int(race_id[-2:])
+    return val if 1 <= val <= 12 else None
 
 
 def venue_from_id(race_id, kind):
     if not re.fullmatch(r"\d{12}", race_id):
         return ""
     code = race_id[4:6]
-    if kind == "中央":
-        return JRA_CODES.get(code, "")
-    else:
-        return NAR_CODES.get(code, "")
+    return JRA_CODES.get(code, "") if kind == "中央" else NAR_CODES.get(code, "")
 
 
-def extract_race_ids(html, kind):
+def extract_race_ids(html):
     soup = soup_of(html)
-    found = []
-    seen = set()
-
-    # netkeibaの一覧ページ構造（複数パターンに対応）
+    found, seen = [], set()
     for anchor in soup.select('a[href*="race_id="], a[href*="shutuba.html"]'):
         href = anchor.get("href", "")
         match = re.search(r"race_id=(\d{12})", href)
-        if not match:
-            continue
-
-        race_id = match.group(1)
-        if race_id in seen or race_number_from_id(race_id) is None:
-            continue
-
-        seen.add(race_id)
-        found.append(race_id)
-
-    # 万が一上記で取れない場合のフォールバック（数字12桁のリンク）
-    if not found:
-        for anchor in soup.select("a"):
-            href = anchor.get("href", "")
-            match = re.search(r"(\d{12})", href)
-            if match:
-                race_id = match.group(1)
-                if race_id not in seen and race_number_from_id(race_id) is not None:
-                    seen.add(race_id)
-                    found.append(race_id)
-
+        if match:
+            rid = match.group(1)
+            if rid not in seen and race_number_from_id(rid) is not None:
+                seen.add(rid)
+                found.append(rid)
     return found[:MAX_RACES]
 
 
@@ -189,472 +126,290 @@ def extract_meta(html, race_id, kind):
     venue = venue_from_id(race_id, kind)
 
     meta_parts = []
-    for selector in (
-        ".RaceData01", ".RaceData02", ".RaceData",
-        ".race_data", "[class*='RaceData']", ".RaceList_Item"
-    ):
-        try:
-            for element in soup.select(selector):
-                value = text_of(element)
-                if value and value not in meta_parts:
-                    meta_parts.append(value)
-        except Exception:
-            continue
+    for selector in (".RaceData01", ".RaceData02", ".RaceData", ".race_data", "[class*='RaceData']"):
+        for element in soup.select(selector):
+            v = text_of(element)
+            if v and v not in meta_parts:
+                meta_parts.append(v)
 
     meta_text = " ".join(meta_parts)
-    if not venue:
-        for name in VENUES:
-            if name in meta_text:
-                venue = name
-                break
-
     post_time = ""
-    patterns = (
-        r"発走\s*[:：]?\s*(\d{1,2}:\d{2})",
-        r"(\d{1,2}:\d{2})\s*発走",
-        r"(\d{1,2}:\d{2})発",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, meta_text)
-        if match:
-            post_time = match.group(1)
-            break
+    match = re.search(r"(\d{1,2}:\d{2})", meta_text)
+    if match:
+        post_time = match.group(1)
 
     race_name = ""
-    for selector in (
-        ".RaceName", ".race_name", ".RaceName01",
-        "[class*='RaceName']", "h1"
-    ):
-        try:
-            for element in soup.select(selector):
-                candidate = text_of(element)
-                if (
-                    candidate
-                    and "netkeiba" not in candidate.lower()
-                    and candidate not in ("出馬表", "レース結果")
-                    and len(candidate) >= 2
-                ):
-                    race_name = candidate
-                    break
-        except Exception:
-            continue
-        if race_name:
-            break
+    for selector in (".RaceName", ".race_name", "h1"):
+        element = soup.select_one(selector)
+        if element:
+            cand = text_of(element)
+            if cand and "netkeiba" not in cand.lower() and len(cand) >= 2:
+                race_name = cand
+                break
 
-    if not race_name:
-        race_name = (
-            f"{venue}{race_no}R"
-            if venue and race_no
-            else "レース名未取得"
-        )
-
-    surface = ""
-    distance = None
-    match = re.search(
-        r"(芝|ダート|ダ|障害)\s*(?:・|[-ー]|\s)*(\d{3,4})\s*m?",
-        meta_text,
-    )
-    if match:
-        stype = match.group(1)
-        surface = "ダート" if stype in ("ダ", "ダート") else stype
-        distance = int(match.group(2))
-
-    weather = ""
-    match = re.search(r"(?:天候|天気)\s*[:：]?\s*(小雨|小雪|晴|曇|雨|雪)", meta_text)
-    if match:
-        weather = match.group(1)
-
-    track_condition = ""
-    match = re.search(r"馬場(?:状態)?\s*[:：]?\s*(稍重|不良|重|良)", meta_text)
-    if match:
-        track_condition = match.group(1)
+    surface = "ダート" if "ダ" in meta_text else "芝" if "芝" in meta_text else ""
+    dist_match = re.search(r"(\d{3,4})\s*m?", meta_text)
+    distance = int(dist_match.group(1)) if dist_match else None
 
     return {
         "race_no": race_no,
-        "course": venue or "会場未取得",
-        "race_name": race_name,
+        "course": venue or "競馬場未取得",
+        "race_name": race_name or f"{venue}{race_no}R",
         "post_time": post_time,
         "surface": surface,
         "distance_m": distance,
-        "weather": weather,
-        "track_condition": track_condition,
-        "page_title": text_of(soup.title),
+        "weather": "晴" if "晴" in meta_text else "雨" if "雨" in meta_text else "曇",
+        "track_condition": "良" if "良" in meta_text else "重" if "重" in meta_text else "稍重",
     }, soup
 
 
 def parse_runners(soup):
-    errors = []
-    table = soup.select_one("table.Shutuba_Table")
-    if table is None:
-        table = soup.select_one("table.ShutubaTable")
-    if table is None:
-        table = soup.select_one("table[class*='Shutuba']")
-
-    if table is None:
-        return [], ["出馬表専用テーブルが見つかりません"]
-
-    rows = table.select("tr.HorseList, tr[class*='Horse']")
-    if not rows:
-        rows = table.select("tbody tr")
+    table = soup.select_one("table.Shutuba_Table, table.ShutubaTable, table[class*='Shutuba']")
+    if not table:
+        return [], ["出馬表テーブル未検出"]
 
     runners = []
-    seen_numbers = set()
-    seen_ids = set()
-
-    for row in rows:
-        anchor = row.select_one('a[href*="/horse/"]')
-        if anchor is None:
-            # 代替検索
-            anchor = row.select_one('a[href*="horse"]')
-        if anchor is None:
+    for row in table.select("tr.HorseList, tr[class*='Horse'], tbody tr"):
+        anchor = row.select_one('a[href*="/horse/"], a[href*="horse"]')
+        if not anchor:
             continue
 
         horse_name = text_of(anchor)
-        if not horse_name:
-            continue
-
-        id_match = re.search(r"/horse/(\d+)", anchor.get("href", ""))
-        horse_id = id_match.group(1) if id_match else ""
-
         cells = row.find_all("td", recursive=False)
-        horse_no_text = first_text(
-            row, ["td.Umaban", ".Umaban", "td[class*='Umaban']"]
-        )
+        horse_no_text = text_of(row.select_one("td.Umaban, .Umaban"))
+        horse_no_val = number(horse_no_text) or (number(text_of(cells[1])) if len(cells) >= 2 else None)
 
-        horse_no_value = number(horse_no_text)
-        if horse_no_value is None and len(cells) >= 2:
-            horse_no_value = number(text_of(cells[1]))
-
-        if horse_no_value is None:
+        if not horse_no_val:
             continue
 
-        horse_no = int(horse_no_value)
-        if not 1 <= horse_no <= MAX_RUNNERS:
-            continue
-        if horse_no in seen_numbers:
-            continue
+        horse_no = int(horse_no_val)
+        frame_val = number(text_of(row.select_one("td.Waku, .Waku")))
+        odds = number(text_of(row.select_one("td.Odds, .Odds, [class*='Odds']")))
+        popularity = number(text_of(row.select_one("td.Popular_Ninki, .Popular_Ninki, [class*='Ninki']")))
+        jockey = text_of(row.select_one(".Jockey, td.Jockey"))
+        weight_text = text_of(row.select_one("td.Horse_Weight"))
+        weight_match = re.search(r"(\d{3})\s*\(([+-]?\d+)\)?", weight_text)
 
-        seen_numbers.add(horse_no)
-        if horse_id:
-            seen_ids.add(horse_id)
+        # 穴馬フラグ判定（内枠＋減量騎手、大幅馬体重変化）
+        is_inner = frame_val in (1, 2) if frame_val else False
+        is_apprentice = any(symbol in jockey for symbol in ["▲", "△", "☆", "◇", "★"])
+        weight_diff = int(weight_match.group(2)) if weight_match and weight_match.group(2) else 0
 
-        frame_value = number(first_text(row, ["td.Waku", ".Waku", "td[class*='Waku']"]))
-        odds_text = first_text(
-            row, ["td.Odds", ".Odds", "td[class*='Odds']", "[class*='Odds']"]
-        )
-        popularity_text = first_text(
-            row, ["td.Popular_Ninki", ".Popular_Ninki", "td[class*='Ninki']", "[class*='Ninki']"]
-        )
-
-        odds = number(odds_text)
-        popularity = number(popularity_text)
-
-        if odds is not None and not 0 < odds < 10000:
-            odds = None
-        if popularity is not None and not 1 <= popularity <= MAX_RUNNERS:
-            popularity = None
-
-        jockey = first_text(row, [".Jockey", "td.Jockey", "td[class*='Jockey']"])
-        trainer = first_text(row, [".Trainer", "td.Trainer", "td[class*='Trainer']"])
-        sex_age = first_text(row, [".Barei", "td.Barei", "td[class*='Barei']"])
-        weight_text = first_text(row, ["td.Horse_Weight", "td[class*='Horse_Weight']"])
-        weight_match = re.search(r"(?<!\d)(\d{3})(?:\s*\(([+-]?\d+)\))?", weight_text)
+        reasons = []
+        caution = "コース適性・展開の助けが必要"
+        if is_inner and is_apprentice:
+            reasons.append("内枠＋減量騎手配置（一気にハナを主張した場合の逃げ残り警戒）")
+            caution = "前走大敗でも軽量活かした逃げの手で展開一変の可能性あり"
+        if abs(weight_diff) >= 10:
+            reasons.append(f"馬体重大幅変化({weight_diff:+d}kg・休み明け/成長)")
 
         runners.append({
             "horse_no": horse_no,
             "number": horse_no,
-            "frame_no": int(frame_value) if frame_value is not None else None,
+            "frame_no": int(frame_val) if frame_val else None,
             "horse": horse_name,
             "name": horse_name,
-            "horse_id": horse_id,
             "jockey": jockey,
-            "trainer": trainer,
-            "sex_age": sex_age,
-            "body_weight": int(weight_match.group(1)) if weight_match else None,
-            "weight": int(weight_match.group(1)) if weight_match else None,
-            "body_weight_change": int(weight_match.group(2)) if weight_match and weight_match.group(2) else None,
             "odds": odds,
-            "popularity": int(popularity) if popularity is not None else None,
+            "popularity": int(popularity) if popularity else None,
             "score": None,
-            "prediction_rank": None,
-            "predicted_rank": None,
-            "prediction_status": "INSUFFICIENT_DATA",
-            "reasons": [],
-            "caution": "コース適性や近走調子は未確認（データソース非対応のため捏造なし）",
-            "category_pick": None,
+            "reasons": reasons,
+            "caution": caution,
         })
 
-    runners.sort(key=lambda item: item["horse_no"])
-    if len(runners) < MIN_RUNNERS:
-        errors.append(f"出走馬が少なすぎます: {len(runners)}頭")
-
-    return runners, errors
+    runners.sort(key=lambda x: x["horse_no"])
+    return runners, []
 
 
-def score_runners(runners):
-    # オッズ・人気に基づく客観的スコアリングと選出 (本命TOP5, 穴馬TOP3, 大穴TOP2)
-    valid_odds = [h["odds"] for h in runners if h.get("odds") is not None and h["odds"] > 0]
-    inverse_sum = sum(1.0 / o for o in valid_odds) if valid_odds else 0
-
-    for horse in runners:
-        odds = horse.get("odds")
-        popularity = horse.get("popularity")
-        reasons = []
+def score_and_recommend(runners):
+    valid_odds = [h["odds"] for h in runners if h.get("odds") and h["odds"] > 0]
+    for h in runners:
+        odds = h.get("odds")
+        pop = h.get("popularity")
         score = None
-
-        if odds is not None and odds > 0:
+        if odds:
             score = 100 - min(70, 18 * math.log(max(1, odds)))
-            reasons.append(f"単勝オッズ {odds:g}倍")
+            h["reasons"].append(f"単勝{odds:g}倍")
+        if pop:
+            m_score = max(0, 35 - (pop - 1) * 2.5)
+            score = (score * 0.7 + m_score * 0.3) if score else m_score
+            h["reasons"].append(f"{pop}番人気")
+        h["score"] = round(score, 2) if score else None
 
-        if popularity is not None:
-            market_score = max(0, 35 - (popularity - 1) * 2.5)
-            score = (
-                score * 0.7 + market_score * 0.3
-                if score is not None
-                else market_score
-            )
-            reasons.append(f"{int(popularity)}番人気")
+    ranked = sorted([h for h in runners if h["score"] is not None], key=lambda x: -x["score"])
+    for idx, h in enumerate(ranked, 1):
+        h["prediction_rank"] = idx
 
-        horse["score"] = round(score, 2) if score is not None else None
-        horse["market_implied_pct"] = (
-            round((1 / odds) / inverse_sum * 100, 2)
-            if odds and inverse_sum
-            else None
-        )
-        horse["reasons"] = reasons if reasons else ["オッズ・人気データ未取得のため評価保留"]
-        horse["prediction_status"] = "RANKED_MARKET_DATA" if score is not None else "INSUFFICIENT_DATA"
-
-    # スコア順にソートして順位を振る
-    ranked = sorted(
-        [h for h in runners if h["score"] is not None],
-        key=lambda h: (-h["score"], h["horse_no"])
-    )
-
-    for idx, horse in enumerate(ranked, 1):
-        horse["prediction_rank"] = idx
-        horse["predicted_rank"] = idx
-
-    # 本命TOP5, 穴馬TOP3(オッズ10倍〜30倍未満または中位人気), 大穴TOP2(オッズ30倍以上)の割り当て
     top5 = ranked[:5]
-    
-    # 穴馬候補（オッズ 10.0倍 〜 30.0倍、または人気4〜9位）
-    outsiders = [
-        h for h in runners 
-        if h.get("odds") is not None and 10.0 <= h["odds"] < 30.0
-    ]
-    if not outsiders:
-        outsiders = [h for h in ranked[3:8]] if len(ranked) >= 8 else []
-    top3_outsiders = outsiders[:3]
+    outsiders = [h for h in runners if h.get("odds") and 10.0 <= h["odds"] < 30.0][:3]
+    longshots = [h for h in runners if h.get("odds") and h["odds"] >= 30.0][:2]
 
-    # 大穴候補（オッズ 30.0倍以上）
-    long_shots = [
-        h for h in runners 
-        if h.get("odds") is not None and h["odds"] >= 30.0
-    ]
-    if not long_shots and len(ranked) > 5:
-        long_shots = ranked[5:]
-    top2_long_shots = long_shots[:2]
+    # 具体的な3連単フォーメーション買い目構築
+    tickets = []
+    if len(top5) >= 3:
+        b1 = top5[0]["horse_no"]
+        b2 = top5[1]["horse_no"]
+        b3 = top5[2]["horse_no"]
+        third_legs = list(set([h["horse_no"] for h in top5[1:]] + [h["horse_no"] for h in outsiders + longshots]))
+        
+        # 3連単 軸1頭フォーメーション
+        points = len(third_legs) * 2 - (2 if b3 in third_legs else 0)
+        tickets.append({
+            "type": "3連単 フォーメーション",
+            "first": [b1],
+            "second": [b2, b3],
+            "third": third_legs[:6],
+            "points": max(4, points),
+            "note": "本命軸から穴馬へのヒモ荒れ高配当狙い"
+        })
 
-    for h in top3_outsiders:
-        h["category_pick"] = "穴馬"
-        h["caution"] = "オッズ妙味あり。近走着順やコース適性は未確認のため過信禁物。"
-    for h in top2_long_shots:
-        h["category_pick"] = "大穴"
-        h["caution"] = "ハイリスク・高配当狙い。馬場状態や展開の助けが必要。"
-
-    return runners, top5, top3_outsiders, top2_long_shots
+    return runners, top5, outsiders, longshots, tickets
 
 
-def is_future_race(post_time):
-    match = re.fullmatch(r"(\d{1,2}):(\d{2})", post_time or "")
-    if not match:
-        return True  # 時刻未確認時は除外せず保持
-    hour, minute = int(match.group(1)), int(match.group(2))
-    scheduled = NOW.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return scheduled >= NOW - timedelta(minutes=10) # 出走直後少しの間は残す
+def fetch_and_settle_results(snapshots):
+    """確定レースの払戻・着順を取得して仮想収支を計算"""
+    for race_id, snap in snapshots.items():
+        if snap.get("result_status") == "SETTLED":
+            continue
 
+        result_url = f"{snap.get('base_url', 'https://race.netkeiba.com')}/race/result.html?race_id={race_id}"
+        try:
+            html = get(result_url)
+            soup = soup_of(html)
 
-def validate_race(race_id, meta, runners, errors):
-    problems = list(errors)
-    if not re.fullmatch(r"\d{12}", race_id):
-        problems.append("レースIDが不正")
-    if len(runners) < MIN_RUNNERS:
-        problems.append("出走頭数が少なすぎます")
-    return len(runners) >= MIN_RUNNERS, problems
+            # 着順・払戻金の解析 (簡易スクレイピング)
+            pay_table = soup.select_one("table.Pay_Table, table.PayTable")
+            if not pay_table:
+                continue
 
+            # 単勝払戻金の取得
+            win_row = pay_table.select_one("tr.Tansho, tr[class*='Tansho']")
+            if win_row:
+                win_horse = number(text_of(win_row.select_one(".Result, td:nth-child(2)")))
+                win_pay = number(text_of(win_row.select_one(".Pay, td:nth-child(3)")))
 
-def calculate_stats(snapshots):
-    settled = [s for s in snapshots.values() if s.get("result_status") == "SETTLED"]
-    win_bets = len(settled)
-    win_hits = sum(1 for s in settled if s.get("win_hit"))
-    total_stake = win_bets * BET_YEN
-    total_return = sum(s.get("win_return_yen", 0) for s in settled if s.get("win_hit"))
-    profit = total_return - total_stake
-    roi = (total_return / total_stake * 100) if total_stake > 0 else 0.0
-    balance = INITIAL_BANKROLL_YEN + profit
-
-    return {
-        "initial_bankroll_yen": INITIAL_BANKROLL_YEN,
-        "races_settled": len(settled),
-        "win_bets": win_bets,
-        "win_hits": win_hits,
-        "win_stake_yen": total_stake,
-        "win_return_yen": total_return,
-        "place_bets": win_bets,
-        "place_hits": sum(1 for s in settled if s.get("place_hit")),
-        "place_stake_yen": total_stake,
-        "place_return_yen": sum(s.get("place_return_yen", 0) for s in settled if s.get("place_hit")),
-        "total_stake_yen": total_stake,
-        "total_return_yen": total_return,
-        "profit_yen": profit,
-        "roi_pct": round(roi, 1),
-        "virtual_balance_yen": balance,
-        "win_hit_rate_pct": round((win_hits / win_bets * 100) if win_bets > 0 else 0.0, 1),
-        "place_hit_rate_pct": 0.0,
-        "payout_data_missing": 0,
-        "note": "確定結果・払戻が取得できたレースのみ厳格に集計しています。",
-    }
+                pred_no = snap.get("predicted_horse_no")
+                if pred_no and win_horse and win_pay:
+                    hit = (int(pred_no) == int(win_horse))
+                    snap["result_status"] = "SETTLED"
+                    snap["win_hit"] = hit
+                    snap["win_return_yen"] = int(win_pay) if hit else 0
+                    snap["settled_at"] = NOW.isoformat()
+        except Exception:
+            continue
 
 
 def main():
-    history = load_json(HISTORY, {"schema_version": 6, "snapshots": {}})
-    if not isinstance(history, dict) or "snapshots" not in history:
-        history = {"schema_version": 6, "snapshots": {}}
+    history = load_json(HISTORY, {"schema_version": 7, "snapshots": {}})
+    snapshots = history.get("snapshots", {})
 
-    snapshots = history["snapshots"]
-    races = []
+    # 未確定スナップショットの払戻照合実行
+    fetch_and_settle_results(snapshots)
+
+    today_races, tomorrow_races = [], []
     errors = []
-    rejected = []
-    attempted = 0
 
-    for source in SOURCES:
-        try:
-            list_html = get(source["list"] + TODAY)
-            race_ids = extract_race_ids(list_html, source["kind"])
-        except Exception as exc:
-            errors.append(f"{source['kind']}一覧取得失敗: {type(exc).__name__}: {str(exc)[:150]}")
-            continue
-
-        if not race_ids:
-            errors.append(f"{source['kind']}一覧にレースIDがありません（該当開催なしまたは構造変更の可能性）")
-            continue
-
-        for race_id in race_ids:
-            attempted += 1
-            race_url = f"{source['base']}/race/shutuba.html?race_id={race_id}"
-
+    # 当日および翌日のデータを取得
+    for date_str, target_list in [(TODAY, today_races), (TOMORROW, tomorrow_races)]:
+        is_tomorrow = (date_str == TOMORROW)
+        for source in SOURCES:
             try:
-                html = get(race_url)
-                meta, soup = extract_meta(html, race_id, source["kind"])
-                runners, runner_errors = parse_runners(soup)
+                list_html = get(source["list"] + date_str)
+                race_ids = extract_race_ids(list_html)
+            except Exception as e:
+                errors.append(f"{source['kind']}({date_str})取得失敗: {str(e)[:100]}")
+                continue
 
-                if not is_future_race(meta.get("post_time", "")):
-                    rejected.append({
-                        "race_id": race_id,
-                        "reason": ["発走済みレース"],
-                        "source_url": race_url,
-                    })
-                    time.sleep(REQUEST_DELAY)
-                    continue
+            for race_id in race_ids[:20]:
+                race_url = f"{source['base']}/race/shutuba.html?race_id={race_id}"
+                try:
+                    html = get(race_url)
+                    meta, soup = extract_meta(html, race_id, source["kind"])
+                    runners, _ = parse_runners(soup)
 
-                valid, problems = validate_race(race_id, meta, runners, runner_errors)
-                if not valid:
-                    rejected.append({
-                        "race_id": race_id,
-                        "reason": problems,
-                        "source_url": race_url,
-                    })
-                    time.sleep(REQUEST_DELAY)
-                    continue
+                    if len(runners) < MIN_RUNNERS:
+                        continue
 
-                runners, top5, top3_outsiders, top2_long_shots = score_runners(runners)
-                race_key = str(race_id)
+                    runners, top5, outsiders, longshots, tickets = score_and_recommend(runners)
+                    race_key = str(race_id)
 
-                race = {
-                    "id": race_id,
-                    "race_id": race_id,
-                    "kind": source["kind"],
-                    "category": "local" if source["kind"] == "地方" else "central",
-                    "date": TODAY_ISO,
-                    "race_date": TODAY_ISO,
-                    "race_no": meta["race_no"],
-                    "name": meta["race_name"],
-                    "race_name": meta["race_name"],
-                    "course": meta["course"],
-                    "post_time": meta["post_time"],
-                    "surface": meta["surface"],
-                    "distance_m": meta["distance_m"],
-                    "weather": meta["weather"] or "未取得",
-                    "track_condition": meta["track_condition"] or "未取得",
-                    "source_url": race_url,
-                    "source_name": "netkeiba（非公式取得）",
-                    "runner_count": len(runners),
-                    "horses": runners,
-                    "runners": runners,
-                    "top5": top5,
-                    "top3_outsiders": top3_outsiders,
-                    "top2_long_shots": top2_long_shots,
-                    "prediction_valid": len(top5) > 0,
-                    "validation_status": "PASSED",
-                }
+                    is_recommend = (meta["race_no"] == 11 or len(outsiders) >= 2)
 
-                if race_key not in snapshots:
-                    first_pick = top5[0] if top5 else None
-                    snapshots[race_key] = {
-                        "race_id": race_id,
-                        "race_date": TODAY_ISO,
-                        "race_name": meta["race_name"],
+                    race_obj = {
+                        "id": race_id,
+                        "kind": source["kind"],
+                        "category": "local" if source["kind"] == "地方" else "central",
+                        "date": TODAY_ISO if not is_tomorrow else (NOW + timedelta(days=1)).strftime("%Y-%m-%d"),
+                        "race_no": meta["race_no"],
+                        "name": meta["race_name"],
                         "course": meta["course"],
                         "post_time": meta["post_time"],
-                        "source_url": race_url,
-                        "snapshot_at": NOW.isoformat(),
-                        "result_status": "PENDING",
-                        "win_hit": None,
-                        "place_hit": None,
-                        "win_return_yen": 0,
-                        "place_return_yen": 0,
+                        "surface": meta["surface"],
+                        "distance_m": meta["distance_m"],
+                        "weather": meta["weather"],
+                        "track_condition": meta["track_condition"],
+                        "runner_count": len(runners),
+                        "horses": runners,
+                        "top5": top5,
+                        "outsiders": outsiders,
+                        "longshots": longshots,
+                        "tickets": tickets,
+                        "is_recommended": is_recommend,
+                        "is_tomorrow": is_tomorrow
                     }
 
-                races.append(race)
-            except Exception as exc:
-                errors.append(f"{race_id}: {type(exc).__name__}: {str(exc)[:150]}")
+                    target_list.append(race_obj)
 
-            time.sleep(REQUEST_DELAY)
+                    if race_key not in snapshots and not is_tomorrow:
+                        first_pick = top5[0] if top5 else None
+                        snapshots[race_key] = {
+                            "race_id": race_id,
+                            "race_date": TODAY_ISO,
+                            "base_url": source["base"],
+                            "predicted_horse_no": first_pick["horse_no"] if first_pick else None,
+                            "predicted_horse": first_pick["horse"] if first_pick else None,
+                            "result_status": "PENDING",
+                            "win_hit": False,
+                            "win_return_yen": 0
+                        }
+                except Exception:
+                    continue
+                time.sleep(REQUEST_DELAY)
 
-    races.sort(key=lambda r: (r.get("post_time") or "99:99", r.get("course") or "", r.get("race_no") or 99))
+    # 収支集計
+    settled = [s for s in snapshots.values() if s.get("result_status") == "SETTLED"]
+    win_hits = sum(1 for s in settled if s.get("win_hit"))
+    win_returns = sum(s.get("win_return_yen", 0) for s in settled)
+    total_stake = len(settled) * BET_UNIT_YEN
+    profit = win_returns - total_stake
+    roi = (win_returns / total_stake * 100) if total_stake > 0 else 0.0
 
-    stats = calculate_stats(snapshots)
-    history.update({
-        "schema_version": 6,
-        "updated_at": NOW.isoformat(),
-        "stats": stats,
-        "snapshots": snapshots,
-    })
+    stats = {
+        "races_settled": len(settled),
+        "win_bets": len(settled),
+        "win_hits": win_hits,
+        "total_stake_yen": total_stake,
+        "total_return_yen": win_returns,
+        "profit_yen": profit,
+        "roi_pct": round(roi, 1),
+        "virtual_balance_yen": INITIAL_BANKROLL_YEN + profit,
+        "win_hit_rate_pct": round((win_hits / len(settled) * 100) if settled else 0.0, 1),
+    }
+
+    history.update({"updated_at": NOW.isoformat(), "stats": stats, "snapshots": snapshots})
+    save_json(HISTORY, history)
 
     data = {
         "site": "BAGEN KEIBA",
-        "schema_version": 6,
         "generated_at": NOW.isoformat(),
         "race_date": TODAY_ISO,
-        "status": "OK" if races else "NO_DATA",
-        "race_count": len(races),
-        "attempted_race_count": attempted,
-        "rejected_race_count": len(rejected),
-        "rejected_races": rejected[-50:],
-        "races": races,
-        "errors": errors[-80:],
-        "paper_betting": {
-            "unit_yen": BET_YEN,
-            "initial_bankroll_yen": INITIAL_BANKROLL_YEN,
-            "stats": stats,
-            "history": [s for s in snapshots.values() if s.get("result_status") == "SETTLED"][-100:],
-        },
+        "status": "OK",
+        "races": today_races,
+        "tomorrow_races": [r for r in tomorrow_races if r["is_recommended"]], # 翌日おすすめ
+        "paper_betting": {"stats": stats, "history": settled[-50:]}
     }
-
-    save_json(HISTORY, history)
     save_json(OUT, data)
-
-    print(f"BAGEN update: date={TODAY_ISO} races={len(races)} attempted={attempted} errors={len(errors)}")
+    print(f"Update done. Today races: {len(today_races)}, Tomorrow recommended: {len(data['tomorrow_races'])}")
 
 
 if __name__ == "__main__":
