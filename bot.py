@@ -123,7 +123,34 @@ def extract_race_ids(html):
     return found[:MAX_RACES]
 
 
-def parse_race(html, rid, kind):
+def fetch_race_results(base_url, rid):
+    """終了したレースの結果ページから1〜3着の馬番を確実に取得する"""
+    url = f"{base_url}/race/result.html?race_id={rid}"
+    html = get_html(url)
+    if not html:
+        return []
+    
+    soup = soup_of(html)
+    finishes = []
+    
+    # netkeibaの結果テーブル行を走査
+    rows = soup.select("table.RaceTable01 tr, tr.HorseList, tr[class*='Horse'], table tr")
+    for r in rows:
+        cells = r.find_all(["td", "th"])
+        if len(cells) >= 3:
+            rank_text = text_of(cells[0])
+            # 着順が 1, 2, 3 の行を探す
+            if rank_text in ["1", "2", "3"]:
+                for cell in cells[1:6]:
+                    val = number(text_of(cell))
+                    if val and 1 <= val <= 18:
+                        if int(val) not in finishes:
+                            finishes.append(int(val))
+                            break
+    return finishes[:3]
+
+
+def parse_race(html, rid, kind, base_url):
     soup = soup_of(html)
     race_no = race_no_from_id(rid)
     venue = venue_from_id(rid, kind)
@@ -150,7 +177,7 @@ def parse_race(html, rid, kind):
     m_dist = re.search(r"(\d{3,4})\s*m?", meta_text)
     distance = int(m_dist.group(1)) if m_dist else None
 
-    # 出走馬解析（全テーブル構造に対応）
+    # 出走馬解析
     rows = soup.select("tr.HorseList, tr[class*='Horse'], table.Shutuba_Table tr, table.ShutubaTable tr, table tr")
     runners, seen_horses = [], set()
 
@@ -206,7 +233,6 @@ def parse_race(html, rid, kind):
 
     runners.sort(key=lambda x: x["horse_no"])
 
-    # スコア・買い目算出
     for h in runners:
         o, p = h.get("odds"), h.get("popularity")
         s = 0.0
@@ -242,6 +268,14 @@ def parse_race(html, rid, kind):
             sch = NOW.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
             is_finished = (NOW >= sch + timedelta(minutes=15))
 
+    # 終了しているレースなら結果を即時フェッチ
+    result_finishes = []
+    win_hit = None
+    if is_finished:
+        result_finishes = fetch_race_results(base_url, rid)
+        if result_finishes and top5:
+            win_hit = (top5[0]["horse_no"] == result_finishes[0])
+
     return {
         "id": rid,
         "kind": kind,
@@ -259,15 +293,15 @@ def parse_race(html, rid, kind):
         "longshots": longshots,
         "tickets": tickets,
         "is_finished": is_finished,
-        "result_finishes": [],
-        "win_hit": None,
-        "win_return": 0,
+        "result_finishes": result_finishes,
+        "win_hit": win_hit,
+        "win_return": 1000 if win_hit else 0, # 簡易シミュレーション払戻
         "is_recommended": (race_no == 11 or len(outsiders) >= 2)
     }
 
 
 def main():
-    history = load_json(HISTORY, {"schema_version": 9, "snapshots": {}})
+    history = load_json(HISTORY, {"schema_version": 10, "snapshots": {}})
     snapshots = history.get("snapshots", {})
 
     today_races, tomorrow_races = [], []
@@ -284,7 +318,7 @@ def main():
                 if not html:
                     continue
 
-                r_data = parse_race(html, rid, source["kind"])
+                r_data = parse_race(html, rid, source["kind"], source["base"])
                 if r_data["runner_count"] >= MIN_RUNNERS:
                     r_data["date"] = TODAY_ISO if not is_tomorrow else (NOW + timedelta(days=1)).strftime("%Y-%m-%d")
                     r_data["is_tomorrow"] = is_tomorrow
@@ -292,10 +326,10 @@ def main():
 
                 time.sleep(REQUEST_DELAY)
 
-    # 仮想成績計算 (安全なデフォルト補完)
-    settled = [s for s in snapshots.values() if s.get("result_status") == "SETTLED"]
-    win_hits = sum(1 for s in settled if s.get("win_hit"))
-    win_returns = sum(s.get("win_return_yen", 0) for s in settled)
+    # 成績集計
+    settled = [r for r in today_races if r["is_finished"] and r["result_finishes"]]
+    win_hits = sum(1 for r in settled if r.get("win_hit"))
+    win_returns = sum(r.get("win_return", 0) for r in settled if r.get("win_hit"))
     total_stake = len(settled) * BET_UNIT_YEN
     profit = win_returns - total_stake
     roi = (win_returns / total_stake * 100) if total_stake > 0 else 0.0
@@ -312,9 +346,6 @@ def main():
         "win_hit_rate_pct": round((win_hits / len(settled) * 100) if settled else 0.0, 1),
     }
 
-    history.update({"updated_at": NOW.isoformat(), "stats": stats, "snapshots": snapshots})
-    save_json(HISTORY, history)
-
     data = {
         "site": "BAGEN KEIBA",
         "generated_at": NOW.isoformat(),
@@ -325,7 +356,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Engine updated successfully. Today: {len(today_races)}, Tomorrow: {len(data['tomorrow_races'])}")
+    print(f"BAGEN Engine updated. Today: {len(today_races)}, Settled results: {len(settled)}")
 
 
 if __name__ == "__main__":
