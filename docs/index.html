@@ -23,22 +23,14 @@
 }
 * { box-sizing: border-box; }
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
+  margin: 0; background: var(--bg); color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   padding-bottom: 40px;
 }
 header {
-  padding: 14px 16px;
-  background: #081321;
-  border-bottom: 1px solid var(--line);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  padding: 14px 16px; background: #081321; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 100;
+  display: flex; justify-content: space-between; align-items: center;
 }
 .brand { display: flex; align-items: center; gap: 8px; }
 .logo {
@@ -112,7 +104,7 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 
 <main>
   <section class="panel">
-    <div class="panel-title">📊 仮想投資シミュレーション成績 (自動確定照合)</div>
+    <div class="panel-title">📊 仮想投資シミュレーション成績</div>
     <div class="grid">
       <div class="metric"><div class="metric-label">総収支</div><div class="metric-val" id="profit">—</div></div>
       <div class="metric"><div class="metric-label">回収率</div><div class="metric-val" id="roi">—</div></div>
@@ -177,9 +169,10 @@ function renderRace(r) {
   let resultHtml = '';
   if (isFinished) {
     const finishes = r.result_finishes || [];
+    const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
     resultHtml = '<div class="box-section box-result">' +
-      '<b style="color:var(--green)">🏁 レース確定結果</b><br>' +
-      '確定1〜3着: ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果取得中…') +
+      '<b style="color:var(--green)">🏁 レース確定結果</b>' + hitText + '<br>' +
+      '<b>1〜3着馬番:</b> ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果データなし') +
     '</div>';
   }
 
@@ -241,7 +234,7 @@ async function init() {
 
     render();
   } catch (e) {
-    $('races').innerHTML = '<div style="text-align:center; padding:40px; color:var(--red); grid-column: 1/-1">data.json の読み込みに失敗しました。<br>Actionsの完了をご確認ください。</div>';
+    $('races').innerHTML = '<div style="text-align:center; padding:40px; color:var(--red); grid-column: 1/-1">data.json の読み込みに失敗しました</div>';
   }
 }
 
