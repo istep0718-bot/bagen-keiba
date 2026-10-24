@@ -1,10 +1,20 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#09111f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="馬玄 BAGEN">
+
+<!-- iPhoneホーム画面アイコン -->
+<link rel="apple-touch-icon" href="./IMG_6215.jpeg">
+<link rel="icon" type="image/jpeg" href="./IMG_6215.jpeg">
+
 <title>馬玄 BAGEN｜競馬予想ラボ</title>
+
 <style>
 :root{color-scheme:dark;--bg:#09111f;--panel:#111d30;--panel2:#17263d;--gold:#e9c56a;--text:#f5f7fb;--muted:#9cacc2;--line:#283750;--green:#65d6a1;--red:#ff7d8b}
 *{box-sizing:border-box}
@@ -45,17 +55,29 @@ section{margin-bottom:22px}
 .empty{padding:22px 10px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8}
 .error{color:var(--red)}
 footer{text-align:center;color:var(--muted);font-size:11px;padding:20px}
-@media(min-width:650px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}.racegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.race{margin-top:0}}
+@media(min-width:650px){
+.grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.racegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.race{margin-top:0}
+}
 </style>
 </head>
+
 <body>
 <header>
   <div class="brand">
     <div class="logo">玄</div>
-    <div><h1>馬玄 BAGEN</h1><div class="sub">KEIBA PREDICTION LAB</div></div>
+    <div>
+      <h1>馬玄 BAGEN</h1>
+      <div class="sub">KEIBA PREDICTION LAB</div>
+    </div>
   </div>
-  <div class="status"><span class="dot"></span><span id="status">データを読み込み中…</span></div>
+  <div class="status">
+    <span class="dot"></span>
+    <span id="status">データを読み込み中…</span>
+  </div>
 </header>
+
 <main>
   <section>
     <h2>📊 仮想ベッティング成績</h2>
@@ -81,7 +103,9 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:20px}
       <button data-filter="central">中央競馬</button>
       <button data-filter="local">地方競馬</button>
     </div>
-    <div id="races"><div class="panel empty">レースデータを読み込み中…</div></div>
+    <div id="races">
+      <div class="panel empty">レースデータを読み込み中…</div>
+    </div>
   </section>
 
   <section>
@@ -94,13 +118,23 @@ footer{text-align:center;color:var(--muted);font-size:11px;padding:20px}
     </div>
   </section>
 </main>
+
 <footer>馬玄 BAGEN · PAPER SIMULATION ONLY</footer>
+
 <script>
 let allRaces=[];
 let filter="all";
-const yen=n=>Number.isFinite(Number(n))?Math.round(Number(n)).toLocaleString("ja-JP")+"円":"—";
-const pct=n=>Number.isFinite(Number(n))?Number(n).toFixed(1)+"%":"—";
-function setText(id,value){document.getElementById(id).textContent=value}
+
+const yen=n=>Number.isFinite(Number(n))
+  ?Math.round(Number(n)).toLocaleString("ja-JP")+"円":"—";
+
+const pct=n=>Number.isFinite(Number(n))
+  ?Number(n).toFixed(1)+"%":"—";
+
+function setText(id,value){
+  document.getElementById(id).textContent=value;
+}
+
 function renderStats(stats={}){
   const profit=Number(stats.profit_yen||0);
   setText("profit",(profit>0?"+":"")+yen(profit));
@@ -112,39 +146,92 @@ function renderStats(stats={}){
   setText("stake",yen(stats.total_stake_yen||0));
   setText("returns",yen(stats.total_return_yen||0));
 }
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+function esc(s){
+  return String(s??"").replace(/[&<>"']/g,c=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
 function renderRaces(){
   const root=document.getElementById("races");
   let races=allRaces.filter(r=>filter==="all"||r.category===filter);
+
   if(!races.length){
     root.innerHTML='<div class="panel empty">表示できるレースデータがありません。<br>GitHub Actionsの実行結果とデータ更新を確認してください。</div>';
     return;
   }
+
   root.innerHTML='<div class="racegrid">'+races.map(r=>{
     const horses=Array.isArray(r.horses)?r.horses:[];
-    return '<article class="race"><div class="racehead"><div><h3>'+esc(r.name||"レース名未取得")+'</h3><div class="meta">'+esc(r.course||"競馬場未取得")+' · '+esc(r.post_time||"発走時刻未取得")+'</div></div><span class="tag">'+(r.category==="local"?"地方競馬":"中央競馬")+'</span></div><div class="meta">📅 '+esc(r.date||"日付未取得")+'<br>🌦 '+esc(r.weather||"天候未取得")+'　 ·　 馬場 '+esc(r.track_condition||"未取得")+'</div><div class="horses">'+(horses.length?horses.slice(0,8).map((h,i)=>'<div class="horse"><div class="num">'+esc(h.number??i+1)+'</div><div><div class="hname">'+esc(h.name||"馬名未取得")+'</div><div class="hdetail">予想 '+esc(h.predicted_rank??"—")+'位 · 馬体重 '+esc(h.weight??"未取得")+' · '+esc(h.surface_fit||"適性データ未取得")+'</div></div><div class="odds">'+(h.odds!=null?esc(h.odds)+"倍":"—")+'<small>'+(h.odds!=null?"単勝オッズ":"オッズ未取得")+'</small></div></div>').join(""):'<div class="empty">出走馬データはまだありません</div>')+'</div></article>';
+
+    return '<article class="race">'+
+      '<div class="racehead">'+
+        '<div><h3>'+esc(r.name||"レース名未取得")+'</h3>'+
+        '<div class="meta">'+esc(r.course||"競馬場未取得")+' · '+esc(r.post_time||"発走時刻未取得")+'</div></div>'+
+        '<span class="tag">'+(r.category==="local"?"地方競馬":"中央競馬")+'</span>'+
+      '</div>'+
+      '<div class="meta">📅 '+esc(r.date||"日付未取得")+
+      '<br>🌦 '+esc(r.weather||"天候未取得")+
+      '　 ·　 馬場 '+esc(r.track_condition||"未取得")+'</div>'+
+      '<div class="horses">'+
+      (horses.length
+        ?horses.slice(0,8).map((h,i)=>
+          '<div class="horse">'+
+            '<div class="num">'+esc(h.number??i+1)+'</div>'+
+            '<div><div class="hname">'+esc(h.name||"馬名未取得")+'</div>'+
+            '<div class="hdetail">予想 '+esc(h.predicted_rank??"—")+
+            '位 · 馬体重 '+esc(h.weight??"未取得")+
+            ' · '+esc(h.surface_fit||"適性データ未取得")+'</div></div>'+
+            '<div class="odds">'+(h.odds!=null?esc(h.odds)+"倍":"—")+
+            '<small>'+(h.odds!=null?"単勝オッズ":"オッズ未取得")+'</small></div>'+
+          '</div>'
+        ).join("")
+        :'<div class="empty">出走馬データはまだありません</div>'
+      )+
+      '</div></article>';
   }).join("")+'</div>';
 }
+
 async function init(){
   try{
     const res=await fetch("./data.json?v="+Date.now(),{cache:"no-store"});
     if(!res.ok)throw new Error("data.json HTTP "+res.status);
+
     const data=await res.json();
     const stats=data.paper_betting?.stats||{};
+
     renderStats(stats);
     allRaces=Array.isArray(data.races)?data.races:[];
     renderRaces();
-    const stamp=data.generated_at?new Date(data.generated_at).toLocaleString("ja-JP"):"更新日時未取得";
-    setText("status",(data.status==="OK"?"データ更新済み":data.status==="waiting_for_first_update"?"初回更新待ち":"データ読み込み完了")+" · "+stamp);
+
+    const stamp=data.generated_at
+      ?new Date(data.generated_at).toLocaleString("ja-JP")
+      :"更新日時未取得";
+
+    setText("status",
+      (data.status==="OK"?"データ更新済み":
+      data.status==="waiting_for_first_update"?"初回更新待ち":
+      "データ読み込み完了")+" · "+stamp
+    );
   }catch(e){
     setText("status","データ読み込みエラー");
-    document.getElementById("races").innerHTML='<div class="panel empty error">data.jsonを読み込めませんでした。<br>ファイル名と公開先を確認してください。<br>'+esc(e.message)+'</div>';
+    document.getElementById("races").innerHTML=
+      '<div class="panel empty error">data.jsonを読み込めませんでした。<br>ファイル名と公開先を確認してください。<br>'+
+      esc(e.message)+'</div>';
   }
 }
-document.querySelectorAll("[data-filter]").forEach(btn=>btn.addEventListener("click",()=>{
-  document.querySelectorAll("[data-filter]").forEach(b=>b.classList.toggle("active",b===btn));
-  filter=btn.dataset.filter;renderRaces();
-}));
+
+document.querySelectorAll("[data-filter]").forEach(btn=>
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll("[data-filter]").forEach(b=>
+      b.classList.toggle("active",b===btn)
+    );
+    filter=btn.dataset.filter;
+    renderRaces();
+  })
+);
+
 init();
 setInterval(init,120000);
 </script>
