@@ -80,11 +80,13 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 .badge-status.finished { background: #223247; color: var(--muted); }
 
 .race-meta { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
-.box-section { border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 11px; }
+.box-section { border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 11px; line-height: 1.6; }
 .box-top3 { background: var(--gold-bg); border: 1px solid #574421; }
 .box-outsider { background: var(--blue-bg); border: 1px solid #23436d; color: var(--blue); }
 .box-ticket { background: #142236; border: 1px solid #2d4568; }
 .box-result { background: var(--green-bg); border: 1px solid #235238; }
+
+.ticket-line { margin-top: 3px; font-size: 11px; }
 
 @media(min-width: 680px) {
   .grid { grid-template-columns: repeat(4, 1fr); }
@@ -104,7 +106,7 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 
 <main>
   <section class="panel">
-    <div class="panel-title">📊 仮想投資シミュレーション成績</div>
+    <div class="panel-title">📊 仮想投資シミュレーション成績 (初期資本10万円)</div>
     <div class="grid">
       <div class="metric"><div class="metric-label">総収支</div><div class="metric-val" id="profit">—</div></div>
       <div class="metric"><div class="metric-label">回収率</div><div class="metric-val" id="roi">—</div></div>
@@ -161,8 +163,10 @@ function renderRace(r) {
     const t = r.tickets[0];
     ticketHtml = '<div class="box-section box-ticket">' +
       '<b style="color:var(--gold)">🎯 予想買い目 (3連単フォーメーション)</b><br>' +
-      '1着:' + t.first.join(',') + ' → 2着:' + t.second.join(',') + ' → 3着:' + t.third.join(',') + '<br>' +
-      '<span style="color:var(--gold); font-weight:bold">計 ' + t.points + '点 (' + (t.points * 100) + '円)</span>' +
+      '<div class="ticket-line"><b>1着:</b> ' + t.first.join(', ') + '</div>' +
+      '<div class="ticket-line"><b>2着:</b> ' + t.second.join(', ') + '</div>' +
+      '<div class="ticket-line"><b>3着:</b> ' + t.third.join(', ') + '</div>' +
+      '<div style="margin-top:4px; color:var(--gold); font-weight:bold">計 ' + t.points + '点 (' + (t.points * 100) + '円)</div>' +
     '</div>';
   }
 
@@ -172,7 +176,7 @@ function renderRace(r) {
     const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
     resultHtml = '<div class="box-section box-result">' +
       '<b style="color:var(--green)">🏁 レース確定結果</b>' + hitText + '<br>' +
-      '<b>1〜3着馬番:</b> ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果データなし') +
+      '<b>1〜3着馬番:</b> ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果データ確認中') +
     '</div>';
   }
 
@@ -230,7 +234,7 @@ async function init() {
     $('profit').className = 'metric-val ' + (st.profit_yen > 0 ? 'pos' : st.profit_yen < 0 ? 'neg' : '');
     $('roi').textContent = (st.roi_pct || 0) + '%';
     $('hitrate').textContent = (st.win_hit_rate_pct || 0) + '%';
-    $('balance').textContent = yen(st.virtual_balance_yen || 10000);
+    $('balance').textContent = yen(st.virtual_balance_yen || 100000);
 
     render();
   } catch (e) {
