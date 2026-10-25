@@ -20,6 +20,8 @@
   --red: #ff8794;
   --blue: #79b8ff;
   --blue-bg: #122238;
+  --purple-bg: #221730; /* パターンB用背景 */
+  --purple-border: #523475; /* パターンB用枠線 */
 }
 * { box-sizing: border-box; }
 body {
@@ -83,9 +85,12 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 .box-section { border-radius: 10px; padding: 10px; margin-top: 8px; font-size: 11px; line-height: 1.6; }
 .box-top3 { background: var(--gold-bg); border: 1px solid #574421; }
 .box-outsider { background: var(--blue-bg); border: 1px solid #23436d; color: var(--blue); }
-.box-ticket { background: #142236; border: 1px solid #2d4568; }
-.box-result { background: var(--green-bg); border: 1px solid #235238; }
 
+/* パターンA・Bごとの買い目ボックス背景色分け */
+.box-ticket-a { background: #142236; border: 1px solid #2d4568; }
+.box-ticket-b { background: var(--purple-bg); border: 1px solid var(--purple-border); }
+
+.box-result { background: var(--green-bg); border: 1px solid #235238; }
 .ticket-line { margin-top: 3px; font-size: 11px; }
 
 @media(min-width: 680px) {
@@ -111,152 +116,4 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
       <div class="metric"><div class="metric-label">総収支</div><div class="metric-val" id="profit">—</div></div>
       <div class="metric"><div class="metric-label">回収率</div><div class="metric-val" id="roi">—</div></div>
       <div class="metric"><div class="metric-label">単勝的中率</div><div class="metric-val" id="hitrate">—</div></div>
-      <div class="metric"><div class="metric-label">仮想残高</div><div class="metric-val" id="balance">—</div></div>
-    </div>
-  </section>
-
-  <section>
-    <div class="filter-group">
-      <button class="filter-btn active" onclick="setTab('today', this)">本日発走レース</button>
-      <button class="filter-btn" onclick="setTab('tomorrow', this)">🔥 翌日おすすめメイン</button>
-    </div>
-    <div class="filter-group">
-      <button class="filter-btn active" onclick="setCategory('all', this)">すべて</button>
-      <button class="filter-btn" onclick="setCategory('central', this)">中央競馬</button>
-      <button class="filter-btn" onclick="setCategory('local', this)">地方競馬</button>
-    </div>
-
-    <div id="races" class="racegrid">
-      <div style="text-align:center; padding:40px; color:var(--muted)">データを読み込み中…</div>
-    </div>
-  </section>
-</main>
-
-<script>
-let data = null;
-let currentTab = 'today';
-let currentCat = 'all';
-
-const $ = id => document.getElementById(id);
-const yen = n => (Number(n) || 0).toLocaleString() + "円";
-
-function setTab(t, btn) {
-  currentTab = t;
-  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  render();
-}
-
-function setCategory(c, btn) {
-  currentCat = c;
-  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  render();
-}
-
-function renderRace(r) {
-  const top3 = (r.top5 || []).slice(0, 3);
-  const isFinished = r.is_finished;
-
-  let ticketHtml = '';
-  if (r.tickets && r.tickets.length) {
-    const t = r.tickets[0];
-    const lines = t.lines || [];
-    ticketHtml = '<div class="box-section box-ticket">' +
-      '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">' +
-        '<b style="color:var(--gold)">🎯 2,000円マルチ買い目</b>' +
-        '<span style="color:var(--gold); font-weight:bold; font-size:10px; background:#291e0d; padding:2px 6px; border-radius:4px">' + (t.pattern || '2,000円配分') + '</span>' +
-      '</div>' +
-      (lines.length ? lines.map(line => '<div class="ticket-line">• ' + line + '</div>').join('') : '') +
-      '<div style="margin-top:6px; font-size:10px; color:var(--muted)">💡 ' + (t.note || '') + '</div>' +
-    '</div>';
-  }
-
-  let resultHtml = '';
-  if (isFinished) {
-    const finishes = r.result_finishes || [];
-    const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
-    resultHtml = '<div class="box-section box-result">' +
-      '<b style="color:var(--green)">🏁 レース確定結果</b>' + hitText + '<br>' +
-      '<b>1〜3着馬番:</b> ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果データ確認中') +
-    '</div>';
-  }
-
-  return '<article class="race-card ' + (isFinished ? 'finished' : '') + '">' +
-    '<div class="race-header">' +
-      '<div>' +
-        '<span class="tag-cat" style="margin-right:6px">' + (r.category === 'local' ? '地方' : '中央') + '</span>' +
-        '<h3 class="race-title" style="display:inline">' + (r.race_no || '') + 'R ' + (r.name || '') + '</h3>' +
-      '</div>' +
-      '<span class="badge-status ' + (isFinished ? 'finished' : 'upcoming') + '">' +
-        (isFinished ? 'レース終了' : '発走前') +
-      '</span>' +
-    '</div>' +
-    '<div class="race-meta">' + (r.course || '') + ' | 発走: ' + (r.post_time || '') + '</div>' +
-    '<div class="box-section box-top3">' +
-      '<div style="font-weight:bold; color:var(--gold); margin-bottom:4px">🔥 注目上位馬</div>' +
-      (top3.length ? top3.map((h, i) => '<div>' + (i+1) + '位: 馬番 ' + (h.number || h.horse_no) + ' ' + (h.name || h.horse) + ' (単勝 ' + (h.odds || '-') + '倍)</div>').join('') : 'データ準備中') +
-    '</div>' +
-    (r.outsiders && r.outsiders.length > 0 ? '<div class="box-section box-outsider">💡 注目穴馬: ' + r.outsiders.map(o => o.name || o.horse).join(', ') + '</div>' : '') +
-    ticketHtml +
-    resultHtml +
-  '</article>';
-}
-
-function render() {
-  const container = $('races');
-  if (!data) {
-    container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">データがありません</div>';
-    return;
-  }
-
-  // bot.py の paper_betting.stats から成績を反映
-  if (data.paper_betting && data.paper_betting.stats) {
-    const s = data.paper_betting.stats;
-    const profit = s.profit_yen || 0;
-    const profitEl = $('profit');
-    profitEl.textContent = (profit >= 0 ? '+' : '') + profit.toLocaleString() + '円';
-    profitEl.className = 'metric-val ' + (profit >= 0 ? 'pos' : 'neg');
-    
-    $('roi').textContent = (s.roi_pct || 0).toFixed(1) + '%';
-    $('hitrate').textContent = (s.win_hit_rate_pct || 0).toFixed(1) + '%';
-    $('balance').textContent = (s.virtual_balance_yen || 100000).toLocaleString() + '円';
-  }
-
-  // タブ切り替えに応じたデータソース選択 (today vs tomorrow_races)
-  let targetList = (currentTab === 'today') ? (data.races || []) : (data.tomorrow_races || []);
-
-  // カテゴリフィルタリング
-  const filtered = targetList.filter(r => {
-    if (currentCat !== 'all' && r.category !== currentCat) return false;
-    return true;
-  });
-
-  if (filtered.length === 0) {
-    container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">該当するレースはありません</div>';
-    return;
-  }
-
-  container.innerHTML = filtered.map(renderRace).join('');
-}
-
-async function init() {
-  const container = $('races');
-  container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">データを読み込み中…</div>';
-  try {
-    // キャッシュ回避のクエリ付与
-    const res = await fetch('./data.json?t=' + new Date().getTime());
-    if (!res.ok) throw new Error('データ取得に失敗しました');
-    data = await res.json();
-    render();
-  } catch (e) {
-    container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--red)">データの読み込みに失敗しました</div>';
-    console.error(e);
-  }
-}
-
-// 初回実行
-init();
-</script>
-</body>
-</html>
+      <div class="metric"><div class="metric-label">仮想残高</div><div class="
