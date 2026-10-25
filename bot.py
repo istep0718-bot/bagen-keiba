@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Ultimate Engine with Pattern A/B 2000-Yen Multi Betting
+# BAGEN KEIBA - Ultimate Engine with Pattern A/B 2000-Yen Multi Betting (Clean Reset Ver.)
 
 import json
 import math
@@ -72,7 +72,7 @@ def get_html(url):
     try:
         res = requests.get(url, headers=HEADERS, timeout=15)
         res.raise_for_status()
-        res.encoding = res.apparent_encoding or "utf-8"
+        res.encoding = res.apparent_encoding or "text/html"
         return res.text
     except Exception:
         return ""
@@ -184,8 +184,20 @@ def parse_race(html, rid, kind, base_url):
             continue
 
         cells = row.find_all(["td", "th"], recursive=False)
-        no_text = text_of(row.select_one("td.Umaban, .Umaban, [class*='Umaban']"))
-        no_val = number(no_text) or (number(text_of(cells[1])) if len(cells) >= 2 else None)
+        
+        # 中央・地方のHTML構造に対応した堅牢な馬番抽出
+        no_val = None
+        no_text = text_of(row.select_one("td.Umaban, .Umaban, [class*='Umaban'], [class*='Num']"))
+        no_val = number(no_text)
+        
+        if not no_val and len(cells) >= 3:
+            for idx in [1, 2, 0]:
+                if idx < len(cells):
+                    val = number(text_of(cells[idx]))
+                    if val and 1 <= val <= 18:
+                        no_val = val
+                        break
+
         if not no_val:
             continue
 
@@ -254,6 +266,7 @@ def parse_race(html, rid, kind, base_url):
             h1 = outsiders[0]["horse_no"]
             h1_name = horse_dict.get(h1, "")
             tickets.append({
+                "pattern_type": "B",
                 "pattern": "パターンB（波乱狙い・穴馬警戒）",
                 "cost_yen": 2000,
                 "lines": [
@@ -268,6 +281,7 @@ def parse_race(html, rid, kind, base_url):
             h_sub = top5[3]["horse_no"] if len(top5) >= 4 else b3
             h_sub_name = horse_dict.get(h_sub, "")
             tickets.append({
+                "pattern_type": "A",
                 "pattern": "パターンA（堅調・本命重視）",
                 "cost_yen": 2000,
                 "lines": [
@@ -318,7 +332,10 @@ def parse_race(html, rid, kind, base_url):
 
 
 def main():
-    history = load_json(HISTORY, {"schema_version": 12, "snapshots": {}})
+    # --- 【クリーンリセット】 ---
+    # 過去の履歴を引き継がず、今回のコード＆データ張り替えのタイミングから新しく検証を始めるため、
+    # history.json の中身を初期化（リセット）してスタートします。
+    history = {"schema_version": 13, "snapshots": {}}
     snapshots = history.get("snapshots", {})
 
     today_races, tomorrow_races = [], []
@@ -390,7 +407,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Engine updated (Pattern A/B). Today: {len(today_races)}, Settled: {len(settled)}")
+    print(f"BAGEN Engine updated (Clean Reset / Pattern A/B). Today: {len(today_races)}, Settled: {len(settled)}")
 
 
 if __name__ == "__main__":
