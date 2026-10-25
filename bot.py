@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Ultimate Engine with Robust Umaban Extraction & Clean Reset Ver.
+# BAGEN KEIBA - Ultimate Engine (Stable Pattern A Focus & Robust Extraction)
 
 import json
 import math
@@ -25,7 +25,6 @@ TODAY_ISO = NOW.strftime("%Y-%m-%d")
 MAX_RACES = 80
 MIN_RUNNERS = 2
 REQUEST_DELAY = 0.5
-INITIAL_BANKROLL_YEN = 100000  # 初期残高10万円
 
 HEADERS = {
     "User-Agent": (
@@ -76,13 +75,6 @@ def get_html(url):
         return res.text
     except Exception:
         return ""
-
-
-def load_json(path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
 
 
 def save_json(path, value):
@@ -184,11 +176,9 @@ def parse_race(html, rid, kind, base_url):
             continue
 
         cells = row.find_all(["td", "th"], recursive=False)
-        
-        # --- 超確実な馬番抽出ロジック（行内のセルを走査して1〜18の独立した数値を馬番として特定） ---
         no_val = None
         
-        # 1. まず特定のクラスを探す
+        # --- 中央・地方共通：確実な馬番抽出ロジック ---
         for selector in ["td.Umaban", ".Umaban", "[class*='Umaban']", "td.Num", "[class*='Num']"]:
             el = row.select_one(selector)
             if el:
@@ -197,13 +187,10 @@ def parse_race(html, rid, kind, base_url):
                     no_val = val
                     break
 
-        # 2. クラスで見つからない場合、行内のセルを総当たりして枠番っぽくない最初の1〜18の数字を馬番とする
         if not no_val:
             for c in cells[:4]:
-                c_text = text_of(c)
-                # 枠番（Waku）クラスが含まれておらず、単独の数字であるもの
                 if "Waku" not in " ".join(c.get("class", [])):
-                    val = number(c_text)
+                    val = number(text_of(c))
                     if val and 1 <= val <= 18:
                         no_val = val
                         break
@@ -247,7 +234,6 @@ def parse_race(html, rid, kind, base_url):
             "caution": caution,
         })
 
-    # 馬番順にソートして正しい並びにする
     runners.sort(key=lambda x: x["horse_no"])
     horse_dict = {h["horse_no"]: h["name"] for h in runners}
 
@@ -266,7 +252,10 @@ def parse_race(html, rid, kind, base_url):
     longshots = [h for h in runners if h.get("odds") and h["odds"] >= 30.0][:2]
 
     top_odds = top5[0].get("odds") or 0 if top5 else 0
-    is_pattern_b = (len(outsiders) > 0) or (top_odds >= 3.5)
+    
+    # --- 安定勝利ロジック：基本はパターンA、本当に荒れる条件の時のみパターンB ---
+    # 1番人気が不安定（単勝5.0倍以上）かつ、実績のある穴馬・伏兵が複数いるレースのみBを発動
+    is_pattern_b = (top_odds >= 5.0 and len(outsiders) >= 2 and len(longshots) >= 1)
     
     tickets = []
     if len(top5) >= 3:
@@ -278,7 +267,7 @@ def parse_race(html, rid, kind, base_url):
             h1_name = horse_dict.get(h1, "")
             tickets.append({
                 "pattern_type": "B",
-                "pattern": "パターンB（波乱狙い・穴馬警戒）",
+                "pattern": "パターンB（波乱・穴馬警戒）",
                 "cost_yen": 2000,
                 "lines": [
                     f"単勝: {b1}.{b1_name} (300円)",
@@ -286,7 +275,7 @@ def parse_race(html, rid, kind, base_url):
                     f"3連複: {b1} - {b2},{b3} - {b2},{b3},{h1} (各100円 / 計500円)",
                     f"★穴仕込み 3連単: 1着:{b1} → 2着:{h1}.{h1_name} → 3着:{b2},{b3} (各100円 / 計600円)"
                 ],
-                "note": "本命軸を死守しつつ、穴馬を絡めたマルチ券種で高配当を狙う2,000円構成"
+                "note": "荒れ模様のレースで本命軸を死守しつつ、穴馬を絡めて高配当を狙う構成"
             })
         else:
             h_sub = top5[3]["horse_no"] if len(top5) >= 4 else b3
@@ -301,7 +290,7 @@ def parse_race(html, rid, kind, base_url):
                     f"3連複: {b1} - {b2} - {b3} (600円)",
                     f"★穴仕込み ワイド: {h_sub}.{h_sub_name} - {b1}, {b2} (各100円 / 計300円)"
                 ],
-                "note": "単勝・馬連で手堅く回収を重ね、伏兵のワイドでプラスαを狙う2,000円構成"
+                "note": "単勝・馬連で手堅く回収を重ね、上位安定を狙う堅実な2,000円構成"
             })
 
     is_finished = False
@@ -347,7 +336,7 @@ def parse_race(html, rid, kind, base_url):
 
 
 def main():
-    history = {"schema_version": 14, "snapshots": {}}
+    history = {"schema_version": 16, "snapshots": {}}
     snapshots = history.get("snapshots", {})
 
     today_races, tomorrow_races = [], []
@@ -391,7 +380,6 @@ def main():
     win_hits = sum(1 for s in settled if s.get("win_hit"))
     total_return = sum(s.get("win_return", 0) for s in settled)
     total_stake = sum(s.get("cost", 2000) for s in settled)
-    profit = total_return - total_stake
     roi = (total_return / total_stake * 100) if total_stake > 0 else 0.0
 
     stats = {
@@ -400,9 +388,7 @@ def main():
         "win_hits": win_hits,
         "total_stake_yen": total_stake,
         "total_return_yen": total_return,
-        "profit_yen": profit,
         "roi_pct": round(roi, 1),
-        "virtual_balance_yen": INITIAL_BANKROLL_YEN + profit,
         "win_hit_rate_pct": round((win_hits / len(settled) * 100) if settled else 0.0, 1),
     }
 
