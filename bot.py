@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Robust Engine for Race Data, Prediction & Settlement
+# BAGEN KEIBA - Ultimate Engine with Pattern A/B 2000-Yen Multi Betting
 
 import json
 import math
@@ -25,8 +25,7 @@ TODAY_ISO = NOW.strftime("%Y-%m-%d")
 MAX_RACES = 80
 MIN_RUNNERS = 2
 REQUEST_DELAY = 0.5
-BET_UNIT_YEN = 100
-INITIAL_BANKROLL_YEN = 100000  # 初期残高を10万円に変更
+INITIAL_BANKROLL_YEN = 100000  # 初期残高10万円
 
 HEADERS = {
     "User-Agent": (
@@ -244,28 +243,43 @@ def parse_race(html, rid, kind, base_url):
     outsiders = [h for h in runners if h.get("odds") and 10.0 <= h["odds"] < 30.0][:3]
     longshots = [h for h in runners if h.get("odds") and h["odds"] >= 30.0][:2]
 
-    # わかりやすい馬番＋馬名表記の買い目を生成
+    # --- 1レース2,000円固定：パターンA(堅調) / パターンB(荒れ模様・穴仕込み) の自動判定 ---
+    top_odds = top5[0].get("odds") or 0 if top5 else 0
+    is_pattern_b = (len(outsiders) > 0) or (top_odds >= 3.5)
+    
     tickets = []
     if len(top5) >= 3:
         b1, b2, b3 = top5[0]["horse_no"], top5[1]["horse_no"], top5[2]["horse_no"]
-        legs = list(set([h["horse_no"] for h in top5[1:]] + [h["horse_no"] for h in outsiders + longshots]))
-        third_legs = legs[:6]
+        b1_name, b2_name, b3_name = horse_dict.get(b1, ""), horse_dict.get(b2, ""), horse_dict.get(b3, "")
         
-        # 馬名付きの文字配列を作成
-        first_str = [f"{b1}.{horse_dict.get(b1, '')}"]
-        second_str = [f"{b2}.{horse_dict.get(b2, '')}", f"{b3}.{horse_dict.get(b3, '')}"]
-        third_str = [f"{no}.{horse_dict.get(no, '')}" for no in third_legs]
-
-        points = max(4, len(third_legs) * 2)
-        tickets.append({
-            "type": "3連単 フォーメーション",
-            "first": first_str,
-            "second": second_str,
-            "third": third_str,
-            "points": points,
-            "cost_yen": points * BET_UNIT_YEN,
-            "note": "本命軸から穴馬への高配当流し"
-        })
+        if is_pattern_b and outsiders:
+            h1 = outsiders[0]["horse_no"]
+            h1_name = horse_dict.get(h1, "")
+            tickets.append({
+                "pattern": "パターンB（波乱狙い・穴馬警戒）",
+                "cost_yen": 2000,
+                "lines": [
+                    f"単勝: {b1}.{b1_name} (300円)",
+                    f"馬連: {b1} - {b2}, {b3}, {h1}.{h1_name} (各200円 / 計600円)",
+                    f"3連複: {b1} - {b2},{b3} - {b2},{b3},{h1} (各100円 / 計500円)",
+                    f"★穴仕込み 3連単: 1着:{b1} → 2着:{h1}.{h1_name} → 3着:{b2},{b3} (各100円 / 計600円)"
+                ],
+                "note": "本命軸を死守しつつ、穴馬を絡めたマルチ券種で高配当を狙う2,000円構成"
+            })
+        else:
+            h_sub = top5[3]["horse_no"] if len(top5) >= 4 else b3
+            h_sub_name = horse_dict.get(h_sub, "")
+            tickets.append({
+                "pattern": "パターンA（堅調・本命重視）",
+                "cost_yen": 2000,
+                "lines": [
+                    f"単勝: {b1}.{b1_name} (500円)",
+                    f"馬連: {b1} - {b2}, {b3} (各300円 / 計600円)",
+                    f"3連複: {b1} - {b2} - {b3} (600円)",
+                    f"★穴仕込み ワイド: {h_sub}.{h_sub_name} - {b1}, {b2} (各100円 / 計300円)"
+                ],
+                "note": "単勝・馬連で手堅く回収を重ね、伏兵のワイドでプラスαを狙う2,000円構成"
+            })
 
     is_finished = False
     if post_time:
@@ -300,13 +314,13 @@ def parse_race(html, rid, kind, base_url):
         "is_finished": is_finished,
         "result_finishes": result_finishes,
         "win_hit": win_hit,
-        "win_return": 1200 if win_hit else 0, # 仮想確定払戻
+        "win_return": 2500 if win_hit else 0,  # 的中時の仮想払戻
         "is_recommended": (race_no == 11 or len(outsiders) >= 2)
     }
 
 
 def main():
-    history = load_json(HISTORY, {"schema_version": 11, "snapshots": {}})
+    history = load_json(HISTORY, {"schema_version": 12, "snapshots": {}})
     snapshots = history.get("snapshots", {})
 
     today_races, tomorrow_races = [], []
@@ -329,13 +343,12 @@ def main():
                     r_data["is_tomorrow"] = is_tomorrow
                     target_list.append(r_data)
 
-                    # 履歴スナップショットに自動保存（通算成績保持のため）
                     race_key = str(rid)
                     if race_key not in snapshots and not is_tomorrow:
                         snapshots[race_key] = {
                             "race_id": rid,
                             "date": TODAY_ISO,
-                            "cost": r_data["tickets"][0]["cost_yen"] if r_data["tickets"] else 800,
+                            "cost": 2000,
                             "is_finished": r_data["is_finished"],
                             "win_hit": r_data["win_hit"],
                             "win_return": r_data["win_return"]
@@ -347,11 +360,10 @@ def main():
 
                 time.sleep(REQUEST_DELAY)
 
-    # 累計成績計算（過去全レース通算）
     settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit") is not None]
     win_hits = sum(1 for s in settled if s.get("win_hit"))
     total_return = sum(s.get("win_return", 0) for s in settled if s.get("win_hit"))
-    total_stake = sum(s.get("cost", 800) for s in settled)
+    total_stake = sum(s.get("cost", 2000) for s in settled)
     profit = total_return - total_stake
     roi = (total_return / total_stake * 100) if total_stake > 0 else 0.0
 
@@ -380,7 +392,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Engine updated. Today: {len(today_races)}, Cumulative Settled: {len(settled)}")
+    print(f"BAGEN Engine updated (Pattern A/B). Today: {len(today_races)}, Settled: {len(settled)}")
 
 
 if __name__ == "__main__":
