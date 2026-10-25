@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Ultimate Engine with Pattern A/B 2000-Yen Multi Betting (Clean Reset Ver.)
+# BAGEN KEIBA - Ultimate Engine with Robust Umaban Extraction & Clean Reset Ver.
 
 import json
 import math
@@ -185,14 +185,20 @@ def parse_race(html, rid, kind, base_url):
 
         cells = row.find_all(["td", "th"], recursive=False)
         
+        # --- 中央・地方競馬対応：馬番の超堅牢抽出ロジック ---
         no_val = None
-        no_text = text_of(row.select_one("td.Umaban, .Umaban, [class*='Umaban'], [class*='Num']"))
-        no_val = number(no_text)
-        
-        if not no_val and len(cells) >= 3:
-            for idx in [1, 2, 0]:
-                if idx < len(cells):
-                    val = number(text_of(cells[idx]))
+        # パターン1: netkeiba中央で多用される .Umaban, td.Umaban, td[class*='Umaban']
+        umaban_el = row.select_one("td.Umaban, .Umaban, [class*='Umaban'], td.Num, [class*='Num']")
+        if umaban_el:
+            no_val = number(text_of(umaban_el))
+
+        # パターン2: テーブルセル位置から特定 (通常、枠番セル(cells[0])の次のcells[1]が馬番)
+        if not no_val and len(cells) >= 2:
+            for c in cells[:3]:
+                # 枠番用（Waku）以外のセルから数字を取得
+                c_class = " ".join(c.get("class", []))
+                if "Waku" not in c_class:
+                    val = number(text_of(c))
                     if val and 1 <= val <= 18:
                         no_val = val
                         break
@@ -301,10 +307,15 @@ def parse_race(html, rid, kind, base_url):
 
     result_finishes = []
     win_hit = None
+    win_return = 0
     if is_finished:
         result_finishes = fetch_race_results(base_url, rid)
         if result_finishes and top5:
             win_hit = (top5[0]["horse_no"] == result_finishes[0])
+            # 単勝的中時の配当（オッズ×単勝購入額、データ取得できない場合は2,000円均一計算）
+            if win_hit:
+                o = top5[0].get("odds") or 2.0
+                win_return = int(500 * o) if not is_pattern_b else int(300 * o)
 
     return {
         "id": rid,
@@ -325,13 +336,14 @@ def parse_race(html, rid, kind, base_url):
         "is_finished": is_finished,
         "result_finishes": result_finishes,
         "win_hit": win_hit,
-        "win_return": 2500 if win_hit else 0,
+        "win_return": win_return,
         "is_recommended": (race_no == 11 or len(outsiders) >= 2)
     }
 
 
 def main():
-    history = {"schema_version": 13, "snapshots": {}}
+    # 過去履歴のリセットと新規集計
+    history = {"schema_version": 14, "snapshots": {}}
     snapshots = history.get("snapshots", {})
 
     today_races, tomorrow_races = [], []
@@ -373,7 +385,7 @@ def main():
 
     settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit") is not None]
     win_hits = sum(1 for s in settled if s.get("win_hit"))
-    total_return = sum(s.get("win_return", 0) for s in settled if s.get("win_hit"))
+    total_return = sum(s.get("win_return", 0) for s in settled)
     total_stake = sum(s.get("cost", 2000) for s in settled)
     profit = total_return - total_stake
     roi = (total_return / total_stake * 100) if total_stake > 0 else 0.0
@@ -403,7 +415,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Engine updated (Clean Reset / Pattern A/B). Today: {len(today_races)}, Settled: {len(settled)}")
+    print(f"BAGEN Engine updated. Today: {len(today_races)}, Settled: {len(settled)}")
 
 
 if __name__ == "__main__":
