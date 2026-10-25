@@ -186,9 +186,77 @@ function renderRace(r) {
     '<div class="race-header">' +
       '<div>' +
         '<span class="tag-cat" style="margin-right:6px">' + (r.category === 'local' ? '地方' : '中央') + '</span>' +
-        '<h3 class="race-title" style="display:inline">' + r.race_no + 'R ' + r.name + '</h3>' +
+        '<h3 class="race-title" style="display:inline">' + (r.race_no || '') + 'R ' + (r.name || '') + '</h3>' +
       '</div>' +
       '<span class="badge-status ' + (isFinished ? 'finished' : 'upcoming') + '">' +
         (isFinished ? 'レース終了' : '発走前') +
       '</span>' +
+    '</div>' +
+    '<div class="race-meta">' + (r.course || '') + ' | 発走: ' + (r.post_time || '') + '</div>' +
+    '<div class="box-section box-top3">' +
+      '<div style="font-weight:bold; color:var(--gold); margin-bottom:4px">🔥 注目上位馬</div>' +
+      (top3.length ? top3.map((h, i) => '<div>' + (i+1) + '位: 馬番 ' + (h.number || h.horse_no) + ' ' + (h.name || h.horse) + ' (単勝 ' + (h.odds || '-') + '倍)</div>').join('') : 'データ準備中') +
+    '</div>' +
+    (r.outsiders && r.outsiders.length > 0 ? '<div class="box-section box-outsider">💡 注目穴馬: ' + r.outsiders.map(o => o.name || o.horse).join(', ') + '</div>' : '') +
+    ticketHtml +
+    resultHtml +
+  '</article>';
+}
+
+function render() {
+  const container = $('races');
+  if (!data) {
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">データがありません</div>';
+    return;
+  }
+
+  // bot.py の paper_betting.stats から成績を反映
+  if (data.paper_betting && data.paper_betting.stats) {
+    const s = data.paper_betting.stats;
+    const profit = s.profit_yen || 0;
+    const profitEl = $('profit');
+    profitEl.textContent = (profit >= 0 ? '+' : '') + profit.toLocaleString() + '円';
+    profitEl.className = 'metric-val ' + (profit >= 0 ? 'pos' : 'neg');
     
+    $('roi').textContent = (s.roi_pct || 0).toFixed(1) + '%';
+    $('hitrate').textContent = (s.win_hit_rate_pct || 0).toFixed(1) + '%';
+    $('balance').textContent = (s.virtual_balance_yen || 100000).toLocaleString() + '円';
+  }
+
+  // タブ切り替えに応じたデータソース選択 (today vs tomorrow_races)
+  let targetList = (currentTab === 'today') ? (data.races || []) : (data.tomorrow_races || []);
+
+  // カテゴリフィルタリング
+  const filtered = targetList.filter(r => {
+    if (currentCat !== 'all' && r.category !== currentCat) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">該当するレースはありません</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(renderRace).join('');
+}
+
+async function init() {
+  const container = $('races');
+  container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">データを読み込み中…</div>';
+  try {
+    // キャッシュ回避のクエリ付与
+    const res = await fetch('./data.json?t=' + new Date().getTime());
+    if (!res.ok) throw new Error('データ取得に失敗しました');
+    data = await res.json();
+    render();
+  } catch (e) {
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--red)">データの読み込みに失敗しました</div>';
+    console.error(e);
+  }
+}
+
+// 初回実行
+init();
+</script>
+</body>
+</html>
