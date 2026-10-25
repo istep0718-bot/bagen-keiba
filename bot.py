@@ -185,20 +185,25 @@ def parse_race(html, rid, kind, base_url):
 
         cells = row.find_all(["td", "th"], recursive=False)
         
-        # --- 中央・地方競馬対応：馬番の超堅牢抽出ロジック ---
+        # --- 超確実な馬番抽出ロジック（行内のセルを走査して1〜18の独立した数値を馬番として特定） ---
         no_val = None
-        # パターン1: netkeiba中央で多用される .Umaban, td.Umaban, td[class*='Umaban']
-        umaban_el = row.select_one("td.Umaban, .Umaban, [class*='Umaban'], td.Num, [class*='Num']")
-        if umaban_el:
-            no_val = number(text_of(umaban_el))
+        
+        # 1. まず特定のクラスを探す
+        for selector in ["td.Umaban", ".Umaban", "[class*='Umaban']", "td.Num", "[class*='Num']"]:
+            el = row.select_one(selector)
+            if el:
+                val = number(text_of(el))
+                if val and 1 <= val <= 18:
+                    no_val = val
+                    break
 
-        # パターン2: テーブルセル位置から特定 (通常、枠番セル(cells[0])の次のcells[1]が馬番)
-        if not no_val and len(cells) >= 2:
-            for c in cells[:3]:
-                # 枠番用（Waku）以外のセルから数字を取得
-                c_class = " ".join(c.get("class", []))
-                if "Waku" not in c_class:
-                    val = number(text_of(c))
+        # 2. クラスで見つからない場合、行内のセルを総当たりして枠番っぽくない最初の1〜18の数字を馬番とする
+        if not no_val:
+            for c in cells[:4]:
+                c_text = text_of(c)
+                # 枠番（Waku）クラスが含まれておらず、単独の数字であるもの
+                if "Waku" not in " ".join(c.get("class", [])):
+                    val = number(c_text)
                     if val and 1 <= val <= 18:
                         no_val = val
                         break
@@ -242,6 +247,7 @@ def parse_race(html, rid, kind, base_url):
             "caution": caution,
         })
 
+    # 馬番順にソートして正しい並びにする
     runners.sort(key=lambda x: x["horse_no"])
     horse_dict = {h["horse_no"]: h["name"] for h in runners}
 
@@ -312,7 +318,6 @@ def parse_race(html, rid, kind, base_url):
         result_finishes = fetch_race_results(base_url, rid)
         if result_finishes and top5:
             win_hit = (top5[0]["horse_no"] == result_finishes[0])
-            # 単勝的中時の配当（オッズ×単勝購入額、データ取得できない場合は2,000円均一計算）
             if win_hit:
                 o = top5[0].get("odds") or 2.0
                 win_return = int(500 * o) if not is_pattern_b else int(300 * o)
@@ -342,7 +347,6 @@ def parse_race(html, rid, kind, base_url):
 
 
 def main():
-    # 過去履歴のリセットと新規集計
     history = {"schema_version": 14, "snapshots": {}}
     snapshots = history.get("snapshots", {})
 
