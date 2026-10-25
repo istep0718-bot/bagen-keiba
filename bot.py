@@ -172,7 +172,6 @@ def parse_race(html, rid, kind, base_url):
     m_dist = re.search(r"(\d{3,4})\s*m?", meta_text)
     distance = int(m_dist.group(1)) if m_dist else None
 
-    # 出走馬解析
     rows = soup.select("tr.HorseList, tr[class*='Horse'], table.Shutuba_Table tr, table.ShutubaTable tr, table tr")
     runners, seen_horses = [], set()
 
@@ -243,7 +242,6 @@ def parse_race(html, rid, kind, base_url):
     outsiders = [h for h in runners if h.get("odds") and 10.0 <= h["odds"] < 30.0][:3]
     longshots = [h for h in runners if h.get("odds") and h["odds"] >= 30.0][:2]
 
-    # --- 1レース2,000円固定：パターンA(堅調) / パターンB(荒れ模様・穴仕込み) の自動判定 ---
     top_odds = top5[0].get("odds") or 0 if top5 else 0
     is_pattern_b = (len(outsiders) > 0) or (top_odds >= 3.5)
     
@@ -314,7 +312,7 @@ def parse_race(html, rid, kind, base_url):
         "is_finished": is_finished,
         "result_finishes": result_finishes,
         "win_hit": win_hit,
-        "win_return": 2500 if win_hit else 0,  # 的中時の仮想払戻
+        "win_return": 2500 if win_hit else 0,
         "is_recommended": (race_no == 11 or len(outsiders) >= 2)
     }
 
