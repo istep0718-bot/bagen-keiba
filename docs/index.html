@@ -161,12 +161,14 @@ function renderRace(r) {
   let ticketHtml = '';
   if (r.tickets && r.tickets.length) {
     const t = r.tickets[0];
+    const lines = t.lines || [];
     ticketHtml = '<div class="box-section box-ticket">' +
-      '<b style="color:var(--gold)">🎯 予想買い目 (3連単フォーメーション)</b><br>' +
-      '<div class="ticket-line"><b>1着:</b> ' + t.first.join(', ') + '</div>' +
-      '<div class="ticket-line"><b>2着:</b> ' + t.second.join(', ') + '</div>' +
-      '<div class="ticket-line"><b>3着:</b> ' + t.third.join(', ') + '</div>' +
-      '<div style="margin-top:4px; color:var(--gold); font-weight:bold">計 ' + t.points + '点 (' + (t.points * 100) + '円)</div>' +
+      '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">' +
+        '<b style="color:var(--gold)">🎯 2,000円マルチ買い目</b>' +
+        '<span style="color:var(--gold); font-weight:bold; font-size:10px; background:#291e0d; padding:2px 6px; border-radius:4px">' + (t.pattern || '2,000円配分') + '</span>' +
+      '</div>' +
+      (lines.length ? lines.map(line => '<div class="ticket-line">• ' + line + '</div>').join('') : '') +
+      '<div style="margin-top:6px; font-size:10px; color:var(--muted)">💡 ' + (t.note || '') + '</div>' +
     '</div>';
   }
 
@@ -189,60 +191,4 @@ function renderRace(r) {
       '<span class="badge-status ' + (isFinished ? 'finished' : 'upcoming') + '">' +
         (isFinished ? 'レース終了' : '発走前') +
       '</span>' +
-    '</div>' +
-    '<div class="race-meta">' + r.course + ' ' + (r.surface || '') + ' ' + (r.distance_m ? r.distance_m + 'm' : '') + ' 発走:' + (r.post_time || '未定') + '</div>' +
-
-    '<div class="box-section box-top3">' +
-      '<b style="color:var(--gold)">🏆 本命 TOP 3:</b> ' +
-      (top3.length ? top3.map(h => h.horse_no + '.' + h.name).join(' / ') : '解析中') +
-    '</div>' +
-
-    (r.outsiders && r.outsiders.length ? 
-      '<div class="box-section box-outsider">' +
-        '<b>⚡ 穴馬注意:</b> ' + r.outsiders.map(h => h.horse_no + '.' + h.name).join(', ') +
-      '</div>' : ''
-    ) +
-
-    (isFinished ? resultHtml : ticketHtml) +
-  '</article>';
-}
-
-function render() {
-  if (!data) return;
-  let list = currentTab === 'today' ? (data.races || []) : (data.tomorrow_races || []);
-  if (currentCat !== 'all') {
-    list = list.filter(r => r.category === currentCat);
-  }
-
-  const root = $('races');
-  if (!list || !list.length) {
-    root.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted); grid-column: 1/-1">該当するレースデータはありません</div>';
-    return;
-  }
-  root.innerHTML = list.map(renderRace).join('');
-}
-
-async function init() {
-  try {
-    const res = await fetch('./data.json?v=' + Date.now());
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    data = await res.json();
     
-    const st = (data.paper_betting && data.paper_betting.stats) ? data.paper_betting.stats : {};
-    
-    $('profit').textContent = (st.profit_yen > 0 ? '+' : '') + yen(st.profit_yen);
-    $('profit').className = 'metric-val ' + (st.profit_yen > 0 ? 'pos' : st.profit_yen < 0 ? 'neg' : '');
-    $('roi').textContent = (st.roi_pct || 0) + '%';
-    $('hitrate').textContent = (st.win_hit_rate_pct || 0) + '%';
-    $('balance').textContent = yen(st.virtual_balance_yen || 100000);
-
-    render();
-  } catch (e) {
-    $('races').innerHTML = '<div style="text-align:center; padding:40px; color:var(--red); grid-column: 1/-1">data.json の読み込みに失敗しました</div>';
-  }
-}
-
-init();
-</script>
-</body>
-</html>
