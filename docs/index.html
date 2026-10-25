@@ -49,15 +49,17 @@ header {
   font-size: 11px; font-weight: 700; cursor: pointer;
 }
 main { max-width: 1000px; margin: auto; padding: 14px 12px; }
+
+/* 投資成績パネルの視認性強化 */
 .panel {
   background: var(--panel); border: 1px solid var(--panel-border);
   border-radius: 14px; padding: 14px; margin-bottom: 16px;
 }
-.panel-title { font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+.panel-title { font-size: 13px; font-weight: 800; margin-bottom: 10px; color: var(--gold); }
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-.metric { padding: 10px; background: #091525; border-radius: 10px; border: 1px solid var(--line); }
-.metric-label { font-size: 10px; color: var(--muted); }
-.metric-val { font-size: 18px; font-weight: 900; margin-top: 4px; }
+.metric { padding: 12px 10px; background: #091525; border-radius: 10px; border: 1px solid var(--line); }
+.metric-label { font-size: 11px; color: var(--muted); font-weight: 600; }
+.metric-val { font-size: 19px; font-weight: 900; margin-top: 4px; letter-spacing: 0.3px; }
 .metric-val.pos { color: var(--green); }
 .metric-val.neg { color: var(--red); }
 
@@ -91,7 +93,7 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 .box-ticket-b { background: var(--purple-bg); border: 1px solid var(--purple-border); }
 
 .box-result { background: var(--green-bg); border: 1px solid #235238; }
-.ticket-line { margin-top: 3px; font-size: 11px; }
+.ticket-line { margin-top: 3px; font-size: 11px; font-weight: 600; }
 
 @media(min-width: 680px) {
   .grid { grid-template-columns: repeat(4, 1fr); }
@@ -111,12 +113,12 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 
 <main>
   <section class="panel">
-    <div class="panel-title">📊 仮想投資シミュレーション成績 (初期資本10万円)</div>
+    <div class="panel-title">📊 投資・回収シミュレーション実績</div>
     <div class="grid">
-      <div class="metric"><div class="metric-label">総収支</div><div class="metric-val" id="profit">—</div></div>
+      <div class="metric"><div class="metric-label">累計投資額</div><div class="metric-val" id="stake">—</div></div>
+      <div class="metric"><div class="metric-label">累計回収額</div><div class="metric-val" id="return">—</div></div>
       <div class="metric"><div class="metric-label">回収率</div><div class="metric-val" id="roi">—</div></div>
       <div class="metric"><div class="metric-label">単勝的中率</div><div class="metric-val" id="hitrate">—</div></div>
-      <div class="metric"><div class="metric-label">仮想残高</div><div class="metric-val" id="balance">—</div></div>
     </div>
   </section>
 
@@ -143,7 +145,6 @@ let currentTab = 'today';
 let currentCat = 'all';
 
 const $ = id => document.getElementById(id);
-const yen = n => (Number(n) || 0).toLocaleString() + "円";
 
 function setTab(t, btn) {
   currentTab = t;
@@ -222,14 +223,21 @@ function render() {
 
   if (data.paper_betting && data.paper_betting.stats) {
     const s = data.paper_betting.stats;
-    const profit = s.profit_yen || 0;
-    const profitEl = $('profit');
-    profitEl.textContent = (profit >= 0 ? '+' : '') + profit.toLocaleString() + '円';
-    profitEl.className = 'metric-val ' + (profit >= 0 ? 'pos' : 'neg');
+    const stake = s.total_stake_yen || 0;
+    const ret = s.total_return_yen || 0;
+    const roi = s.roi_pct || 0;
+
+    $('stake').textContent = stake.toLocaleString() + "円";
     
-    $('roi').textContent = (s.roi_pct || 0).toFixed(1) + '%';
+    const retEl = $('return');
+    retEl.textContent = ret.toLocaleString() + "円";
+    retEl.className = 'metric-val ' + (ret >= stake ? 'pos' : '');
+
+    const roiEl = $('roi');
+    roiEl.textContent = roi.toFixed(1) + '%';
+    roiEl.className = 'metric-val ' + (roi >= 100 ? 'pos' : 'neg');
+
     $('hitrate').textContent = (s.win_hit_rate_pct || 0).toFixed(1) + '%';
-    $('balance').textContent = (s.virtual_balance_yen || 100000).toLocaleString() + '円';
   }
 
   let targetList = (currentTab === 'today') ? (data.races || []) : (data.tomorrow_races || []);
