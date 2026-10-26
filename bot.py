@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Ultimate Engine (Stable Pattern A Focus & Robust Extraction)
+# BAGEN KEIBA - Ultimate Engine (Tuned Edition & Robust Extraction)
 
 import json
 import math
@@ -178,7 +178,6 @@ def parse_race(html, rid, kind, base_url):
         cells = row.find_all(["td", "th"], recursive=False)
         no_val = None
         
-        # --- 中央・地方共通：確実な馬番抽出ロジック ---
         for selector in ["td.Umaban", ".Umaban", "[class*='Umaban']", "td.Num", "[class*='Num']"]:
             el = row.select_one(selector)
             if el:
@@ -217,6 +216,8 @@ def parse_race(html, rid, kind, base_url):
         if is_inner and is_apprentice:
             reasons.append("内枠＋減量騎手（単騎逃げ注意）")
             caution = "前走惨敗からの減量逃げ残り警戒"
+        elif is_apprentice:
+            reasons.append("減量騎手起用で斤量利あり")
         if abs(w_diff) >= 10:
             reasons.append(f"馬体重変化({w_diff:+d}kg)")
 
@@ -232,18 +233,37 @@ def parse_race(html, rid, kind, base_url):
             "score": 0.0,
             "reasons": reasons,
             "caution": caution,
+            "is_apprentice": is_apprentice,
+            "is_inner": is_inner,
+            "w_diff": w_diff
         })
 
     runners.sort(key=lambda x: x["horse_no"])
     horse_dict = {h["horse_no"]: h["name"] for h in runners}
 
+    # --- 最強チューニング：オッズ・人気に加え、実戦的ファクター（減量・枠・馬体重）をスコアに直結 ---
     for h in runners:
         o, p = h.get("odds"), h.get("popularity")
         s = 0.0
+        
+        # 1. オッズ＆人気ベース（基本性能）
         if o and o > 0:
-            s += (100 - min(70, 18 * math.log(max(1, o)))) * 0.7
+            s += (100 - min(70, 18 * math.log(max(1, o)))) * 0.55
         if p:
-            s += max(0, 35 - (p - 1) * 2.5) * 0.3
+            s += max(0, 35 - (p - 1) * 2.5) * 0.25
+            
+        # 2. 減量騎手ボーナス（地方・中央問わず、斤量減は激走の最大の原動力）
+        if h.get("is_apprentice"):
+            s += 8.0
+            
+        # 3. 内枠有利補正（ロスなく立ち回れる1〜3枠に加点）
+        if h.get("frame_no") in (1, 2, 3):
+            s += 4.0
+            
+        # 4. 馬体重の変動補正（適度な増減や好走パターン）
+        if abs(h.get("w_diff", 0)) >= 6:
+            s += 2.0
+
         h["score"] = round(s, 2)
 
     ranked = sorted(runners, key=lambda x: -x["score"])
@@ -253,8 +273,6 @@ def parse_race(html, rid, kind, base_url):
 
     top_odds = top5[0].get("odds") or 0 if top5 else 0
     
-    # --- 安定勝利ロジック：基本はパターンA、本当に荒れる条件の時のみパターンB ---
-    # 1番人気が不安定（単勝5.0倍以上）かつ、実績のある穴馬・伏兵が複数いるレースのみBを発動
     is_pattern_b = (top_odds >= 5.0 and len(outsiders) >= 2 and len(longshots) >= 1)
     
     tickets = []
@@ -275,7 +293,7 @@ def parse_race(html, rid, kind, base_url):
                     f"3連複: {b1} - {b2},{b3} - {b2},{b3},{h1} (各100円 / 計500円)",
                     f"★穴仕込み 3連単: 1着:{b1} → 2着:{h1}.{h1_name} → 3着:{b2},{b3} (各100円 / 計600円)"
                 ],
-                "note": "荒れ模様のレースで本命軸を死守しつつ、穴馬を絡めて高配当を狙う構成"
+                "note": "チューニング強化型：波乱レースで軸を死守しつつ、減量・枠の利を生かす穴馬を網羅"
             })
         else:
             h_sub = top5[3]["horse_no"] if len(top5) >= 4 else b3
@@ -290,7 +308,7 @@ def parse_race(html, rid, kind, base_url):
                     f"3連複: {b1} - {b2} - {b3} (600円)",
                     f"★穴仕込み ワイド: {h_sub}.{h_sub_name} - {b1}, {b2} (各100円 / 計300円)"
                 ],
-                "note": "単勝・馬連で手堅く回収を重ね、上位安定を狙う堅実な2,000円構成"
+                "note": "チューニング強化型：単勝・馬連で手堅く回収しつつ、妙味ある上位馬で的中率を最大化"
             })
 
     is_finished = False
@@ -376,7 +394,7 @@ def main():
 
                 time.sleep(REQUEST_DELAY)
 
-    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit") is not None]
+    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit"] is not None]
     win_hits = sum(1 for s in settled if s.get("win_hit"))
     total_return = sum(s.get("win_return", 0) for s in settled)
     total_stake = sum(s.get("cost", 2000) for s in settled)
