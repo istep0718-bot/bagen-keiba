@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Ultimate Engine (Robust Extraction, Bloodline Tuning & Race Profit Tracking)
+# BAGEN KEIBA - Ultimate Engine (Hidden Factor & Advanced Mathematical Tuning)
 
 import json
 import math
@@ -43,9 +43,12 @@ SOURCES = [
 JRA_CODES = {"01": "札幌", "02": "函館", "03": "福島", "04": "新潟", "05": "東京", "06": "中山", "07": "中京", "08": "京都", "09": "阪神", "10": "小倉"}
 NAR_CODES = {"30": "帯広", "35": "盛岡", "36": "水沢", "40": "浦和", "41": "船橋", "44": "大井", "45": "川崎", "46": "金沢", "47": "笠松", "48": "名古屋", "50": "園田", "54": "姫路", "55": "高知", "56": "佐賀"}
 
-# 血統特性データベース（ダート巧者・パワー・芝有力種牡馬）
+# 血統特性データベース
 DIRT_SIRES = ["ヘニーヒューズ", "シニスターミニスター", "パイロ", "マジェスティックウォリアー", "ホッコータルマエ", "ディスクスクエア", "アジアエクスプレス", "スマートファルコン", "ゴールドアリュール", "コパノリッキー"]
 POWER_SIRES = ["ロードカナロア", "エピファネイア", "キズナ", "オルフェーヴル", "モーリス", "ドゥラメンテ", "ハーツクライ", "ルーラーシップ", "ジャスタウェイ", "サトノダイヤモンド"]
+
+# トップジョッキー
+TOP_JOCKEYS = ["ルメール", "川田", "武豊", "戸崎", "横山武", "坂井", "松山", "C.ルメール", "M.デムーロ", "岩田望", "浜中", "菅原明"]
 
 
 def clean(v):
@@ -127,7 +130,6 @@ def fetch_race_results_and_payouts(base_url, rid):
     soup = soup_of(html)
     finishes = []
     
-    # 1. 着順の抽出
     rows = soup.select("table.RaceTable01 tr, tr.HorseList, table.ResultTable tr, table tr")
     for r in rows:
         cells = r.find_all(["td", "th"])
@@ -143,7 +145,6 @@ def fetch_race_results_and_payouts(base_url, rid):
                             break
     finishes = finishes[:3]
 
-    # 2. 払戻金テーブルの抽出
     payouts = {"win": 0, "quinella": 0, "trio": 0, "wide": 0}
     for tr in soup.find_all("tr"):
         text_full = text_of(tr)
@@ -205,7 +206,6 @@ def parse_race(html, rid, kind, base_url):
 
         row_text = text_of(row)
         
-        # 血統情報（父・母父など）の抽出試行
         sire = ""
         m_sire = re.search(r"(?:父|Sire)[:：]?\s*([^\s（与]+)", row_text)
         if m_sire:
@@ -245,27 +245,45 @@ def parse_race(html, rid, kind, base_url):
         w_diff = int(m_w.group(2)) if m_w and m_w.group(2) else 0
 
         is_inner = frame_val in (1, 2) if frame_val else False
+        is_outer = frame_val in (7, 8) if frame_val else False
         is_apprentice = any(s in jockey for s in ["▲", "△", "☆", "◇", "★"])
+        is_top_jockey = any(j in jockey for j in TOP_JOCKEYS)
 
-        # 血統適性判定
         is_dirt_blood = any(ds in row_text for ds in DIRT_SIRES)
         is_power_blood = any(ps in row_text for ps in POWER_SIRES)
 
+        # 隠しファクター1: キーワード自動マイニング（好気配・一変・立て直し）
+        is_positive_memo = any(kw in row_text for kw in ["好気配", "一変", "立て直し", "上向き", "絶好", "シャープ"])
+        # 隠しファクター2: 不安要素キーワード検知
+        is_negative_memo = any(kw in row_text for kw in ["太目", "硬い", "入れ込み", "不安", "モタ", "休み明け"])
+
         reasons = []
         caution = "展開次第で浮上"
+        
         if is_inner and is_apprentice:
-            reasons.append("内枠＋減量騎手（単騎逃げ注意）")
-            caution = "前走惨敗からの減量逃げ残り警戒"
+            reasons.append("内枠＋減量騎手（単騎逃げ警戒）")
+            caution = "前走からの減量逃げ残り警戒"
         elif is_apprentice:
             reasons.append("減量騎手起用で斤量利あり")
-        
+            
+        if is_top_jockey:
+            reasons.append(f"鞍上強化: トップジョッキー({jockey[:3]})")
+
         if surface == "ダート" and is_dirt_blood:
             reasons.append(f"血統: 注目ダート適性({sire or '特注血統'})")
         elif surface == "芝" and is_power_blood:
             reasons.append(f"血統: 芝有力・パワー血統({sire or '特注血統'})")
 
-        if abs(w_diff) >= 10:
+        # 馬体重リカバリー（大幅減からの大幅増回復）の検知
+        if 8 <= w_diff <= 16:
+            reasons.append(f"馬体回復({w_diff:+d}kg): 絞りすぎからの立て直し成功")
+        elif w_diff <= -10:
+            reasons.append(f"馬体重大幅減({w_diff}kg): シャープな仕上げ")
+        elif abs(w_diff) >= 6:
             reasons.append(f"馬体重変化({w_diff:+d}kg)")
+
+        if is_positive_memo:
+            reasons.append("隠し特注: 陣営の気配・状態面好評価")
 
         runners.append({
             "horse_no": h_no,
@@ -280,34 +298,62 @@ def parse_race(html, rid, kind, base_url):
             "reasons": reasons,
             "caution": caution,
             "is_apprentice": is_apprentice,
+            "is_top_jockey": is_top_jockey,
             "is_inner": is_inner,
+            "is_outer": is_outer,
             "is_dirt_blood": is_dirt_blood,
             "is_power_blood": is_power_blood,
+            "is_positive_memo": is_positive_memo,
+            "is_negative_memo": is_negative_memo,
             "w_diff": w_diff
         })
 
     runners.sort(key=lambda x: x["horse_no"])
     horse_dict = {h["horse_no"]: h["name"] for h in runners}
 
-    # スコアリング（血統チューニング反映）
+    # 最強多角的スコアリング（隠し要素・オッズ歪み補正込み）
     for h in runners:
         o, p = h.get("odds"), h.get("popularity")
         s = 0.0
+        
+        # 1. オッズ＆人気ベース（オッズの対数非線形評価）
         if o and o > 0:
-            s += (100 - min(70, 18 * math.log(max(1, o)))) * 0.50
+            s += (100 - min(70, 18 * math.log(max(1, o)))) * 0.40
         if p:
-            s += max(0, 35 - (p - 1) * 2.5) * 0.25
+            s += max(0, 35 - (p - 1) * 2.5) * 0.15
+
+        # 2. 騎手・血統・馬体重補正
         if h.get("is_apprentice"):
-            s += 7.0
-        if h.get("frame_no") in (1, 2, 3):
-            s += 3.0
-        # 血統ボーナス加点
-        if surface == "ダート" and h.get("is_dirt_blood"):
             s += 6.0
-        elif surface == "芝" and h.get("is_power_blood"):
+        if h.get("is_top_jockey"):
             s += 5.0
-        if abs(h.get("w_diff", 0)) >= 6:
-            s += 2.0
+
+        if surface == "ダート" and h.get("is_dirt_blood"):
+            s += 5.5
+        elif surface == "芝" and h.get("is_power_blood"):
+            s += 4.5
+
+        # 3. コース×枠順バイアス（東京・新潟の外枠、中山・小回りの内枠優遇）
+        if venue in ["東京", "新潟"] and h.get("is_outer"):
+            s += 3.5
+        elif venue in ["中山", "小倉", "福島", "札幌"] and h.get("is_inner"):
+            s += 3.5
+
+        # 4. 馬体リカバリー＆テキストマイニング補正
+        if 8 <= h.get("w_diff", 0) <= 16:
+            s += 4.0
+        if h.get("is_positive_memo"):
+            s += 4.5
+        if h.get("is_negative_memo"):
+            s -= 4.0  # 不安要素のある馬は減点
+
+        # 5. 隠しファクター：オッズの歪み・過剰人気ペナルティ ＆ 妙味穴馬ブースト
+        # 1番人気かつオッズが低すぎる（過剰人気）場合の微調整、または10〜30倍の穴馬で血統・気配が揃っている場合の特大ブースト
+        if p == 1 and o and o < 1.8:
+            s -= 3.0  # 過剰人気リスク馬は軸から剥がす
+        elif o and 10.0 <= o < 30.0 and (h.get("is_apprentice") or h.get("is_positive_memo") or h.get("is_dirt_blood")):
+            s += 6.0  # 隠れ期待値穴馬を大抜擢
+
         h["score"] = round(s, 2)
 
     ranked = sorted(runners, key=lambda x: -x["score"])
@@ -328,33 +374,32 @@ def parse_race(html, rid, kind, base_url):
             h1_name = horse_dict.get(h1, "")
             tickets.append({
                 "pattern_type": "B",
-                "pattern": "パターンB（波乱・血統穴馬警戒）",
+                "pattern": "パターンB（隠しファクター波乱攻略型）",
                 "cost_yen": 2000,
                 "lines": [
                     f"単勝: {b1}.{b1_name} (300円)",
                     f"馬連: {b1} - {b2}, {b3}, {h1}.{h1_name} (各200円 / 計600円)",
                     f"3連複: {b1} - {b2},{b3} - {b2},{b3},{h1} (各100円 / 計500円)",
-                    f"★血統穴仕込み 3連単: 1着:{b1} → 2着:{h1}.{h1_name} → 3着:{b2},{b3} (各100円 / 計600円)"
+                    f"★隠し期待値 3連単: 1着:{b1} → 2着:{h1}.{h1_name} → 3着:{b2},{b3} (各100円 / 計600円)"
                 ],
-                "note": "血統チューニング強化型：血統背景と適性を考慮した波乱狙い"
+                "note": "AI隠しファクター解析：オッズの歪み・馬体リカバリー・気配マイニングを網羅した波乱狙い"
             })
         else:
             h_sub = top5[3]["horse_no"] if len(top5) >= 4 else b3
             h_sub_name = horse_dict.get(h_sub, "")
             tickets.append({
                 "pattern_type": "A",
-                "pattern": "パターンA（堅調・血統本命重視）",
+                "pattern": "パターンA（隠しファクター堅実軸馬重視）",
                 "cost_yen": 2000,
                 "lines": [
                     f"単勝: {b1}.{b1_name} (500円)",
                     f"馬連: {b1} - {b2}, {b3} (各300円 / 計600円)",
                     f"3連複: {b1} - {b2} - {b3} (600円)",
-                    f"★血統妙味 ワイド: {h_sub}.{h_sub_name} - {b1}, {b2} (各100円 / 計300円)"
+                    f"★妙味ワイド: {h_sub}.{h_sub_name} - {b1}, {b2} (各100円 / 計300円)"
                 ],
-                "note": "血統チューニング強化型：血統裏付けのある軸馬で回収率を最大化"
+                "note": "AI最適化回収型：過剰人気を回避し、隠れた好走条件が揃った軸馬で回収率を最大化"
             })
 
-    # 発走完了チェック
     is_finished = False
     if post_time:
         m = re.fullmatch(r"(\d{1,2}):(\d{2})", post_time)
@@ -376,11 +421,9 @@ def parse_race(html, rid, kind, base_url):
             
             stake_win = 300 if is_pattern_b else 500
             
-            # 単勝払戻
             if win_hit and payouts.get("win", 0) > 0:
                 race_return += int(stake_win * (payouts["win"] / 100.0))
             
-            # 馬連払戻
             if len(result_finishes) >= 2 and payouts.get("quinella", 0) > 0:
                 r1, r2 = result_finishes[0], result_finishes[1]
                 if b1 in (r1, r2):
@@ -421,7 +464,7 @@ def parse_race(html, rid, kind, base_url):
 
 
 def main():
-    history_data = {"schema_version": 17, "snapshots": {}}
+    history_data = {"schema_version": 19, "snapshots": {}}
     if HISTORY.exists():
         try:
             history_data = json.loads(HISTORY.read_text(encoding="utf-8"))
@@ -464,7 +507,7 @@ def main():
 
                 time.sleep(REQUEST_DELAY)
 
-    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit") is not None]
+    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit"] is not None]
     win_hits = sum(1 for s in settled if s.get("win_hit"))
     total_return = sum(s.get("win_return", 0) for s in settled)
     total_stake = sum(s.get("cost", 2000) for s in settled)
@@ -493,7 +536,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Engine updated (Bloodline tuned). Today: {len(today_races)}, Settled: {len(settled)}, Return: {total_return} Yen")
+    print(f"BAGEN Ultimate Engine v19 (Hidden Factors tuned) updated. Today: {len(today_races)}, Settled: {len(settled)}, Return: {total_return} Yen")
 
 
 if __name__ == "__main__":
