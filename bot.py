@@ -114,11 +114,11 @@ def extract_race_ids(html):
     return found[:MAX_RACES]
 
 
-def fetch_race_results(base_url, rid):
+def fetch_race_results_and_payouts(base_url, rid):
     url = f"{base_url}/race/result.html?race_id={rid}"
     html = get_html(url)
     if not html:
-        return []
+        return [], {}
     
     soup = soup_of(html)
     finishes = []
@@ -134,7 +134,28 @@ def fetch_race_results(base_url, rid):
                         if int(val) not in finishes:
                             finishes.append(int(val))
                             break
-    return finishes[:3]
+    finishes = finishes[:3]
+
+    # 払戻金テーブルの解析
+    payouts = {"win": 0, "quinella": 0, "trio": 0, "wide": 0}
+    for tr in soup.select(".Pay_Table tr, table.Pay_List tr, table[class*='Pay'] tr"):
+        th = text_of(tr.find("th"))
+        td = text_of(tr.find("td"))
+        if not th or not td:
+            continue
+        amounts = [number(x) for x in re.findall(r"([\d,]+)円", td)]
+        if not amounts:
+            continue
+        if "単勝" in th:
+            payouts["win"] = amounts[0]
+        elif "馬連" in th:
+            payouts["quinella"] = amounts[0]
+        elif "3連複" in th:
+            payouts["trio"] = amounts[0]
+        elif "ワイド" in th:
+            payouts["wide"] = amounts[0]
+
+    return finishes, payouts
 
 
 def parse_race(html, rid, kind, base_url):
@@ -241,29 +262,20 @@ def parse_race(html, rid, kind, base_url):
     runners.sort(key=lambda x: x["horse_no"])
     horse_dict = {h["horse_no"]: h["name"] for h in runners}
 
-    # --- 最強チューニング：オッズ・人気に加え、実戦的ファクター（減量・枠・馬体重）をスコアに直結 ---
+    # スコアリング処理
     for h in runners:
         o, p = h.get("odds"), h.get("popularity")
         s = 0.0
-        
-        # 1. オッズ＆人気ベース（基本性能）
         if o and o > 0:
             s += (100 - min(70, 18 * math.log(max(1, o)))) * 0.55
         if p:
             s += max(0, 35 - (p - 1) * 2.5) * 0.25
-            
-        # 2. 減量騎手ボーナス（地方・中央問わず、斤量減は激走の最大の原動力）
         if h.get("is_apprentice"):
             s += 8.0
-            
-        # 3. 内枠有利補正（ロスなく立ち回れる1〜3枠に加点）
         if h.get("frame_no") in (1, 2, 3):
             s += 4.0
-            
-        # 4. 馬体重の変動補正（適度な増減や好走パターン）
         if abs(h.get("w_diff", 0)) >= 6:
             s += 2.0
-
         h["score"] = round(s, 2)
 
     ranked = sorted(runners, key=lambda x: -x["score"])
@@ -273,7 +285,8 @@ def parse_race(html, rid, kind, base_url):
 
     top_odds = top5[0].get("odds") or 0 if top5 else 0
     
-    is_pattern_b = (top_odds >= 5.0 and len(outsiders) >= 2 and len(longshots) >= 1)
+    # 改善：パターンBの条件を緩和（本命が2.8倍以上 または 穴馬候補が2頭以上いる場合）
+    is_pattern_b = (top_odds >= 2.8 or len(outsiders) >= 2)
     
     tickets = []
     if len(top5) >= 3:
@@ -320,14 +333,28 @@ def parse_race(html, rid, kind, base_url):
 
     result_finishes = []
     win_hit = None
-    win_return = 0
+    total_return = 0
     if is_finished:
-        result_finishes = fetch_race_results(base_url, rid)
+        result_finishes, payouts = fetch_race_results_and_payouts(base_url, rid)
         if result_finishes and top5:
-            win_hit = (top5[0]["horse_no"] == result_finishes[0])
-            if win_hit:
-                o = top5[0].get("odds") or 2.0
-                win_return = int(500 * o) if not is_pattern_b else int(300 * o)
+            b1 = top5[0]["horse_no"]
+            win_hit = (b1 == result_finishes[0])
+            
+            # 的中時の回収額計算（全券種対応）
+            cost = 2000
+            stake_win = 300 if is_pattern_b else 500
+            
+            # 単勝的中
+            if win_hit and payouts.get("win"):
+                total_return += int(stake_win * (payouts["win"] / 100.0))
+            
+            # 馬連的中判定 (上位の軸馬が含まれているか等の簡易判定、または払戻金ベース)
+            if len(result_finishes) >= 2:
+                r1, r2 = result_finishes[0], result_finishes[1]
+                # パターンA/Bの馬連買い目に含まれているかチェック
+                if b1 in (r1, r2) and payouts.get("quinella"):
+                    # 簡易的に馬連が当たっていれば払戻金を加算
+                    total_return += int(300 * (payouts["quinella"] / 100.0))
 
     return {
         "id": rid,
@@ -348,7 +375,7 @@ def parse_race(html, rid, kind, base_url):
         "is_finished": is_finished,
         "result_finishes": result_finishes,
         "win_hit": win_hit,
-        "win_return": win_return,
+        "win_return": total_return,
         "is_recommended": (race_no == 11 or len(outsiders) >= 2)
     }
 
