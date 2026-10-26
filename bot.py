@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# BAGEN KEIBA - Ultimate Engine (Tuned Edition & Robust Extraction)
+# BAGEN KEIBA - Ultimate Engine (Robust Extraction & Auto Recovery)
 
 import json
 import math
@@ -122,37 +122,45 @@ def fetch_race_results_and_payouts(base_url, rid):
     
     soup = soup_of(html)
     finishes = []
-    rows = soup.select("table.RaceTable01 tr, tr.HorseList, tr[class*='Horse'], table tr")
+    
+    # 1. 着順の抽出（テーブル構造の差異に対応）
+    rows = soup.select("table.RaceTable01 tr, tr.HorseList, table.ResultTable tr, table tr")
     for r in rows:
         cells = r.find_all(["td", "th"])
         if len(cells) >= 3:
             rank_text = text_of(cells[0])
             if rank_text in ["1", "2", "3"]:
+                # 馬番を探す
                 for cell in cells[1:6]:
                     val = number(text_of(cell))
                     if val and 1 <= val <= 18:
-                        if int(val) not in finishes:
-                            finishes.append(int(val))
+                        val_int = int(val)
+                        if val_int not in finishes:
+                            finishes.append(val_int)
                             break
     finishes = finishes[:3]
 
-    # 払戻金テーブルの解析
+    # 2. 払戻金テーブルの強力化抽出
     payouts = {"win": 0, "quinella": 0, "trio": 0, "wide": 0}
-    for tr in soup.select(".Pay_Table tr, table.Pay_List tr, table[class*='Pay'] tr"):
-        th = text_of(tr.find("th"))
-        td = text_of(tr.find("td"))
-        if not th or not td:
+    
+    # 全テーブル・全行から「単勝」「馬連」「3連複」等の文字列を全探索
+    for tr in soup.find_all("tr"):
+        text_full = text_of(tr)
+        if not text_full:
             continue
-        amounts = [number(x) for x in re.findall(r"([\d,]+)円", td)]
+            
+        # 金額（〜円）のパターンをすべて取得
+        amounts = [int(x.replace(",", "")) for x in re.findall(r"([\d,]+)\s*円", text_full)]
         if not amounts:
             continue
-        if "単勝" in th:
+            
+        if "単勝" in text_full and payouts["win"] == 0:
             payouts["win"] = amounts[0]
-        elif "馬連" in th:
+        elif "馬連" in text_full and payouts["quinella"] == 0:
             payouts["quinella"] = amounts[0]
-        elif "3連複" in th:
+        elif "3連複" in text_full and payouts["trio"] == 0:
             payouts["trio"] = amounts[0]
-        elif "ワイド" in th:
+        elif "ワイド" in text_full and payouts["wide"] == 0:
             payouts["wide"] = amounts[0]
 
     return finishes, payouts
@@ -262,7 +270,7 @@ def parse_race(html, rid, kind, base_url):
     runners.sort(key=lambda x: x["horse_no"])
     horse_dict = {h["horse_no"]: h["name"] for h in runners}
 
-    # スコアリング処理
+    # スコアリング
     for h in runners:
         o, p = h.get("odds"), h.get("popularity")
         s = 0.0
@@ -284,8 +292,6 @@ def parse_race(html, rid, kind, base_url):
     longshots = [h for h in runners if h.get("odds") and h["odds"] >= 30.0][:2]
 
     top_odds = top5[0].get("odds") or 0 if top5 else 0
-    
-    # 改善：パターンBの条件を緩和（本命が2.8倍以上 または 穴馬候補が2頭以上いる場合）
     is_pattern_b = (top_odds >= 2.8 or len(outsiders) >= 2)
     
     tickets = []
@@ -324,37 +330,42 @@ def parse_race(html, rid, kind, base_url):
                 "note": "チューニング強化型：単勝・馬連で手堅く回収しつつ、妙味ある上位馬で的中率を最大化"
             })
 
+    # 発走完了チェック
     is_finished = False
     if post_time:
         m = re.fullmatch(r"(\d{1,2}):(\d{2})", post_time)
         if m:
             sch = NOW.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0, microsecond=0)
-            is_finished = (NOW >= sch + timedelta(minutes=15))
+            is_finished = (NOW >= sch + timedelta(minutes=10))
 
     result_finishes = []
     win_hit = None
     total_return = 0
+
     if is_finished:
         result_finishes, payouts = fetch_race_results_and_payouts(base_url, rid)
         if result_finishes and top5:
             b1 = top5[0]["horse_no"]
             win_hit = (b1 == result_finishes[0])
             
-            # 的中時の回収額計算（全券種対応）
-            cost = 2000
             stake_win = 300 if is_pattern_b else 500
             
-            # 単勝的中
-            if win_hit and payouts.get("win"):
+            # 単勝払戻の計算
+            if win_hit and payouts.get("win", 0) > 0:
                 total_return += int(stake_win * (payouts["win"] / 100.0))
             
-            # 馬連的中判定 (上位の軸馬が含まれているか等の簡易判定、または払戻金ベース)
-            if len(result_finishes) >= 2:
+            # 馬連払戻の計算
+            if len(result_finishes) >= 2 and payouts.get("quinella", 0) > 0:
                 r1, r2 = result_finishes[0], result_finishes[1]
-                # パターンA/Bの馬連買い目に含まれているかチェック
-                if b1 in (r1, r2) and payouts.get("quinella"):
-                    # 簡易的に馬連が当たっていれば払戻金を加算
-                    total_return += int(300 * (payouts["quinella"] / 100.0))
+                # 軸馬b1が1,2着に含まれており、かつ対抗馬が含まれていれば的中
+                if b1 in (r1, r2):
+                    other = r2 if r1 == b1 else r1
+                    targets = [top5[1]["horse_no"], top5[2]["horse_no"]]
+                    if is_pattern_b and outsiders:
+                        targets.append(outsiders[0]["horse_no"])
+                    if other in targets:
+                        stake_q = 200 if is_pattern_b else 300
+                        total_return += int(stake_q * (payouts["quinella"] / 100.0))
 
     return {
         "id": rid,
@@ -381,9 +392,14 @@ def parse_race(html, rid, kind, base_url):
 
 
 def main():
-    history = {"schema_version": 16, "snapshots": {}}
-    snapshots = history.get("snapshots", {})
+    history_data = {"schema_version": 16, "snapshots": {}}
+    if HISTORY.exists():
+        try:
+            history_data = json.loads(HISTORY.read_text(encoding="utf-8"))
+        except Exception:
+            pass
 
+    snapshots = history_data.get("snapshots", {})
     today_races, tomorrow_races = [], []
 
     for date_str, target_list in [(TODAY, today_races), (TOMORROW, tomorrow_races)]:
@@ -405,19 +421,17 @@ def main():
                     target_list.append(r_data)
 
                     race_key = str(rid)
-                    if race_key not in snapshots and not is_tomorrow:
-                        snapshots[race_key] = {
-                            "race_id": rid,
-                            "date": TODAY_ISO,
-                            "cost": 2000,
-                            "is_finished": r_data["is_finished"],
-                            "win_hit": r_data["win_hit"],
-                            "win_return": r_data["win_return"]
-                        }
-                    elif race_key in snapshots and r_data["is_finished"]:
-                        snapshots[race_key]["is_finished"] = True
-                        snapshots[race_key]["win_hit"] = r_data["win_hit"]
-                        snapshots[race_key]["win_return"] = r_data["win_return"]
+                    # スナップショットの作成および結果の上書きロジック
+                    if not is_tomorrow:
+                        if race_key not in snapshots or r_data["is_finished"]:
+                            snapshots[race_key] = {
+                                "race_id": rid,
+                                "date": TODAY_ISO,
+                                "cost": 2000,
+                                "is_finished": r_data["is_finished"],
+                                "win_hit": r_data["win_hit"],
+                                "win_return": r_data["win_return"]
+                            }
 
                 time.sleep(REQUEST_DELAY)
 
@@ -437,8 +451,8 @@ def main():
         "win_hit_rate_pct": round((win_hits / len(settled) * 100) if settled else 0.0, 1),
     }
 
-    history.update({"updated_at": NOW.isoformat(), "stats": stats, "snapshots": snapshots})
-    save_json(HISTORY, history)
+    history_data.update({"updated_at": NOW.isoformat(), "stats": stats, "snapshots": snapshots})
+    save_json(HISTORY, history_data)
 
     data = {
         "site": "BAGEN KEIBA",
@@ -450,7 +464,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Engine updated. Today: {len(today_races)}, Settled: {len(settled)}")
+    print(f"BAGEN Engine updated. Today: {len(today_races)}, Settled: {len(settled)}, Return: {total_return} Yen")
 
 
 if __name__ == "__main__":
