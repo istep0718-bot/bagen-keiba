@@ -1,18 +1,21 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
-BAGEN KEIBA v23.0
-Paper-only horse-racing prediction engine.
-Python 3.12 / GitHub Actions / free-tier friendly.
+BAGEN KEIBA v24.0
+Paper-only horse-racing analysis engine.
 
-- No real betting or payment actions.
-- Public race-page retrieval only.
-- Outputs docs/data.json and docs/history.json.
-- Market odds are not treated as proven win probabilities.
-- Unknown information is never fabricated.
-- Unconfirmed settlements are excluded from ROI statistics.
+Features:
+- Central/local race discovery
+- Entry and previous-race form retrieval when publicly available
+- Heuristic win-probability estimate and experimental EV
+- Explainable outsider/longshot candidates
+- Odds snapshots and 10-minute / 1-minute comparisons when available
+- Frozen paper predictions and conservative settlement accounting
+- Compatible with docs/data.json and docs/history.json
+
+No real betting. No payment actions.
+Probabilities and EV are experimental, not calibrated or guaranteed.
 """
 
 import json
@@ -43,12 +46,14 @@ TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
 TODAY_ISO = NOW.strftime("%Y-%m-%d")
 TOMORROW_ISO = (NOW + timedelta(days=1)).strftime("%Y-%m-%d")
 
-ENGINE_VERSION = "BAGEN_23.0"
+ENGINE_VERSION = "BAGEN_24.0"
 MAX_RACES_PER_SOURCE = 80
 MIN_RUNNERS = 2
 REQUEST_DELAY = 0.4
 REQUEST_TIMEOUT = 18
 HISTORY_RETENTION_DAYS = 180
+MAX_ODDS_SNAPSHOTS = 100
+MAX_FORM_CACHE = 1500
 BET_BUDGET_YEN = 2000
 
 HEADERS = {
@@ -127,16 +132,14 @@ NEGATIVE_WORDS = [
     "太目", "硬い", "入れ込み", "不安", "モタれる",
 ]
 
-EMPTY_PAYOUTS = {
-    "win": {},
-    "quinella": {},
-    "trio": {},
-    "wide": {},
-    "trifecta": {},
-}
+PAYOUT_TYPES = ["win", "quinella", "trio", "wide", "trifecta"]
 
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
+
+# Caches are populated from history.json at startup.
+FORM_CACHE = {}
+FORM_REQUESTED_THIS_RUN = set()
 
 
 # ============================================================
@@ -232,6 +235,18 @@ def first_text(soup, selectors):
     return ""
 
 
+def safe_float(value):
+    try:
+        result = float(value)
+        return result if math.isfinite(result) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def empty_payouts():
+    return {kind: {} for kind in PAYOUT_TYPES}
+
+
 # ============================================================
 # Race IDs and metadata
 # ============================================================
@@ -249,8 +264,7 @@ def venue_from_id(race_id, kind):
     if not re.fullmatch(r"\d{12,14}", race_id):
         return ""
     code = race_id[4:6]
-    mapping = JRA_CODES if kind == "中央" else NAR_CODES
-    return mapping.get(code, "")
+    return (JRA_CODES if kind == "中央" else NAR_CODES).get(code, "")
 
 
 def extract_race_ids(html):
@@ -264,15 +278,12 @@ def extract_race_ids(html):
     for anchor in safe_select(
         soup, 'a[href*="race_id="], a[href*="shutuba.html"]'
     ):
-        href = anchor.get("href", "")
-        match = re.search(r"race_id=(\d{12,14})", href)
+        match = re.search(r"race_id=(\d{12,14})", anchor.get("href", ""))
         if not match:
             continue
-
         race_id = match.group(1)
         if race_id in seen or race_no_from_id(race_id) is None:
             continue
-
         seen.add(race_id)
         found.append(race_id)
 
@@ -322,6 +333,250 @@ def parse_surface(meta_text):
     return ""
 
 
+def scheduled_datetime(race):
+    post = race.get("post_time")
+    date_text = race.get("date")
+    if not post or not date_text or ":" not in post:
+        return None
+    try:
+        return datetime.strptime(
+            f"{date_text} {post}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=JST)
+    except ValueError:
+        return None
+
+
+# ============================================================
+# Previous-race form
+# ============================================================
+
+def horse_id_from_anchor(anchor):
+    if not anchor:
+        return ""
+    href = anchor.get("href", "")
+    match = re.search(r"/horse/(\d+)", href)
+    return match.group(1) if match else ""
+
+
+def parse_margin(text):
+    text = clean(text)
+    if not text:
+        return None
+
+    # Margin is not always numeric (e.g. "クビ", "ハナ").
+    if re.search(r"\b\d+(?:\.\d+)?\b", text):
+        value = number(text)
+        if value is not None and value <= 30:
+            return round(value, 2)
+
+    mapping = {
+        "ハナ": 0.05, "アタマ": 0.1, "クビ": 0.2,
+        "1/2": 0.1, "3/4": 0.15, "1": 1.0,
+    }
+    for label, estimate in mapping.items():
+        if label in text:
+            return estimate
+    return None
+
+
+def parse_position(text):
+    text = clean(text)
+    nums = re.findall(r"\d+", text)
+    if not nums:
+        return []
+    positions = []
+    for value in nums[:4]:
+        n = int(value)
+        if 1 <= n <= 30:
+            positions.append(n)
+    return positions
+
+
+def parse_previous_race_page(html):
+    """
+    Best-effort parser for the horse profile's race history.
+    Returns the most recent row only when a plausible history row exists.
+    Unknown column meanings remain unknown rather than being guessed.
+    """
+    if not html:
+        return None
+
+    soup = soup_of(html)
+
+    tables = (
+        safe_select(soup, "table.db_h_race_results")
+        + safe_select(soup, "table[class*='race_results']")
+        + safe_select(soup, "table[class*='RaceResults']")
+    )
+
+    for table in tables:
+        headers = [
+            text_of(cell)
+            for cell in safe_select(table, "thead th, tr:first-child th")
+        ]
+        rows = safe_select(table, "tbody tr")
+        if not rows:
+            rows = safe_select(table, "tr")
+
+        for row in rows:
+            cells = row.find_all(["td", "th"], recursive=False)
+            if len(cells) < 8:
+                continue
+
+            row_text = text_of(row)
+            if not row_text:
+                continue
+
+            values = [text_of(cell) for cell in cells]
+            header_map = {}
+            if len(headers) == len(values):
+                header_map = {
+                    clean(header): values[i]
+                    for i, header in enumerate(headers)
+                    if header
+                }
+
+            # Identify fields by visible header labels where possible.
+            def header_value(patterns):
+                for header, value in header_map.items():
+                    if any(p in header for p in patterns):
+                        return value
+                return ""
+
+            finish_text = header_value(["着順", "順位"])
+            finish = number(finish_text)
+            if finish is None:
+                # Conservative fallback: first cell must be a small integer.
+                finish = number(values[0])
+            if finish is None or not 1 <= finish <= 30:
+                continue
+
+            date_text = header_value(["日付", "開催日"])
+            race_name = header_value(["レース名"])
+            course_text = header_value(["距離", "コース"])
+            time_text = header_value(["タイム"])
+            margin_text = header_value(["着差"])
+            position_text = header_value(["通過"])
+            final3f_text = header_value(["上り", "上がり", "3F"])
+
+            # Parse only values whose header or format is identifiable.
+            distance = parse_race_distance(course_text)
+            final3f = number(final3f_text)
+            if final3f is not None and not (30 <= final3f <= 50):
+                final3f = None
+
+            positions = parse_position(position_text)
+            margin = parse_margin(margin_text)
+
+            return {
+                "available": True,
+                "date": date_text or None,
+                "race_name": race_name or None,
+                "finish": int(finish),
+                "distance_m": distance,
+                "time": time_text or None,
+                "margin_text": margin_text or None,
+                "margin_estimate": margin,
+                "passing_order": positions,
+                "final_3f": final3f,
+                "source": "public_horse_history",
+                "raw_row": row_text[:300],
+                "field_quality": {
+                    "finish": True,
+                    "margin": bool(margin_text),
+                    "passing_order": bool(positions),
+                    "final_3f": final3f is not None,
+                },
+            }
+
+    return None
+
+
+def get_previous_race_form(horse_id, base_url):
+    if not horse_id:
+        return None
+
+    if horse_id in FORM_CACHE:
+        return FORM_CACHE[horse_id]
+
+    if horse_id in FORM_REQUESTED_THIS_RUN:
+        return None
+
+    FORM_REQUESTED_THIS_RUN.add(horse_id)
+
+    # Cache avoids fetching the same horse profile on every workflow run.
+    url = f"{base_url}/horse/{horse_id}/"
+    html = get_html(url)
+    time.sleep(REQUEST_DELAY)
+
+    form = parse_previous_race_page(html)
+    if form:
+        form["horse_id"] = horse_id
+        form["retrieved_at"] = NOW.isoformat()
+        FORM_CACHE[horse_id] = form
+        return form
+
+    FORM_CACHE[horse_id] = None
+    return None
+
+
+def previous_form_points(form, current_distance):
+    """
+    Small, transparent adjustment based on observed previous-race data.
+    These are heuristic points, not learned coefficients.
+    """
+    points = 0.0
+    reasons = []
+
+    if not form:
+        return points, ["前走データ未取得：前走補正なし"]
+
+    finish = form.get("finish")
+    if finish is not None:
+        if finish == 1:
+            points += 3.0
+            reasons.append("前走1着")
+        elif finish <= 3:
+            points += 2.0
+            reasons.append(f"前走{finish}着")
+        elif finish <= 5:
+            points += 0.8
+            reasons.append(f"前走{finish}着")
+        elif finish >= 10:
+            points -= 0.8
+            reasons.append(f"前走{finish}着：巻き返し要検証")
+
+    margin = form.get("margin_estimate")
+    if margin is not None:
+        if margin <= 0.3:
+            points += 1.0
+            reasons.append("前走の着差が小さい")
+        elif margin >= 1.5:
+            points -= 0.5
+            reasons.append("前走の着差が大きい")
+
+    positions = form.get("passing_order") or []
+    if positions:
+        reasons.append(
+            "前走通過順 " + "-".join(str(x) for x in positions)
+        )
+
+    final3f = form.get("final_3f")
+    if final3f is not None:
+        reasons.append(f"前走上がり3F {final3f:g}秒")
+
+    prev_distance = form.get("distance_m")
+    if current_distance and prev_distance:
+        difference = abs(current_distance - prev_distance)
+        if difference <= 200:
+            points += 0.3
+            reasons.append("前走と今回の距離差が小さい")
+        elif difference >= 600:
+            reasons.append("前走と今回の距離差が大きい")
+
+    return points, reasons
+
+
 # ============================================================
 # Runner parsing
 # ============================================================
@@ -336,8 +591,7 @@ def parse_runner_number(row):
             return int(value)
 
     for cell in row.find_all(["td", "th"], recursive=False)[:5]:
-        classes = " ".join(cell.get("class", []))
-        if "Waku" in classes:
+        if "Waku" in " ".join(cell.get("class", [])):
             continue
         value = number(text_of(cell))
         if value is not None and 1 <= value <= 18:
@@ -395,7 +649,7 @@ def parse_weight(row):
         return None, None
 
 
-def parse_runner_rows(soup, surface, venue):
+def parse_runner_rows(soup, surface, venue, base_url, distance):
     rows = safe_select(
         soup,
         "tr.HorseList, tr[class*='Horse'], "
@@ -406,9 +660,7 @@ def parse_runner_rows(soup, surface, venue):
     seen_numbers = set()
 
     for row in rows:
-        horse_anchor = safe_one(
-            row, 'a[href*="/horse/"], a[href*="horse"]'
-        )
+        horse_anchor = safe_one(row, 'a[href*="/horse/"]')
         horse_name = text_of(horse_anchor)
 
         if not horse_name or "馬名" in horse_name:
@@ -430,6 +682,7 @@ def parse_runner_rows(soup, surface, venue):
         ))
 
         weight, weight_diff = parse_weight(row)
+        horse_id = horse_id_from_anchor(horse_anchor)
 
         sire = ""
         sire_match = re.search(
@@ -439,7 +692,6 @@ def parse_runner_rows(soup, surface, venue):
         if sire_match:
             sire = sire_match.group(1)
 
-        # 血統名がページ内に実際に存在する場合だけ検出する。
         dirt_blood = any(
             name in row_text or name in sire for name in DIRT_SIRES
         )
@@ -451,6 +703,9 @@ def parse_runner_rows(soup, surface, venue):
         top_jockey = any(name in jockey for name in TOP_JOCKEYS)
         positive = any(word in row_text for word in POSITIVE_WORDS)
         negative = any(word in row_text for word in NEGATIVE_WORDS)
+
+        form = get_previous_race_form(horse_id, base_url) if horse_id else None
+        form_points, form_reasons = previous_form_points(form, distance)
 
         reasons = []
         if odds is not None:
@@ -473,6 +728,7 @@ def parse_runner_rows(soup, surface, venue):
             reasons.append("掲載テキストに好材料キーワード")
         if negative:
             reasons.append("掲載テキストに注意キーワード")
+        reasons.extend(form_reasons)
 
         quality = {
             "odds": odds is not None,
@@ -480,6 +736,7 @@ def parse_runner_rows(soup, surface, venue):
             "jockey": bool(jockey),
             "frame": frame_no is not None,
             "weight_change": weight_diff is not None,
+            "previous_race": bool(form),
         }
 
         runners.append({
@@ -488,6 +745,7 @@ def parse_runner_rows(soup, surface, venue):
             "frame_no": frame_no,
             "horse": horse_name,
             "name": horse_name,
+            "horse_id": horse_id or None,
             "jockey": jockey or "未取得",
             "odds": odds,
             "popularity": popularity,
@@ -495,8 +753,8 @@ def parse_runner_rows(soup, surface, venue):
             "rank": None,
             "reasons": reasons,
             "caution": (
-                "取得データに基づく参考評価。"
-                "勝率を保証するものではありません。"
+                "実績未検証のヒューリスティック評価です。"
+                "勝率や利益を保証しません。"
             ),
             "is_apprentice": apprentice,
             "is_top_jockey": top_jockey,
@@ -508,6 +766,8 @@ def parse_runner_rows(soup, surface, venue):
             "is_negative_memo": negative,
             "weight": weight,
             "w_diff": weight_diff,
+            "previous_race": form,
+            "previous_race_points": round(form_points, 2),
             "data_quality": quality,
         })
 
@@ -515,14 +775,10 @@ def parse_runner_rows(soup, surface, venue):
 
 
 # ============================================================
-# Independent ranking
+# Ranking, probability and experimental EV
 # ============================================================
 
 def market_points(odds):
-    """
-    Smooth market baseline from odds.
-    This is a ranking feature, not a calibrated probability.
-    """
     if odds is None or odds <= 0:
         return None
     return max(0.0, min(40.0, 40.0 - 10.0 * math.log(odds)))
@@ -532,11 +788,8 @@ def score_runners(runners, surface, venue, is_heavy_track=False):
     for horse in runners:
         odds = horse.get("odds")
         popularity = horse.get("popularity")
-
         market = market_points(odds)
-        # Market component is capped; non-market evidence can only
-        # make small, transparent adjustments because reliable
-        # historical form data is not currently being fetched.
+
         score = market if market is not None else 18.0
 
         if popularity is not None:
@@ -547,20 +800,17 @@ def score_runners(runners, surface, venue, is_heavy_track=False):
             horse["reasons"].append("騎手名一致による小幅補正")
 
         if horse["is_apprentice"]:
-            # Apprentice status is not inherently good or bad;
-            # do not give it a blanket positive bonus.
             horse["reasons"].append(
-                "減量記号を検出（評価点は自動加算せず）"
+                "減量記号を検出（自動加点はしていません）"
             )
 
-        blood_multiplier = 1.25 if is_heavy_track else 1.0
-
+        multiplier = 1.25 if is_heavy_track else 1.0
         if surface == "ダート" and horse["is_dirt_blood"]:
-            score += 2.0 * blood_multiplier
+            score += 2.0 * multiplier
             horse["reasons"].append("ダート血統候補による参考補正")
 
         if surface == "芝" and horse["is_power_blood"]:
-            score += 1.5 * blood_multiplier
+            score += 1.5 * multiplier
             horse["reasons"].append("芝血統候補による参考補正")
 
         if venue in ["東京", "新潟"] and horse["is_outer"]:
@@ -578,46 +828,95 @@ def score_runners(runners, surface, venue, is_heavy_track=False):
             score -= 1.0
             horse["reasons"].append("大幅な馬体重減少に注意")
 
+        score += float(horse.get("previous_race_points") or 0)
+
         if horse["is_positive_memo"]:
             score += 0.5
         if horse["is_negative_memo"]:
             score -= 1.5
             horse["reasons"].append("注意キーワードによる減点")
 
-        # Low odds do not automatically mean a bad horse.
-        # Only mark the market-value issue, not a fake ability penalty.
         if odds is not None and odds < 1.5:
             horse["reasons"].append("低オッズ：配当妙味は慎重に評価")
+        if odds is None:
+            horse["reasons"].append("オッズ未取得：市場比較は不完全")
 
         quality = horse.get("data_quality", {})
         confidence = (
-            sum(bool(value) for value in quality.values()) /
-            max(1, len(quality))
+            sum(bool(value) for value in quality.values())
+            / max(1, len(quality))
         )
 
         horse["score"] = round(max(0.0, score), 2)
         horse["score_confidence"] = round(confidence * 100)
-        horse["market_points"] = round(market, 2) if market is not None else None
+        horse["market_points"] = (
+            round(market, 2) if market is not None else None
+        )
 
-        if odds is None:
-            horse["reasons"].append("オッズ未取得：市場比較は不完全")
         if confidence < 0.6:
-            horse["reasons"].append("取得項目不足：評価の信頼度に制限")
-        if not horse["reasons"]:
-            horse["reasons"].append("評価根拠となるデータが限定的")
+            horse["reasons"].append("取得項目不足：評価信頼度に制限")
 
-    # The ranking is not a pure odds sort, but current inputs are limited.
     return sorted(
         runners,
         key=lambda item: (-item["score"], item["horse_no"]),
     )
 
 
+def estimate_probabilities(ranked):
+    """
+    Softmax converts heuristic scores into a normalized distribution.
+    This is NOT a calibrated prediction model.
+    """
+    if not ranked:
+        return
+
+    scores = [float(horse.get("score") or 0) for horse in ranked]
+    peak = max(scores) if scores else 0
+
+    # Temperature softens the distribution to reduce extreme outputs.
+    temperature = 8.0
+    raw = [
+        math.exp(max(-30.0, min(30.0, (score - peak) / temperature)))
+        for score in scores
+    ]
+    total = sum(raw)
+
+    if total <= 0:
+        probabilities = [1.0 / len(ranked)] * len(ranked)
+    else:
+        probabilities = [value / total for value in raw]
+
+    for horse, probability in zip(ranked, probabilities):
+        odds = horse.get("odds")
+        horse["estimated_win_probability"] = round(probability, 6)
+        horse["estimated_win_probability_pct"] = round(
+            probability * 100, 2
+        )
+        horse["probability_method"] = "heuristic_softmax_unvalidated"
+
+        # EV = estimated probability * decimal odds.
+        # EV > 1 is not evidence of real profitability without calibration.
+        if odds is not None and odds > 0:
+            ev = probability * odds
+            horse["ev"] = round(ev, 4)
+            horse["ev_pct"] = round((ev - 1.0) * 100, 2)
+            if ev >= 1.15:
+                horse["ev_label"] = "実験上の期待値候補"
+            elif ev >= 1.0:
+                horse["ev_label"] = "期待値境界付近"
+            else:
+                horse["ev_label"] = "実験推定では割高"
+        else:
+            horse["ev"] = None
+            horse["ev_pct"] = None
+            horse["ev_label"] = "オッズ未取得"
+
+        horse["ev_warning"] = (
+            "未校正のスコア由来推定値。実証済みの期待値ではありません。"
+        )
+
+
 def classify_value_horses(ranked):
-    """
-    Finds candidates whose score is relatively high within the field.
-    Odds bands define labels only; they are not proof of value.
-    """
     outsiders = []
     longshots = []
 
@@ -632,30 +931,30 @@ def classify_value_horses(ranked):
         if odds is None:
             continue
 
-        if 10 <= odds < 30 and horse["score"] >= cutoff:
-            horse["value_label"] = "穴馬候補"
-            horse["value_reason"] = (
-                "単勝10〜30倍帯で、レース内の評価点が比較的高い候補。"
-                "実績データ未取得のため要検証。"
-            )
-            outsiders.append(horse)
+        if odds >= 10 and horse["score"] >= cutoff:
+            if odds < 30:
+                horse["value_label"] = "穴馬候補"
+                horse["value_reason"] = (
+                    "単勝10〜30倍帯で評価点が比較的高い候補。"
+                    "推定勝率・EVは未校正のため要検証。"
+                )
+                outsiders.append(horse)
+            else:
+                horse["value_label"] = "大穴候補"
+                horse["value_reason"] = (
+                    "単勝30倍以上で評価点が比較的高い候補。"
+                    "高配当・好走を保証しません。"
+                )
+                longshots.append(horse)
 
-        elif odds >= 30 and horse["score"] >= cutoff:
-            horse["value_label"] = "大穴候補"
-            horse["value_reason"] = (
-                "単勝30倍以上で、レース内の評価点が比較的高い候補。"
-                "高配当・好走を保証しない。"
-            )
-            longshots.append(horse)
-
-    outsiders.sort(key=lambda item: (-item["score"], item["horse_no"]))
-    longshots.sort(key=lambda item: (-item["score"], item["horse_no"]))
+    outsiders.sort(key=lambda x: (-x["score"], x["horse_no"]))
+    longshots.sort(key=lambda x: (-x["score"], x["horse_no"]))
 
     return outsiders[:3], longshots[:3]
 
 
 # ============================================================
-# Ticket construction
+# Paper ticket construction
 # ============================================================
 
 def ticket_item(kind, horses, stake, label):
@@ -672,9 +971,7 @@ def build_tickets(ranked, outsiders):
         return []
 
     top = ranked[:5]
-    h1 = top[0]["horse_no"]
-    h2 = top[1]["horse_no"]
-    h3 = top[2]["horse_no"]
+    h1, h2, h3 = [x["horse_no"] for x in top[:3]]
     h4 = top[3]["horse_no"] if len(top) >= 4 else h3
 
     outsider = next(
@@ -689,10 +986,8 @@ def build_tickets(ranked, outsiders):
         (top[0].get("odds") or 0) >= 2.8 or len(outsiders) >= 2
     )
 
-    lines = []
-
     if use_b:
-        lines.extend([
+        lines = [
             ticket_item("win", [h1], 300, f"単勝: {h1}番 (300円)"),
             ticket_item("quinella", sorted([h1, h2]), 200, f"馬連: {h1}-{h2} (200円)"),
             ticket_item("quinella", sorted([h1, h3]), 200, f"馬連: {h1}-{h3} (200円)"),
@@ -706,32 +1001,31 @@ def build_tickets(ranked, outsiders):
             ticket_item("trifecta", [h1, outsider, h2], 100, f"3連単: {h1}→{outsider}→{h2} (100円)"),
             ticket_item("trifecta", [h1, outsider, h3], 100, f"3連単: {h1}→{outsider}→{h3} (100円)"),
             ticket_item("trifecta", [h1, outsider, h4], 100, f"3連単: {h1}→{outsider}→{h4} (100円)"),
-        ])
+        ]
         pattern = "パターンB（穴馬候補を含む）"
         note = (
-            "穴馬候補は取得できたデータの範囲で選定。"
-            "実績データに基づく勝率推定ではなく、紙上検証用です。"
+            "穴馬候補を含む紙上検証用買い目。"
+            "実績データに基づく勝率推定ではありません。"
         )
     else:
-        lines.extend([
+        lines = [
             ticket_item("win", [h1], 500, f"単勝: {h1}番 (500円)"),
             ticket_item("quinella", sorted([h1, h2]), 300, f"馬連: {h1}-{h2} (300円)"),
             ticket_item("quinella", sorted([h1, h3]), 300, f"馬連: {h1}-{h3} (300円)"),
             ticket_item("trio", sorted([h1, h2, h3]), 600, f"3連複: {h1}-{h2}-{h3} (600円)"),
             ticket_item("wide", sorted([h1, h4]), 100, f"ワイド: {h1}-{h4} (100円)"),
             ticket_item("wide", sorted([h2, h4]), 100, f"ワイド: {h2}-{h4} (100円)"),
-        ])
+        ]
         pattern = "パターンA（上位評価中心）"
         note = "取得情報による紙上シミュレーション。利益を保証しません。"
 
-    # Remove duplicate ticket combinations before adding budget fillers.
     unique = {}
     for item in lines:
         key = (item["type"], tuple(item["horses"]))
         if key in unique:
             unique[key]["stake_yen"] += item["stake_yen"]
             unique[key]["label"] = (
-                f"{item['type']} { '-'.join(map(str, item['horses'])) } "
+                f"{item['type']} {'-'.join(map(str, item['horses']))} "
                 f"({unique[key]['stake_yen']}円)"
             )
         else:
@@ -740,7 +1034,7 @@ def build_tickets(ranked, outsiders):
     lines = list(unique.values())
     total = sum(item["stake_yen"] for item in lines)
 
-    # Add only new wide combinations; never create duplicates.
+    # Fill budget only with new combinations; never duplicate a ticket.
     candidates = []
     horse_numbers = [item["horse_no"] for item in top]
     for i in range(len(horse_numbers)):
@@ -750,45 +1044,17 @@ def build_tickets(ranked, outsiders):
             if key not in unique:
                 candidates.append(pair)
 
-    index = 0
     while total + 100 <= BET_BUDGET_YEN and candidates:
-        pair = candidates[index % len(candidates)]
-        index += 1
-        key = ("wide", tuple(pair))
-        if key in unique:
-            continue
+        pair = candidates.pop(0)
         item = ticket_item(
             "wide", pair, 100,
             f"ワイド: {pair[0]}-{pair[1]} (100円)",
         )
-        unique[key] = item
+        unique[("wide", tuple(pair))] = item
         lines.append(item)
         total += 100
-        candidates = [
-            p for p in candidates if tuple(p) != tuple(pair)
-        ]
-        index = 0
 
-    # If no distinct combination can fill the exact budget,
-    # keep the actual stake below budget rather than fake a duplicate.
-    if total > BET_BUDGET_YEN:
-        adjusted = []
-        remaining = BET_BUDGET_YEN
-        for item in lines:
-            stake = min(item["stake_yen"], remaining)
-            stake = (stake // 100) * 100
-            if stake > 0:
-                copy = dict(item)
-                copy["stake_yen"] = stake
-                copy["label"] = (
-                    f"{item['type']} "
-                    f"{'-'.join(map(str, item['horses']))} ({stake}円)"
-                )
-                adjusted.append(copy)
-                remaining -= stake
-        lines = adjusted
-        total = sum(item["stake_yen"] for item in lines)
-
+    # Preserve real ticket costs; do not fabricate budget fillers.
     return [{
         "pattern_type": "B" if use_b else "A",
         "pattern": pattern,
@@ -800,7 +1066,7 @@ def build_tickets(ranked, outsiders):
 
 
 # ============================================================
-# Result parsing
+# Results and payouts
 # ============================================================
 
 def canonical_combo(kind, numbers):
@@ -830,20 +1096,14 @@ def detect_payout_type(text):
 
 
 def parse_payouts(soup):
-    payouts = {
-        "win": {}, "quinella": {}, "trio": {},
-        "wide": {}, "trifecta": {},
-    }
-
+    payouts = empty_payouts()
     rows = safe_select(
         soup,
         "table.Payout_Detail_Table tr, table.PayoutTable tr, "
         "table.RacePayout tr, table[class*='Payout'] tr",
     )
 
-    # Avoid parsing arbitrary page rows: payout table rows only.
     seen = set()
-
     for row in rows:
         row_text = text_of(row)
         if not row_text or row_text in seen:
@@ -860,37 +1120,30 @@ def parse_payouts(soup):
 
         combo = ""
         payout_yen = None
+        needed = 1 if kind == "win" else (
+            2 if kind in ("quinella", "wide") else 3
+        )
 
-        # First find a combination cell with explicit separators.
         for cell in cells:
             value = text_of(cell)
             if re.search(r"\d+\s*[-－]\s*\d+", value):
                 nums = re.findall(r"\d+", value)
-                needed = 1 if kind == "win" else (
-                    2 if kind in ("quinella", "wide") else 3
-                )
                 if len(nums) >= needed:
                     combo = canonical_combo(kind, nums[:needed])
                     break
 
-        # Some payout tables split combination numbers into cells.
         if not combo:
-            numeric_cells = []
+            nums = []
             for cell in cells:
                 value = text_of(cell)
                 if "円" in value:
                     continue
-                nums = re.findall(r"\d+", value)
-                if len(nums) == 1 and 1 <= int(nums[0]) <= 18:
-                    numeric_cells.append(nums[0])
+                found = re.findall(r"\d+", value)
+                if len(found) == 1 and 1 <= int(found[0]) <= 18:
+                    nums.append(found[0])
+            if len(nums) >= needed:
+                combo = canonical_combo(kind, nums[:needed])
 
-            needed = 1 if kind == "win" else (
-                2 if kind in ("quinella", "wide") else 3
-            )
-            if len(numeric_cells) >= needed:
-                combo = canonical_combo(kind, numeric_cells[:needed])
-
-        # Payout amount must be explicit and attached to this row.
         for cell in cells:
             match = re.search(r"([\d,]+)\s*円", text_of(cell))
             if match:
@@ -899,7 +1152,7 @@ def parse_payouts(soup):
                 except ValueError:
                     payout_yen = None
 
-        if combo and payout_yen is not None and payout_yen >= 0:
+        if combo and payout_yen is not None:
             payouts[kind][combo] = payout_yen
 
     return payouts
@@ -907,7 +1160,6 @@ def parse_payouts(soup):
 
 def parse_finish_rows(soup):
     finish_map = {}
-
     rows = safe_select(
         soup,
         "table.RaceTable01 tr, table.ResultTable tr, "
@@ -930,12 +1182,9 @@ def parse_finish_rows(soup):
                 break
 
         if finish is None:
-            first = text_of(cells[0])
-            match = re.fullmatch(r"(\d{1,2})", first)
-            if match:
-                value = int(match.group(1))
-                if 1 <= value <= 18:
-                    finish = value
+            match = re.fullmatch(r"(\d{1,2})", text_of(cells[0]))
+            if match and 1 <= int(match.group(1)) <= 18:
+                finish = int(match.group(1))
 
         if finish is None:
             continue
@@ -948,7 +1197,7 @@ def parse_finish_rows(soup):
                 break
 
         if horse_no is None:
-            # Conservative fallback: do not guess if the row is ambiguous.
+            # Conservative fallback: first plausible number after rank.
             for cell in cells[1:5]:
                 classes = " ".join(cell.get("class", []))
                 if "Rank" in classes or "Result" in classes:
@@ -965,10 +1214,9 @@ def parse_finish_rows(soup):
 
 
 def get_result_data(base_url, race_id):
-    url = f"{base_url}/race/result.html?race_id={race_id}"
-    html = get_html(url)
+    html = get_html(f"{base_url}/race/result.html?race_id={race_id}")
     if not html:
-        return [], dict(EMPTY_PAYOUTS)
+        return [], empty_payouts()
 
     soup = soup_of(html)
     finish_map = parse_finish_rows(soup)
@@ -980,14 +1228,10 @@ def get_result_data(base_url, race_id):
     return finishes, parse_payouts(soup)
 
 
-# ============================================================
-# Settlement
-# ============================================================
-
 def settle_tickets(tickets, finish_numbers, payouts):
     if not tickets or len(finish_numbers) < 3:
         return {
-            "race_cost": tickets[0].get("cost_yen", BET_BUDGET_YEN) if tickets else 0,
+            "race_cost": tickets[0].get("cost_yen", 0) if tickets else 0,
             "win_return": 0,
             "race_profit": 0,
             "win_hit": None,
@@ -1009,14 +1253,13 @@ def settle_tickets(tickets, finish_numbers, payouts):
         kind = item.get("type")
         horses = [int(x) for x in item.get("horses", [])]
         stake = int(item.get("stake_yen", 0))
-
         if not horses or stake <= 0:
             continue
 
         hit = False
         if kind == "win":
             hit = len(horses) == 1 and horses[0] == first
-            combo = canonical_combo("win", horses)
+            combo = canonical_combo(kind, horses)
             if hit:
                 win_hit = True
         elif kind == "quinella":
@@ -1045,7 +1288,6 @@ def settle_tickets(tickets, finish_numbers, payouts):
             missing_hit_payout = True
             continue
 
-        # Public payout tables normally show return per 100 yen.
         total_return += int(round(stake * payout / 100))
 
     if missing_hit_payout:
@@ -1066,6 +1308,108 @@ def settle_tickets(tickets, finish_numbers, payouts):
         "settlement_complete": True,
         "settlement_status": "決済完了",
     }
+
+
+# ============================================================
+# Odds tracking
+# ============================================================
+
+def odds_snapshot(race, horses):
+    return {
+        "captured_at": NOW.isoformat(),
+        "minutes_to_post": race.get("minutes_to_post"),
+        "odds": {
+            str(horse["horse_no"]): horse.get("odds")
+            for horse in horses
+            if horse.get("odds") is not None
+        },
+    }
+
+
+def update_odds_history(snapshot, race):
+    race_id = str(race["id"])
+    old = snapshot.get(race_id, {})
+    odds_history = old.get("odds_snapshots", [])
+    current = odds_snapshot(race, race.get("horses", []))
+
+    # Avoid duplicate snapshots within the same minute.
+    minute_key = current["captured_at"][:16]
+    if not odds_history or odds_history[-1].get("captured_at", "")[:16] != minute_key:
+        odds_history.append(current)
+
+    odds_history = odds_history[-MAX_ODDS_SNAPSHOTS:]
+    old["odds_snapshots"] = odds_history
+    snapshot[race_id] = old
+
+    post_dt = scheduled_datetime(race)
+    comparison = {
+        "ten_minutes": None,
+        "one_minute": None,
+        "available": False,
+        "note": "必要な発走前スナップショットが未取得",
+    }
+
+    if post_dt:
+        for target_min, key, tolerance in [
+            (10, "ten_minutes", 4),
+            (1, "one_minute", 2),
+        ]:
+            candidates = []
+            for snap in odds_history:
+                try:
+                    captured = datetime.fromisoformat(snap["captured_at"])
+                    minutes = (post_dt - captured).total_seconds() / 60
+                    if abs(minutes - target_min) <= tolerance:
+                        candidates.append((abs(minutes - target_min), snap))
+                except (ValueError, TypeError, KeyError):
+                    continue
+            if candidates:
+                comparison[key] = min(candidates, key=lambda x: x[0])[1]
+
+    comparison["available"] = bool(
+        comparison["ten_minutes"] and comparison["one_minute"]
+    )
+    if comparison["available"]:
+        comparison["note"] = (
+            "10分前・1分前の近傍スナップショットを取得"
+        )
+
+    # Compare odds only when both snapshots contain the horse.
+    trends = {}
+    ten = comparison.get("ten_minutes") or {}
+    one = comparison.get("one_minute") or {}
+    odds10 = ten.get("odds", {})
+    odds1 = one.get("odds", {})
+
+    for horse_no in set(odds10) & set(odds1):
+        a = safe_float(odds10.get(horse_no))
+        b = safe_float(odds1.get(horse_no))
+        if a and b:
+            trends[horse_no] = {
+                "odds_10m": a,
+                "odds_1m": b,
+                "change_pct": round((b - a) / a * 100, 2),
+                "direction": (
+                    "上昇" if b > a else "下降" if b < a else "変化なし"
+                ),
+            }
+
+    race["odds_trend"] = {
+        **comparison,
+        "horses": trends,
+    }
+
+    for horse in race.get("horses", []):
+        trend = trends.get(str(horse["horse_no"]))
+        horse["odds_trend"] = trend
+        if trend:
+            horse["odds_trend_reason"] = (
+                f"10分前 {trend['odds_10m']:g}倍 → "
+                f"1分前 {trend['odds_1m']:g}倍 "
+                f"（{trend['change_pct']:+g}%）"
+            )
+        else:
+            horse["odds_trend_reason"] = "比較可能なオッズ履歴なし"
 
 
 # ============================================================
@@ -1091,52 +1435,18 @@ def parse_race(html, race_id, kind, base_url):
         ],
     )
     if not race_name or race_name in ["出馬表", "レース情報"]:
-        race_name = f"{venue}{race_no}R" if venue and race_no else "レース名未取得"
+        race_name = (
+            f"{venue}{race_no}R"
+            if venue and race_no else "レース名未取得"
+        )
 
-    runners = parse_runner_rows(soup, surface, venue)
+    runners = parse_runner_rows(
+        soup, surface, venue, base_url, distance
+    )
     ranked = score_runners(runners, surface, venue, heavy)
+    estimate_probabilities(ranked)
     outsiders, longshots = classify_value_horses(ranked)
     tickets = build_tickets(ranked, outsiders)
-
-    is_finished = False
-    if post_time:
-        try:
-            scheduled = NOW.replace(
-                hour=int(post_time[:2]),
-                minute=int(post_time[3:5]),
-                second=0,
-                microsecond=0,
-            )
-            is_finished = NOW >= scheduled + timedelta(minutes=10)
-        except (ValueError, IndexError):
-            pass
-
-    result_finishes = []
-    win_hit = None
-    win_return = 0
-    race_cost = tickets[0]["cost_yen"] if tickets else 0
-    race_profit = 0
-    settlement_complete = False
-    settlement_status = "発走前または結果待ち"
-    payout_values = dict(EMPTY_PAYOUTS)
-
-    if is_finished:
-        result_finishes, payout_values = get_result_data(base_url, race_id)
-        if len(result_finishes) >= 3 and tickets:
-            settlement = settle_tickets(tickets, result_finishes, payout_values)
-            win_hit = settlement["win_hit"]
-            win_return = settlement["win_return"]
-            race_cost = settlement["race_cost"]
-            race_profit = settlement["race_profit"]
-            settlement_complete = settlement["settlement_complete"]
-            settlement_status = settlement["settlement_status"]
-        else:
-            settlement_status = "着順または買い目データ未確定"
-
-    for rank, horse in enumerate(ranked, 1):
-        horse["rank"] = rank
-
-    recommended = race_no == 11 or len(outsiders) >= 2
 
     return {
         "id": str(race_id),
@@ -1154,58 +1464,157 @@ def parse_race(html, race_id, kind, base_url):
         "outsiders": outsiders,
         "longshots": longshots,
         "tickets": tickets,
-        "is_finished": is_finished,
-        "result_finishes": result_finishes,
-        "win_hit": win_hit,
-        "win_return": win_return,
-        "race_cost": race_cost,
-        "race_profit": race_profit,
-        "settlement_complete": settlement_complete,
-        "settlement_status": settlement_status,
-        "payouts": payout_values,
-        "is_recommended": bool(recommended),
+        "is_finished": False,
+        "result_finishes": [],
+        "win_hit": None,
+        "win_return": 0,
+        "race_cost": tickets[0]["cost_yen"] if tickets else 0,
+        "race_profit": 0,
+        "settlement_complete": False,
+        "settlement_status": "発走前または結果待ち",
+        "payouts": empty_payouts(),
+        "is_recommended": bool(
+            race_no == 11 or len(outsiders) >= 2 or len(longshots) >= 1
+        ),
+        "prediction_method": "heuristic_v24_unvalidated",
+        "prediction_warning": (
+            "推定勝率・EVは未校正。長期成績による検証が必要です。"
+        ),
     }
 
 
 # ============================================================
-# History / stats
+# History and frozen predictions
 # ============================================================
 
 def load_history():
-    default = {"schema_version": 23, "snapshots": {}}
-    data = load_json(HISTORY, default)
+    data = load_json(
+        HISTORY,
+        {
+            "schema_version": 24,
+            "snapshots": {},
+            "horse_form_cache": {},
+        },
+    )
     if not isinstance(data, dict):
-        data = default
+        data = {}
+
     if not isinstance(data.get("snapshots"), dict):
         data["snapshots"] = {}
-    data["schema_version"] = 23
+    if not isinstance(data.get("horse_form_cache"), dict):
+        data["horse_form_cache"] = {}
+
+    data["schema_version"] = 24
     return data
+
+
+def freeze_prediction(race):
+    """
+    Freeze the first pre-race prediction for each race.
+    Later updates must not rewrite the original prediction.
+    """
+    return {
+        "captured_at": NOW.isoformat(),
+        "race_id": race["id"],
+        "date": race.get("date", TODAY_ISO),
+        "name": race.get("name"),
+        "course": race.get("course"),
+        "post_time": race.get("post_time"),
+        "horses": [
+            {
+                "horse_no": h.get("horse_no"),
+                "horse": h.get("horse"),
+                "rank": h.get("rank"),
+                "score": h.get("score"),
+                "estimated_win_probability_pct":
+                    h.get("estimated_win_probability_pct"),
+                "odds": h.get("odds"),
+                "ev": h.get("ev"),
+                "ev_label": h.get("ev_label"),
+            }
+            for h in race.get("horses", [])
+        ],
+        "tickets": race.get("tickets", []),
+    }
 
 
 def update_snapshot(snapshots, race):
     race_id = str(race["id"])
     old = snapshots.get(race_id, {})
 
-    # Preserve already completed settlements.
+    # Do not overwrite a completed settlement.
     if old.get("settlement_complete") is True:
         return
 
-    snapshots[race_id] = {
-        "race_id": race_id,
-        "date": race.get("date", TODAY_ISO),
-        "kind": race.get("kind"),
-        "course": race.get("course"),
-        "race_no": race.get("race_no"),
-        "name": race.get("name"),
-        "cost": int(race.get("race_cost") or 0),
-        "is_finished": bool(race.get("is_finished")),
-        "win_hit": race.get("win_hit"),
-        "win_return": int(race.get("win_return") or 0),
-        "race_profit": int(race.get("race_profit") or 0),
-        "settlement_complete": bool(race.get("settlement_complete")),
-        "settlement_status": race.get("settlement_status", ""),
-        "updated_at": NOW.isoformat(),
+    old.setdefault("race_id", race_id)
+    old.setdefault("date", race.get("date", TODAY_ISO))
+    old.setdefault("kind", race.get("kind"))
+    old.setdefault("course", race.get("course"))
+    old.setdefault("race_no", race.get("race_no"))
+    old.setdefault("name", race.get("name"))
+
+    if not old.get("frozen_prediction"):
+        old["frozen_prediction"] = freeze_prediction(race)
+
+    old["cost"] = int(race.get("race_cost") or 0)
+    old["updated_at"] = NOW.isoformat()
+    old["last_odds"] = {
+        str(h["horse_no"]): h.get("odds")
+        for h in race.get("horses", [])
     }
+
+    update_odds_history(snapshots, race)
+
+    # Only request results after scheduled post time + 10 minutes.
+    post_dt = scheduled_datetime(race)
+    is_finished = bool(
+        post_dt and NOW >= post_dt + timedelta(minutes=10)
+    )
+    race["is_finished"] = is_finished
+    old["is_finished"] = is_finished
+
+    if is_finished and not old.get("settlement_complete"):
+        base_url = (
+            "https://nar.netkeiba.com"
+            if race.get("kind") == "地方"
+            else "https://race.netkeiba.com"
+        )
+        finishes, payouts = get_result_data(base_url, race_id)
+        race["result_finishes"] = finishes
+        race["payouts"] = payouts
+
+        if len(finishes) >= 3 and race.get("tickets"):
+            settlement = settle_tickets(
+                race["tickets"], finishes, payouts
+            )
+        else:
+            settlement = {
+                "race_cost": race.get("race_cost", 0),
+                "win_return": 0,
+                "race_profit": 0,
+                "win_hit": None,
+                "settlement_complete": False,
+                "settlement_status": "着順または買い目データ未確定",
+            }
+
+        race.update(settlement)
+        old.update({
+            "win_hit": settlement["win_hit"],
+            "win_return": settlement["win_return"],
+            "race_profit": settlement["race_profit"],
+            "settlement_complete": settlement["settlement_complete"],
+            "settlement_status": settlement["settlement_status"],
+            "result_finishes": finishes,
+            "payouts": payouts,
+        })
+
+    race["settlement_complete"] = bool(old.get("settlement_complete"))
+    race["settlement_status"] = old.get(
+        "settlement_status", "発走前または結果待ち"
+    )
+    race["win_hit"] = old.get("win_hit")
+    race["win_return"] = int(old.get("win_return") or 0)
+    race["race_profit"] = int(old.get("race_profit") or 0)
 
 
 def calculate_stats(snapshots):
@@ -1217,7 +1626,9 @@ def calculate_stats(snapshots):
     ]
 
     total_stake = sum(int(item.get("cost") or 0) for item in settled)
-    total_return = sum(int(item.get("win_return") or 0) for item in settled)
+    total_return = sum(
+        int(item.get("win_return") or 0) for item in settled
+    )
     wins = sum(1 for item in settled if item.get("win_hit") is True)
     count = len(settled)
 
@@ -1227,11 +1638,13 @@ def calculate_stats(snapshots):
         "win_hits": wins,
         "total_stake_yen": total_stake,
         "total_return_yen": total_return,
-        "roi_pct": round(total_return / total_stake * 100, 1) if total_stake else 0.0,
-        "win_hit_rate_pct": round(wins / count * 100, 1) if count else 0.0,
+        "roi_pct": round(total_return / total_stake * 100, 1)
+        if total_stake else 0.0,
+        "win_hit_rate_pct": round(wins / count * 100, 1)
+        if count else 0.0,
         "accounting_note": (
-            "紙上シミュレーション。払戻を組み合わせ単位で確認できた"
-            "レースのみ集計。実際の利益を保証するものではありません。"
+            "紙上シミュレーション。確認できた払戻だけ集計。"
+            "実際の利益・勝率を保証するものではありません。"
         ),
     }
 
@@ -1241,8 +1654,13 @@ def calculate_stats(snapshots):
 # ============================================================
 
 def main():
+    global FORM_CACHE
+
     history_data = load_history()
     snapshots = history_data["snapshots"]
+    FORM_CACHE = history_data.get("horse_form_cache", {})
+    if not isinstance(FORM_CACHE, dict):
+        FORM_CACHE = {}
 
     today_races = []
     tomorrow_races = []
@@ -1255,8 +1673,7 @@ def main():
 
     for date_str, iso_date, target_list, is_tomorrow in targets:
         for source in SOURCES:
-            list_url = source["list"] + date_str
-            list_html = get_html(list_url)
+            list_html = get_html(source["list"] + date_str)
             race_ids = extract_race_ids(list_html)
 
             if not race_ids:
@@ -1274,31 +1691,43 @@ def main():
                 html = get_html(race_url)
 
                 if not html:
-                    errors.append(f"{source['kind']} {race_id}: 出馬表取得失敗")
-                    time.sleep(REQUEST_DELAY)
-                    continue
-
-                try:
-                    race = parse_race(html, race_id, source["kind"], source["base"])
-                except Exception as exc:
                     errors.append(
-                        f"{source['kind']} {race_id}: "
-                        f"解析エラー {type(exc).__name__}: {exc}"
+                        f"{source['kind']} {race_id}: 出馬表取得失敗"
                     )
                     time.sleep(REQUEST_DELAY)
                     continue
 
-                if race["runner_count"] >= MIN_RUNNERS:
+                try:
+                    race = parse_race(
+                        html, race_id, source["kind"], source["base"]
+                    )
                     race["date"] = iso_date
                     race["is_tomorrow"] = is_tomorrow
-                    target_list.append(race)
 
-                    if not is_tomorrow:
-                        update_snapshot(snapshots, race)
-                else:
+                    post_dt = scheduled_datetime(race)
+                    race["minutes_to_post"] = (
+                        round((post_dt - NOW).total_seconds() / 60, 2)
+                        if post_dt else None
+                    )
+
+                    for rank, horse in enumerate(race["horses"], 1):
+                        horse["rank"] = rank
+                    race["top5"] = race["horses"][:5]
+
+                    if race["runner_count"] >= MIN_RUNNERS:
+                        target_list.append(race)
+                        if not is_tomorrow:
+                            update_snapshot(snapshots, race)
+                    else:
+                        errors.append(
+                            f"{source['kind']} {race_id}: "
+                            f"出走馬の解析数が{race['runner_count']}頭"
+                        )
+
+                except Exception as exc:
                     errors.append(
                         f"{source['kind']} {race_id}: "
-                        f"出走馬の解析数が{race['runner_count']}頭"
+                        f"解析エラー {type(exc).__name__}: {exc}"
                     )
 
                 time.sleep(REQUEST_DELAY)
@@ -1308,28 +1737,40 @@ def main():
         not today_races
         and not tomorrow_races
         and isinstance(previous_data, dict)
-        and (previous_data.get("races") or previous_data.get("tomorrow_races"))
+        and (
+            previous_data.get("races")
+            or previous_data.get("tomorrow_races")
+        )
     ):
         print("[ERROR] No races parsed; preserving existing data.json.")
         raise RuntimeError(
             "レース取得に失敗したため既存データを保護しました。"
-            "docs/data.json の warnings とActionsログを確認してください。"
+            "Actionsログとdocs/data.jsonのwarningsを確認してください。"
         )
 
     cutoff = (NOW - timedelta(days=HISTORY_RETENTION_DAYS)).date()
     for race_id, item in list(snapshots.items()):
         try:
-            item_date = datetime.strptime(item.get("date", ""), "%Y-%m-%d").date()
+            item_date = datetime.strptime(
+                item.get("date", ""), "%Y-%m-%d"
+            ).date()
             if item_date < cutoff:
                 del snapshots[race_id]
         except (ValueError, TypeError):
             continue
 
+    # Retain bounded form cache to control file size.
+    if len(FORM_CACHE) > MAX_FORM_CACHE:
+        FORM_CACHE = dict(list(FORM_CACHE.items())[-MAX_FORM_CACHE:])
+
     stats = calculate_stats(snapshots)
+
     history_data.update({
+        "schema_version": 24,
         "updated_at": NOW.isoformat(),
         "stats": stats,
         "snapshots": snapshots,
+        "horse_form_cache": FORM_CACHE,
     })
     save_json(HISTORY, history_data)
 
@@ -1364,7 +1805,7 @@ def main():
     save_json(OUT, output)
 
     print(
-        f"BAGEN KEIBA v23.0 | "
+        f"BAGEN KEIBA v24.0 | "
         f"status={output['status']} | "
         f"today={len(today_races)} | "
         f"tomorrow={len(tomorrow_races)} | "
@@ -1374,7 +1815,10 @@ def main():
     )
 
     if errors:
-        print(f"[WARN] {len(errors)} warning(s); see docs/data.json -> warnings.")
+        print(
+            f"[WARN] {len(errors)} warning(s); "
+            "see docs/data.json -> warnings."
+        )
 
 
 if __name__ == "__main__":
