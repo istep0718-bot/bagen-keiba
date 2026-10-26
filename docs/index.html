@@ -20,6 +20,7 @@
   --green: #70e0ae;
   --green-bg: #11281e;
   --red: #ff8794;
+  --red-bg: #2e1518;
   --blue: #79b8ff;
   --blue-bg: #122238;
   --purple-bg: #221730;
@@ -88,9 +89,9 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 .box-outsider { background: var(--blue-bg); border: 1px solid #23436d; color: var(--blue); }
 
 .box-ticket-a { background: #142236; border: 1px solid #2d4568; }
-.box-ticket-b { background: var(--purple-bg); border: 1px solid var(--purple-border); }
+.box-ticket-b { background: #221730; border: 1px solid #523475; }
 
-.box-result { background: var(--green-bg); border: 1px solid #235238; }
+.box-result { background: #11281e; border: 1px solid #235238; }
 .ticket-line { margin-top: 3px; font-size: 11px; font-weight: 600; }
 
 @media(min-width: 680px) {
@@ -178,7 +179,7 @@ function renderRace(r) {
 
     ticketHtml = '<div class="box-section ' + ticketBoxClass + '">' +
       '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">' +
-        '<b style="' + badgeColor + '">🎯 2,000円マルチ買い目</b>' +
+        '<b style="' + badgeColor + '">🎯 2,000円血統チューニング買い目</b>' +
         '<span style="' + badgeColor + '; font-weight:bold; font-size:10px; ' + badgeBg + '; padding:2px 6px; border-radius:4px">' + (t.pattern || '2,000円配分') + '</span>' +
       '</div>' +
       (lines.length ? lines.map(line => '<div class="ticket-line">• ' + line + '</div>').join('') : '') +
@@ -189,7 +190,7 @@ function renderRace(r) {
   let resultHtml = '';
   if (isFinished) {
     const finishes = r.result_finishes || [];
-    const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
+    const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不ﮅ</span>' : '');
     
     let formattedResult = '結果データ確認中';
     if (finishes.length >= 3) {
@@ -198,9 +199,19 @@ function renderRace(r) {
       formattedResult = finishes.map((f, i) => `${i+1}着: ${f}番`).join(' / ');
     }
 
+    const cost = r.race_cost || 2000;
+    const ret = r.win_return || 0;
+    const profit = r.race_profit || (ret - cost);
+    const profitColor = profit >= 0 ? 'color:var(--green); font-weight:bold;' : 'color:var(--red); font-weight:bold;';
+    const profitSign = profit >= 0 ? '+' : '';
+
     resultHtml = '<div class="box-section box-result">' +
-      '<b style="color:var(--green)">🏁 レース確定結果</b>' + hitText + '<br>' +
-      '<b>確定着順:</b> ' + formattedResult +
+      '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">' +
+        '<div><b style="color:var(--green)">🏁 レース確定結果</b>' + hitText + '</div>' +
+        '<div style="' + profitColor + '">収支: ' + profitSign + profit.toLocaleString() + '円</div>' +
+      '</div>' +
+      '<div style="font-size:11px; margin-bottom:4px"><b>確定着順:</b> ' + formattedResult + '</div>' +
+      '<div style="font-size:10px; color:var(--muted)">投資: ' + cost.toLocaleString() + '円 / 回収: ' + ret.toLocaleString() + '円</div>' +
     '</div>';
   }
 
@@ -216,10 +227,10 @@ function renderRace(r) {
     '</div>' +
     '<div class="race-meta">' + (r.course || '') + ' | 発走: ' + (r.post_time || '') + '</div>' +
     '<div class="box-section box-top3">' +
-      '<div style="font-weight:bold; color:var(--gold); margin-bottom:4px">🔥 注目上位馬</div>' +
+      '<div style="font-weight:bold; color:var(--gold); margin-bottom:4px">🔥 血統チューニング上位馬</div>' +
       (top3.length ? top3.map((h, i) => '<div>' + (i+1) + '位: 馬番 ' + (h.number || h.horse_no) + ' ' + (h.name || h.horse) + ' (単勝 ' + (h.odds || '-') + '倍)</div>').join('') : 'データ準備中') +
     '</div>' +
-    (r.outsiders && r.outsiders.length > 0 ? '<div class="box-section box-outsider">💡 注目穴馬: ' + r.outsiders.map(o => o.name || o.horse).join(', ') + '</div>' : '') +
+    (r.outsiders && r.outsiders.length > 0 ? '<div class="box-section box-outsider">💡 注目血統穴馬: ' + r.outsiders.map(o => o.name || o.horse).join(', ') + '</div>' : '') +
     ticketHtml +
     resultHtml +
   '</article>';
@@ -284,7 +295,6 @@ async function init() {
   try {
     const res = await fetch('./docs/data.json?t=' + new Date().getTime());
     if (!res.ok) {
-      // 階層フォールバック
       const resFallback = await fetch('./data.json?t=' + new Date().getTime());
       if (!resFallback.ok) throw new Error('データ取得に失敗しました');
       data = await resFallback.json();
