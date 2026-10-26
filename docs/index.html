@@ -108,7 +108,12 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
     <img src="IMG_6215.jpeg" alt="馬玄" class="logo-img" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2236%22 height=%2236%22><rect width=%22100%22 height=%22100%22 fill=%22%232d2414%22/><text x=%2250%25%22 y=%2255%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23efcb72%22 font-size=%2218%22 font-weight=%22bold%22>玄</text></svg>'">
     <div class="brand-title">馬玄 BAGEN</div>
   </div>
-  <button class="refresh-btn" onclick="init()">↻ データ更新</button>
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <div style="font-size: 10px; color: var(--muted); background: #14243a; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);">
+      👁️ <span id="pv-count">—</span> PV
+    </div>
+    <button class="refresh-btn" onclick="init()">↻ データ更新</button>
+  </div>
 </header>
 
 <main>
@@ -188,7 +193,6 @@ function renderRace(r) {
     const finishes = r.result_finishes || [];
     const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
     
-    // 着順テキストを「1着:○番 / 2着:○番 / 3着:○番」と直感的に表示されるよう整形
     let formattedResult = '結果データ確認中';
     if (finishes.length >= 3) {
       formattedResult = `1着: ${finishes[0]}番 / 2着: ${finishes[1]}番 / 3着: ${finishes[2]}番`;
@@ -263,7 +267,20 @@ function render() {
   container.innerHTML = filtered.map(renderRace).join('');
 }
 
+async function updatePV() {
+  try {
+    const res = await fetch('https://counterapi.dev/v1/bagen-keiba-app/visits/up');
+    const json = await res.json();
+    if (json && json.count !== undefined) {
+      document.getElementById('pv-count').textContent = json.count.toLocaleString();
+    }
+  } catch (e) {
+    console.error('PV取得失敗', e);
+  }
+}
+
 async function init() {
+  updatePV();
   const container = $('races');
   container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">データを読み込み中…</div>';
   try {
