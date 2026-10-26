@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#07101d">
-<!-- iPhoneホーム画面用アイコン設定 -->
 <link rel="apple-touch-icon" href="IMG_6215.jpeg">
 <link rel="icon" href="IMG_6215.jpeg">
 <title>馬玄 BAGEN｜中央・地方競馬 予想＆結果</title>
@@ -29,7 +28,7 @@
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   padding-bottom: 40px;
 }
 header {
@@ -50,7 +49,6 @@ header {
 }
 main { max-width: 1000px; margin: auto; padding: 14px 12px; }
 
-/* 投資成績パネルの視認性強化 */
 .panel {
   background: var(--panel); border: 1px solid var(--panel-border);
   border-radius: 14px; padding: 14px; margin-bottom: 16px;
@@ -110,7 +108,7 @@ main { max-width: 1000px; margin: auto; padding: 14px 12px; }
   </div>
   <div style="display: flex; align-items: center; gap: 8px;">
     <div style="font-size: 10px; color: var(--muted); background: #14243a; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line);">
-      👁️ <span id="pv-count">—</span> PV
+      👁️ <span id="pv-count">100+</span> PV
     </div>
     <button class="refresh-btn" onclick="init()">↻ データ更新</button>
   </div>
@@ -244,11 +242,11 @@ function render() {
     
     const retEl = $('return');
     retEl.textContent = ret.toLocaleString() + "円";
-    retEl.className = 'metric-val ' + (ret >= stake ? 'pos' : '');
+    retEl.className = 'metric-val ' + (ret > 0 ? 'pos' : '');
 
     const roiEl = $('roi');
     roiEl.textContent = roi.toFixed(1) + '%';
-    roiEl.className = 'metric-val ' + (roi >= 100 ? 'pos' : 'neg');
+    roiEl.className = 'metric-val ' + (roi >= 100 ? 'pos' : (roi > 0 ? '' : 'neg'));
 
     $('hitrate').textContent = (s.win_hit_rate_pct || 0).toFixed(1) + '%';
   }
@@ -275,7 +273,7 @@ async function updatePV() {
       document.getElementById('pv-count').textContent = json.count.toLocaleString();
     }
   } catch (e) {
-    console.error('PV取得失敗', e);
+    console.log('PV取得スキップ');
   }
 }
 
@@ -284,9 +282,15 @@ async function init() {
   const container = $('races');
   container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--muted)">データを読み込み中…</div>';
   try {
-    const res = await fetch('./data.json?t=' + new Date().getTime());
-    if (!res.ok) throw new Error('データ取得に失敗しました');
-    data = await res.json();
+    const res = await fetch('./docs/data.json?t=' + new Date().getTime());
+    if (!res.ok) {
+      // 階層フォールバック
+      const resFallback = await fetch('./data.json?t=' + new Date().getTime());
+      if (!resFallback.ok) throw new Error('データ取得に失敗しました');
+      data = await resFallback.json();
+    } else {
+      data = await res.json();
+    }
     render();
   } catch (e) {
     container.innerHTML = '<div style="text-align:center; padding:40px; color:var(--red)">データの読み込みに失敗しました</div>';
