@@ -187,9 +187,18 @@ function renderRace(r) {
   if (isFinished) {
     const finishes = r.result_finishes || [];
     const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
+    
+    // 着順テキストを「1着:○番 / 2着:○番 / 3着:○番」と直感的に表示されるよう整形
+    let formattedResult = '結果データ確認中';
+    if (finishes.length >= 3) {
+      formattedResult = `1着: ${finishes[0]}番 / 2着: ${finishes[1]}番 / 3着: ${finishes[2]}番`;
+    } else if (finishes.length > 0) {
+      formattedResult = finishes.map((f, i) => `${i+1}着: ${f}番`).join(' / ');
+    }
+
     resultHtml = '<div class="box-section box-result">' +
       '<b style="color:var(--green)">🏁 レース確定結果</b>' + hitText + '<br>' +
-      '<b>1〜3着馬番:</b> ' + (finishes.length ? finishes.join('着 - ') + '着' : '結果データ確認中') +
+      '<b>確定着順:</b> ' + formattedResult +
     '</div>';
   }
 
