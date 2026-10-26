@@ -20,7 +20,6 @@
   --green: #70e0ae;
   --green-bg: #11281e;
   --red: #ff8794;
-  --red-bg: #2e1518;
   --blue: #79b8ff;
   --blue-bg: #122238;
   --purple-bg: #221730;
@@ -179,7 +178,7 @@ function renderRace(r) {
 
     ticketHtml = '<div class="box-section ' + ticketBoxClass + '">' +
       '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">' +
-        '<b style="' + badgeColor + '">🎯 2,000円血統チューニング買い目</b>' +
+        '<b style="' + badgeColor + '">🎯 2,000円 隠しファクター最適化買い目</b>' +
         '<span style="' + badgeColor + '; font-weight:bold; font-size:10px; ' + badgeBg + '; padding:2px 6px; border-radius:4px">' + (t.pattern || '2,000円配分') + '</span>' +
       '</div>' +
       (lines.length ? lines.map(line => '<div class="ticket-line">• ' + line + '</div>').join('') : '') +
@@ -190,7 +189,7 @@ function renderRace(r) {
   let resultHtml = '';
   if (isFinished) {
     const finishes = r.result_finishes || [];
-    const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不ﮅ</span>' : '');
+    const hitText = r.win_hit === true ? ' <span style="color:var(--green); font-weight:bold">🎯 的中！</span>' : (r.win_hit === false ? ' <span style="color:var(--red)">❌ 不的中</span>' : '');
     
     let formattedResult = '結果データ確認中';
     if (finishes.length >= 3) {
@@ -227,10 +226,10 @@ function renderRace(r) {
     '</div>' +
     '<div class="race-meta">' + (r.course || '') + ' | 発走: ' + (r.post_time || '') + '</div>' +
     '<div class="box-section box-top3">' +
-      '<div style="font-weight:bold; color:var(--gold); margin-bottom:4px">🔥 血統チューニング上位馬</div>' +
+      '<div style="font-weight:bold; color:var(--gold); margin-bottom:4px">🔥 隠しファクター解析上位馬</div>' +
       (top3.length ? top3.map((h, i) => '<div>' + (i+1) + '位: 馬番 ' + (h.number || h.horse_no) + ' ' + (h.name || h.horse) + ' (単勝 ' + (h.odds || '-') + '倍)</div>').join('') : 'データ準備中') +
     '</div>' +
-    (r.outsiders && r.outsiders.length > 0 ? '<div class="box-section box-outsider">💡 注目血統穴馬: ' + r.outsiders.map(o => o.name || o.horse).join(', ') + '</div>' : '') +
+    (r.outsiders && r.outsiders.length > 0 ? '<div class="box-section box-outsider">💡 注目期待値穴馬: ' + r.outsiders.map(o => o.name || o.horse).join(', ') + '</div>' : '') +
     ticketHtml +
     resultHtml +
   '</article>';
