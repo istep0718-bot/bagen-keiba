@@ -394,7 +394,7 @@ def main():
 
                 time.sleep(REQUEST_DELAY)
 
-    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit"] is not None]
+    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit") is not None]
     win_hits = sum(1 for s in settled if s.get("win_hit"))
     total_return = sum(s.get("win_return", 0) for s in settled)
     total_stake = sum(s.get("cost", 2000) for s in settled)
