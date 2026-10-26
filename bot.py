@@ -348,7 +348,6 @@ def parse_race(html, rid, kind, base_url):
             s -= 4.0  # 不安要素のある馬は減点
 
         # 5. 隠しファクター：オッズの歪み・過剰人気ペナルティ ＆ 妙味穴馬ブースト
-        # 1番人気かつオッズが低すぎる（過剰人気）場合の微調整、または10〜30倍の穴馬で血統・気配が揃っている場合の特大ブースト
         if p == 1 and o and o < 1.8:
             s -= 3.0  # 過剰人気リスク馬は軸から剥がす
         elif o and 10.0 <= o < 30.0 and (h.get("is_apprentice") or h.get("is_positive_memo") or h.get("is_dirt_blood")):
@@ -397,7 +396,7 @@ def parse_race(html, rid, kind, base_url):
                     f"3連複: {b1} - {b2} - {b3} (600円)",
                     f"★妙味ワイド: {h_sub}.{h_sub_name} - {b1}, {b2} (各100円 / 計300円)"
                 ],
-                "note": "AI最適化回収型：過剰人気を回避し、隠れた好走条件が揃った軸馬で回収率を最大化"
+                "note": "AI最適化回収型：過剰人気を回避し、隠れた好走条件が揃えた軸馬で回収率を最大化"
             })
 
     is_finished = False
@@ -507,7 +506,8 @@ def main():
 
                 time.sleep(REQUEST_DELAY)
 
-    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit"] is not None]
+    # 修正箇所: s.get("win_hit") の閉じ括弧を正しく修正
+    settled = [s for s in snapshots.values() if s.get("is_finished") and s.get("win_hit") is not None]
     win_hits = sum(1 for s in settled if s.get("win_hit"))
     total_return = sum(s.get("win_return", 0) for s in settled)
     total_stake = sum(s.get("cost", 2000) for s in settled)
@@ -536,7 +536,7 @@ def main():
         "paper_betting": {"stats": stats, "history": []}
     }
     save_json(OUT, data)
-    print(f"BAGEN Ultimate Engine v19 (Hidden Factors tuned) updated. Today: {len(today_races)}, Settled: {len(settled)}, Return: {total_return} Yen")
+    print(f"BAGEN Ultimate Engine v19.1 (Syntax Fixed) updated. Today: {len(today_races)}, Settled: {len(settled)}, Return: {total_return} Yen")
 
 
 if __name__ == "__main__":
