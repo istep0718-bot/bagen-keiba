@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -229,19 +228,22 @@ function renderStats(){
     ['stake','return','roi','hitrate'].forEach(id=>$(id).textContent='—');
     return;
   }
-  const stake=num(s.total_stake_yen,0);
-  const ret=num(s.total_return_yen,0);
-  const roi=num(s.roi_pct,0);
-  const hit=num(s.win_hit_rate_pct,0);
+  // 全券種ベースを優先（なければ単勝系にフォールバック）
+  const stake=num(s.all_bet_stake_yen ?? s.total_stake_yen, 0);
+  const ret=num(s.all_bet_return_yen ?? s.total_return_yen, 0);
+  const roi=num(s.all_bet_roi_pct ?? s.roi_pct, 0);
+  const hit=num(s.win_hit_rate_pct, 0);
   $('stake').textContent=yen(stake);
   $('return').textContent=yen(ret);
   $('return').className='metric-val '+(ret>0?'pos':'');
   $('roi').textContent=roi.toFixed(1)+'%';
   $('roi').className='metric-val '+(roi>=100?'pos':roi>0?'':'neg');
   $('hitrate').textContent=hit.toFixed(1)+'%';
-  const count=num(s.races_settled,0);
-  $('stats-note').textContent='確定集計 '+count+'レース｜'+
-    textValue(s.accounting_note,'未確定レースは集計対象外です。');
+  const allCount=num(s.all_bet_settled_races, 0);
+  const count=allCount > 0 ? allCount : num(s.races_settled, 0);
+  const noteBase = textValue(s.accounting_note, '未確定レースは集計対象外です。');
+  $('stats-note').textContent =
+    '確定集計 '+count+'レース（全券種）｜単勝的中率は参考値｜'+noteBase;
 }
 function pill(label,kind=''){
   return '<span class="pill '+kind+'">'+escapeHTML(label)+'</span>';
@@ -357,23 +359,64 @@ function renderTickets(r){
       '</div>';
   }).join('');
 }
+function isAnyTicketHit(r){
+  // 1. 全券種回収額が1円でもあれば的中
+  const allRet = num(r?.all_bet_return, 0);
+  if(allRet > 0) return true;
+  // 2. settled_lines に hit がある場合
+  if(Array.isArray(r?.settled_lines) && r.settled_lines.some(l => l.hit === true)){
+    return true;
+  }
+  // 3. 単勝的中（後方互換）
+  if(r?.win_hit === true) return true;
+  return false;
+}
 function renderResult(r){
   if(r?.is_finished!==true)return '';
   const finishes=Array.isArray(r?.result_finishes)?r.result_finishes:[];
   const formatted=finishes.length>=3?
     '1着 '+escapeHTML(finishes[0])+'番／2着 '+escapeHTML(finishes[1])+'番／3着 '+escapeHTML(finishes[2])+'番':
     finishes.length?finishes.map((x,i)=>(i+1)+'着 '+escapeHTML(x)+'番').join('／'):'着順未取得';
-  const hit=r?.win_hit===true?
-    '<span class="pos">🎯 的中</span>':r?.win_hit===false?
-    '<span class="neg">❌ 不的中</span>':'<span>判定中</span>';
-  const cost=num(r?.race_cost,0);
-  const ret=num(r?.win_return,0);
-  const profit=num(r?.race_profit,ret-cost);
-  const status=textValue(r?.settlement_status,'決済状況未取得');
+
+  // 全券種ベースで的中判定
+  const anyHit = isAnyTicketHit(r);
+  const hit = anyHit
+    ? '<span class="pos">🎯 的中</span>'
+    : (r?.win_hit === false || r?.settlement_complete === true)
+      ? '<span class="neg">❌ 不的中</span>'
+      : '<span>判定中</span>';
+
+  const cost = num(r?.race_cost, 0);
+  // 全券種回収を優先。なければ単勝回収にフォールバック
+  const allRet = num(r?.all_bet_return, null);
+  const ret = (allRet !== null && allRet >= 0) ? allRet : num(r?.win_return, 0);
+  const profit = num(r?.race_profit, ret - cost);
+  const status = textValue(r?.settlement_status, '決済状況未取得');
+
+  // 的中券種の簡易表示（settled_linesがある場合）
+  let hitDetails = '';
+  if(Array.isArray(r?.settled_lines) && r.settled_lines.length){
+    const hits = r.settled_lines.filter(l => l.hit === true);
+    if(hits.length){
+      hitDetails = '<div class="horse-sub">的中券種：'+
+        hits.map(l => escapeHTML(l.label || (l.type + ' ' + (l.horses||[]).join('-')))).join('　')+
+        '</div>';
+    } else if(anyHit){
+      hitDetails = '<div class="horse-sub">的中あり（詳細未取得）</div>';
+    }
+  }
+
+  // 払戻未取得の注意
+  const payoutWarn = (status.includes('払戻') && status.includes('未取得'))
+    ? '<div class="horse-sub" style="color:var(--red)">⚠ 着順一致だが払戻金額が一部未取得の可能性あり</div>'
+    : '';
+
   return '<div class="box-section box-result">'+
     '<div class="section-heading">🏁 レース結果　'+hit+'</div>'+
     '<div>'+formatted+'</div>'+
     '<div>投資 '+yen(cost)+'／回収 '+yen(ret)+'／収支 <b class="'+(profit>=0?'pos':'neg')+'">'+(profit>0?'+':'')+yen(profit)+'</b></div>'+
+    hitDetails+
+    payoutWarn+
     '<div class="horse-sub">決済：'+escapeHTML(status)+
     (r?.settlement_complete===true?'｜確定集計対象':'｜未確定の場合は集計対象外')+'</div>'+
     '</div>';
