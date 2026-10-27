@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v28.1
+BAGEN KEIBA v28.2
 中央・地方競馬 / レース一覧取得 / 出走馬解析 / 簡易予想 / 紙上検証 / 結果精算
 
 無料GitHub Actions向け。実際の馬券購入・口座接続は行わない。
@@ -37,7 +37,7 @@ TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
 TODAY_ISO = NOW.strftime("%Y-%m-%d")
 
-ENGINE_VERSION = "BAGEN_28.1"
+ENGINE_VERSION = "BAGEN_28.2"
 
 TIMEOUT = (10, 25)
 DELAY = 0.35
@@ -954,7 +954,7 @@ def build_tickets(ranked, outsiders):
 
 
 # ============================================================
-# 8. 結果取得・精算（修正版：frozenset排除）
+# 8. 結果取得・精算（v28.2 大幅修正）
 # ============================================================
 
 def parse_result_page(html, race_id):
@@ -964,67 +964,141 @@ def parse_result_page(html, race_id):
     soup = soup_of(html)
     finishes = []
     payouts = {
-        "win": {},          # "5": 6700
-        "place": {},        # "5": 340
-        "quinella": {},     # "2-5": 1590
-        "wide": {},         # "2-5": 380
-        "trio": {},         # "1-2-5": 1040
-        "trifecta": {},     # "5-2-1": 30540
-        "exacta": {},       # "5-2": 8130
+        "win": {},          # "6": 180
+        "place": {},        # "6": 110
+        "quinella": {},     # "6-9": 1380
+        "wide": {},         # "6-9": 440
+        "trio": {},         # "6-8-9": 1560
+        "trifecta": {},     # "6-9-8": 6330
+        "exacta": {},       # "6-9": 1970
     }
 
-    # ---------- 着順 ----------
-    result_table = soup.select_one("#All_Result_Table") or soup.select_one("table.RaceTable01")
-    if result_table:
-        for tr in result_table.select("tbody tr"):
-            rank_node = tr.select_one(".Rank, td.Result_Num")
-            if not rank_node:
-                continue
-            rank = safe_int(text_of(rank_node))
-            if not (1 <= rank <= 18):
+    # ---------- 着順抽出（堅牢版） ----------
+    # 方法1: 一般的な結果テーブルを探す
+    result_tables = []
+    for table in soup.find_all("table"):
+        header_text = " ".join(text_of(th) for th in table.select("th, thead td"))
+        if "着順" in header_text and ("馬番" in header_text or "馬名" in header_text):
+            result_tables.append(table)
+
+    # 方法2: フォールバック
+    if not result_tables:
+        for sel in ["#All_Result_Table", "table.RaceTable01", "table.ResultTable", "table"]:
+            for t in soup.select(sel):
+                if t not in result_tables:
+                    result_tables.append(t)
+
+    for table in result_tables:
+        rows = table.select("tr")
+        for tr in rows:
+            cells = tr.find_all(["td", "th"])
+            if len(cells) < 3:
                 continue
 
-            num_cells = tr.select("td.Num")
+            # 着順を探す
+            rank = None
             horse_no = None
-            if len(num_cells) >= 2:
-                horse_no = safe_int(text_of(num_cells[1]))
-            if horse_no is None or not (1 <= horse_no <= 18):
-                for cell in tr.select("td"):
-                    val = safe_int(text_of(cell))
-                    if 1 <= val <= 18:
+
+            # 最初の数セルから着順・馬番を抽出
+            cell_texts = [text_of(c) for c in cells[:6]]
+
+            for i, txt in enumerate(cell_texts):
+                val = safe_int(txt)
+                if 1 <= val <= 18:
+                    # 最初に出てきた1-18は着順候補、次が馬番候補
+                    if rank is None:
+                        rank = val
+                    elif horse_no is None and val != rank:
                         horse_no = val
                         break
 
-            if horse_no:
+            # クラス名ベースのフォールバック
+            if rank is None:
+                rank_node = tr.select_one(".Rank, td.Result_Num, .Arrival")
+                if rank_node:
+                    rank = safe_int(text_of(rank_node))
+
+            if horse_no is None:
+                # 馬番セルを探す
+                for cell in cells:
+                    classes = " ".join(cell.get("class") or [])
+                    if any(k in classes for k in ("Umaban", "HorseNo", "Num", "Waku")):
+                        val = safe_int(text_of(cell))
+                        if 1 <= val <= 18:
+                            horse_no = val
+                            break
+
+            if rank and 1 <= rank <= 18 and horse_no and 1 <= horse_no <= 18:
                 while len(finishes) < rank:
                     finishes.append(None)
-                finishes[rank - 1] = horse_no
+                if finishes[rank - 1] is None:
+                    finishes[rank - 1] = horse_no
+
+        if finishes and all(x is not None for x in finishes[:3]):
+            break
 
     finishes = [x for x in finishes if x is not None]
 
-    # ---------- 払戻 ----------
-    for table in soup.select("table.Payout_Detail_Table"):
-        for tr in table.select("tr"):
+    # ---------- 払戻抽出 ----------
+    # 払戻セクションを探す
+    payout_sections = soup.select("table.Payout_Detail_Table, .Payout, #Payout, table")
+    for table in payout_sections:
+        rows = table.select("tr")
+        for tr in rows:
             th = tr.select_one("th")
-            if not th:
+            tds = tr.select("td")
+            if not th or not tds:
                 continue
+
             label = text_of(th)
-
-            result_td = tr.select_one("td.Result")
-            payout_td = tr.select_one("td.Payout")
-            if not result_td or not payout_td:
+            if not label:
                 continue
 
+            # ResultセルとPayoutセルを探す
+            result_td = None
+            payout_td = None
+            for td in tds:
+                classes = " ".join(td.get("class") or [])
+                txt = text_of(td)
+                if "Result" in classes or re.search(r"\d", txt) and not re.search(r"円", txt):
+                    if result_td is None:
+                        result_td = td
+                if "Payout" in classes or "円" in txt:
+                    payout_td = td
+
+            if result_td is None:
+                # 最初のtdをResult、2番目をPayoutと仮定
+                if len(tds) >= 2:
+                    result_td = tds[0]
+                    payout_td = tds[1]
+                else:
+                    continue
+
+            if payout_td is None:
+                continue
+
+            # 馬番抽出
             horse_nums = []
             for span in result_td.select("span"):
                 val = safe_int(text_of(span))
                 if 1 <= val <= 18:
                     horse_nums.append(val)
+            if not horse_nums:
+                # spanが無い場合はテキストから数字を抽出
+                nums = re.findall(r"\b([1-9]|1[0-8])\b", text_of(result_td))
+                horse_nums = [safe_int(n) for n in nums if 1 <= safe_int(n) <= 18]
 
-            payout_text = payout_td.get_text(" ", strip=True)
+            # 払戻金額抽出
+            payout_text = text_of(payout_td)
             money_list = []
             for m in re.finditer(r"([\d,]+)\s*円", payout_text):
                 money_list.append(safe_int(m.group(1).replace(",", "")))
+            if not money_list:
+                # 「円」が無い場合も数字を拾う
+                for m in re.finditer(r"([\d,]+)", payout_text):
+                    val = safe_int(m.group(1).replace(",", ""))
+                    if 100 <= val <= 10000000:
+                        money_list.append(val)
 
             if not horse_nums or not money_list:
                 continue
@@ -1043,7 +1117,10 @@ def parse_result_page(html, race_id):
                     payouts["quinella"][key] = money_list[0]
 
             elif "ワイド" in label:
-                pairs = [horse_nums[i:i+2] for i in range(0, len(horse_nums), 2)]
+                # ワイドは複数組が並ぶことが多い
+                pairs = []
+                for i in range(0, len(horse_nums) - 1, 2):
+                    pairs.append([horse_nums[i], horse_nums[i+1]])
                 for pair, p in zip(pairs, money_list):
                     if len(pair) == 2:
                         key = combo_key(pair, ordered=False)
@@ -1068,7 +1145,9 @@ def parse_result_page(html, race_id):
 
 
 def settle_tickets(tickets, finishes, payouts):
-    """紙上買い目を着順・払戻で精算。100円あたり配当をstakeに合わせて計算。"""
+    """紙上買い目を着順・払戻で精算。
+    着順一致を優先し、払戻が取れなくても的中判定する。
+    """
     if not tickets or not finishes:
         return {
             "settlement_complete": False,
@@ -1088,7 +1167,12 @@ def settle_tickets(tickets, finishes, payouts):
     total_return = 0
     win_hit = False
     win_return = 0
+    any_hit = False
     any_payout_found = False
+
+    top1 = finishes[0] if len(finishes) >= 1 else None
+    top2 = set(finishes[:2]) if len(finishes) >= 2 else set()
+    top3 = set(finishes[:3]) if len(finishes) >= 3 else set()
 
     for line in line_items:
         typ = line["type"]
@@ -1097,48 +1181,65 @@ def settle_tickets(tickets, finishes, payouts):
         hit = False
         ret = 0
         payout = 0
+        match_by_finish = False
 
         if typ == "win":
-            if finishes and horses[0] == finishes[0]:
+            if top1 is not None and horses[0] == top1:
+                match_by_finish = True
                 payout = payouts["win"].get(str(horses[0]), 0)
                 if payout:
-                    hit = True
-                    ret = int(stake / 100 * payout)
-                    win_hit = True
-                    win_return = ret
                     any_payout_found = True
+                hit = True
+                ret = int(stake / 100 * payout) if payout else 0
+                win_hit = True
+                win_return = ret
 
         elif typ == "quinella":
             key = combo_key(horses, ordered=False)
+            if len(horses) == 2 and set(horses) == top2:
+                match_by_finish = True
             payout = payouts["quinella"].get(key, 0)
             if payout:
-                hit = True
-                ret = int(stake / 100 * payout)
                 any_payout_found = True
+            if match_by_finish or payout:
+                hit = True
+                ret = int(stake / 100 * payout) if payout else 0
 
         elif typ == "wide":
             key = combo_key(horses, ordered=False)
+            if len(horses) == 2 and set(horses).issubset(top3):
+                match_by_finish = True
             payout = payouts["wide"].get(key, 0)
             if payout:
-                hit = True
-                ret = int(stake / 100 * payout)
                 any_payout_found = True
+            if match_by_finish or payout:
+                hit = True
+                ret = int(stake / 100 * payout) if payout else 0
 
         elif typ == "trio":
             key = combo_key(horses, ordered=False)
+            if len(horses) == 3 and set(horses) == top3:
+                match_by_finish = True
             payout = payouts["trio"].get(key, 0)
             if payout:
-                hit = True
-                ret = int(stake / 100 * payout)
                 any_payout_found = True
+            if match_by_finish or payout:
+                hit = True
+                ret = int(stake / 100 * payout) if payout else 0
 
         elif typ == "trifecta":
             key = combo_key(horses, ordered=True)
+            if len(horses) == 3 and horses == finishes[:3]:
+                match_by_finish = True
             payout = payouts["trifecta"].get(key, 0)
             if payout:
-                hit = True
-                ret = int(stake / 100 * payout)
                 any_payout_found = True
+            if match_by_finish or payout:
+                hit = True
+                ret = int(stake / 100 * payout) if payout else 0
+
+        if hit:
+            any_hit = True
 
         settled.append({
             "label": line.get("label", ""),
@@ -1148,15 +1249,18 @@ def settle_tickets(tickets, finishes, payouts):
             "hit": hit,
             "return_yen": ret,
             "payout_per_100": payout,
+            "matched_by_finish": match_by_finish,
         })
         total_return += ret
 
     profit = total_return - cost if cost else None
 
-    if finishes and not any_payout_found:
-        status = "着順取得済・払戻未取得（パーサー要確認）"
-    elif finishes:
+    if finishes and not any_payout_found and any_hit:
+        status = "着順一致・払戻一部未取得（パーサー要確認）"
+    elif finishes and any_hit:
         status = "全券種精算完了"
+    elif finishes:
+        status = "全券種精算完了（的中なし）"
     else:
         status = "着順未取得"
 
@@ -1221,7 +1325,8 @@ def fetch_and_settle_result(race, source):
     print(
         f"[SETTLE] {race_id} 着順={finishes} "
         f"回収={settlement['all_bet_return']}円 "
-        f"収支={settlement['race_profit']}"
+        f"収支={settlement['race_profit']} "
+        f"status={settlement['settlement_status']}"
     )
     return race
 
@@ -1538,6 +1643,8 @@ def calculate_stats(snapshots):
             "単勝のみ確定・他券種は組合せ検証未対応",
             "win_only_legacy",
             "全券種精算完了",
+            "全券種精算完了（的中なし）",
+            "着順一致・払戻一部未取得（パーサー要確認）",
         )
     ]
 
