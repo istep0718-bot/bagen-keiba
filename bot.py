@@ -947,212 +947,115 @@ def build_tickets(ranked, outsiders):
 
 
 # ============================================================
-# 8. 結果取得・精算
+# 8. 結果取得・精算（改善版）
 # ============================================================
 
 def parse_result_page(html, race_id):
-    """結果ページから着順と払戻を抽出"""
+    """結果ページから着順と払戻を抽出（NAR/JRA両対応・構造ベース）"""
     soup = soup_of(html)
-    finishes = []  # list of horse_no in order (1着, 2着, ...)
+    finishes = []
     payouts = {
-        "win": {},      # horse_no -> payout_yen (100円あたり)
-        "place": {},    # horse_no -> payout
-        "quinella": {}, # frozenset -> payout
-        "wide": {},     # frozenset -> payout
-        "trio": {},     # frozenset -> payout
-        "trifecta": {}, # tuple -> payout
-        "exacta": {},   # tuple -> payout (馬単)
+        "win": {},
+        "place": {},
+        "quinella": {},
+        "wide": {},
+        "trio": {},
+        "trifecta": {},
+        "exacta": {},
     }
 
-    # --- 着順テーブル ---
-    # 一般的な結果テーブルを探す
-    result_tables = soup.select(
-        "table.RaceTable01, table.result_table, table.Result_Table, "
-        "table[class*='Result'], table[class*='result'], .ResultTable table"
-    )
-    if not result_tables:
-        result_tables = soup.select("table")
-
-    for table in result_tables:
-        rows = table.select("tr")
-        for row in rows:
-            cells = row.find_all(["td", "th"])
-            if len(cells) < 3:
+    # ---------- 着順 ----------
+    result_table = soup.select_one("#All_Result_Table") or soup.select_one("table.RaceTable01")
+    if result_table:
+        for tr in result_table.select("tbody tr"):
+            rank_node = tr.select_one(".Rank, td.Result_Num")
+            if not rank_node:
                 continue
-            # 着順・馬番を探す
-            texts = [text_of(c) for c in cells]
-            # 典型: 着順 | 枠 | 馬番 | 馬名 ...
-            rank_candidate = None
-            horse_no_candidate = None
-            for i, t in enumerate(texts):
-                if re.fullmatch(r"\d{1,2}", t) and 1 <= safe_int(t) <= 18:
-                    if rank_candidate is None:
-                        rank_candidate = safe_int(t)
-                    elif horse_no_candidate is None and i > 0:
-                        horse_no_candidate = safe_int(t)
+            rank = safe_int(text_of(rank_node))
+            if not (1 <= rank <= 18):
+                continue
+
+            # 馬番は通常 3番目の td.Num（枠の次）
+            num_cells = tr.select("td.Num")
+            horse_no = None
+            if len(num_cells) >= 2:
+                horse_no = safe_int(text_of(num_cells[1]))
+            if horse_no is None or not (1 <= horse_no <= 18):
+                for cell in tr.select("td"):
+                    val = safe_int(text_of(cell))
+                    if 1 <= val <= 18:
+                        horse_no = val
                         break
-            if rank_candidate and horse_no_candidate and 1 <= rank_candidate <= 18:
-                while len(finishes) < rank_candidate:
-                    finishes.append(None)
-                if finishes[rank_candidate - 1] is None:
-                    finishes[rank_candidate - 1] = horse_no_candidate
 
-    # フォールバック: より緩いパース
-    if not finishes or all(x is None for x in finishes):
-        finishes = []
-        for row in soup.select("tr"):
-            tds = row.find_all("td")
-            if len(tds) < 4:
-                continue
-            rank_txt = text_of(tds[0])
-            umaban_txt = text_of(tds[2]) if len(tds) > 2 else ""
-            rank = safe_int(rank_txt)
-            umaban = safe_int(umaban_txt)
-            if 1 <= rank <= 18 and 1 <= umaban <= 18:
+            if horse_no:
                 while len(finishes) < rank:
                     finishes.append(None)
-                finishes[rank - 1] = umaban
+                finishes[rank - 1] = horse_no
 
     finishes = [x for x in finishes if x is not None]
 
-    # --- 払戻テーブル ---
-    # 単勝・複勝・馬連・ワイド・3連複・3連単 など
-    pay_blocks = soup.select(
-        ".FullResult, .Result_Pay_Back, .Pay_Back, "
-        "[class*='Pay'], [class*='payout'], .Refund"
-    )
-    if not pay_blocks:
-        pay_blocks = [soup]
-
-    for block in pay_blocks:
-        text = text_of(block)
-        # 単勝
-        for m in re.finditer(
-            r"単勝\s*[:：]?\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            h = safe_int(m.group(1))
-            p = safe_int(m.group(2).replace(",", ""))
-            if h and p:
-                payouts["win"][h] = p
-
-        # 複勝
-        for m in re.finditer(
-            r"複勝\s*[:：]?\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            h = safe_int(m.group(1))
-            p = safe_int(m.group(2).replace(",", ""))
-            if h and p:
-                payouts["place"][h] = p
-
-        # 馬連 (無順)
-        for m in re.finditer(
-            r"馬連\s*[:：]?\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            a, b = safe_int(m.group(1)), safe_int(m.group(2))
-            p = safe_int(m.group(3).replace(",", ""))
-            if a and b and p:
-                payouts["quinella"][frozenset([a, b])] = p
-
-        # ワイド
-        for m in re.finditer(
-            r"ワイド\s*[:：]?\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            a, b = safe_int(m.group(1)), safe_int(m.group(2))
-            p = safe_int(m.group(3).replace(",", ""))
-            if a and b and p:
-                payouts["wide"][frozenset([a, b])] = p
-
-        # 3連複
-        for m in re.finditer(
-            r"3連複\s*[:：]?\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
-            p = safe_int(m.group(4).replace(",", ""))
-            if a and b and c and p:
-                payouts["trio"][frozenset([a, b, c])] = p
-
-        # 3連単
-        for m in re.finditer(
-            r"3連単\s*[:：]?\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
-            p = safe_int(m.group(4).replace(",", ""))
-            if a and b and c and p:
-                payouts["trifecta"][(a, b, c)] = p
-
-        # 馬単
-        for m in re.finditer(
-            r"馬単\s*[:：]?\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
-            text,
-        ):
-            a, b = safe_int(m.group(1)), safe_int(m.group(2))
-            p = safe_int(m.group(3).replace(",", ""))
-            if a and b and p:
-                payouts["exacta"][(a, b)] = p
-
-    # テーブル形式の払戻も追加で拾う
-    for table in soup.select("table"):
-        rows = table.select("tr")
-        for row in rows:
-            cells = [text_of(c) for c in row.find_all(["td", "th"])]
-            if len(cells) < 2:
+    # ---------- 払戻 ----------
+    for table in soup.select("table.Payout_Detail_Table"):
+        for tr in table.select("tr"):
+            th = tr.select_one("th")
+            if not th:
                 continue
-            label = cells[0]
-            # 単勝
+            label = text_of(th)
+
+            result_td = tr.select_one("td.Result")
+            payout_td = tr.select_one("td.Payout")
+            if not result_td or not payout_td:
+                continue
+
+            # 馬番リスト（空spanを除外）
+            horse_nums = []
+            for span in result_td.select("span"):
+                val = safe_int(text_of(span))
+                if 1 <= val <= 18:
+                    horse_nums.append(val)
+
+            # 払戻金額リスト
+            payout_text = payout_td.get_text(" ", strip=True)
+            money_list = []
+            for m in re.finditer(r"([\d,]+)\s*円", payout_text):
+                money_list.append(safe_int(m.group(1).replace(",", "")))
+
+            if not horse_nums or not money_list:
+                continue
+
             if "単勝" in label:
-                for i in range(1, len(cells) - 1, 2):
-                    h = safe_int(cells[i])
-                    p = safe_int(cells[i + 1].replace(",", "").replace("円", ""))
-                    if h and p:
-                        payouts["win"][h] = p
-            # 馬連
-            if "馬連" in label:
-                for cell in cells[1:]:
-                    m = re.search(r"(\d{1,2})\s*[-－]\s*(\d{1,2})\s*([\d,]+)", cell)
-                    if m:
-                        a, b = safe_int(m.group(1)), safe_int(m.group(2))
-                        p = safe_int(m.group(3).replace(",", ""))
-                        if a and b and p:
-                            payouts["quinella"][frozenset([a, b])] = p
-            # ワイド
-            if "ワイド" in label:
-                for cell in cells[1:]:
-                    m = re.search(r"(\d{1,2})\s*[-－]\s*(\d{1,2})\s*([\d,]+)", cell)
-                    if m:
-                        a, b = safe_int(m.group(1)), safe_int(m.group(2))
-                        p = safe_int(m.group(3).replace(",", ""))
-                        if a and b and p:
-                            payouts["wide"][frozenset([a, b])] = p
-            # 3連複
-            if "3連複" in label or "三連複" in label:
-                for cell in cells[1:]:
-                    m = re.search(
-                        r"(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*([\d,]+)",
-                        cell,
-                    )
-                    if m:
-                        a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
-                        p = safe_int(m.group(4).replace(",", ""))
-                        if a and b and c and p:
-                            payouts["trio"][frozenset([a, b, c])] = p
-            # 3連単
-            if "3連単" in label or "三連単" in label:
-                for cell in cells[1:]:
-                    m = re.search(
-                        r"(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*([\d,]+)",
-                        cell,
-                    )
-                    if m:
-                        a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
-                        p = safe_int(m.group(4).replace(",", ""))
-                        if a and b and c and p:
-                            payouts["trifecta"][(a, b, c)] = p
+                if horse_nums and money_list:
+                    payouts["win"][horse_nums[0]] = money_list[0]
+
+            elif "複勝" in label:
+                for h, p in zip(horse_nums, money_list):
+                    payouts["place"][h] = p
+
+            elif "馬連" in label:
+                if len(horse_nums) >= 2 and money_list:
+                    key = frozenset(horse_nums[:2])
+                    payouts["quinella"][key] = money_list[0]
+
+            elif "ワイド" in label:
+                pairs = [horse_nums[i:i+2] for i in range(0, len(horse_nums), 2)]
+                for pair, p in zip(pairs, money_list):
+                    if len(pair) == 2:
+                        payouts["wide"][frozenset(pair)] = p
+
+            elif "3連複" in label or "三連複" in label:
+                if len(horse_nums) >= 3 and money_list:
+                    key = frozenset(horse_nums[:3])
+                    payouts["trio"][key] = money_list[0]
+
+            elif "3連単" in label or "三連単" in label:
+                if len(horse_nums) >= 3 and money_list:
+                    key = tuple(horse_nums[:3])
+                    payouts["trifecta"][key] = money_list[0]
+
+            elif "馬単" in label:
+                if len(horse_nums) >= 2 and money_list:
+                    key = tuple(horse_nums[:2])
+                    payouts["exacta"][key] = money_list[0]
 
     return finishes, payouts
 
@@ -1170,7 +1073,6 @@ def settle_tickets(tickets, finishes, payouts):
             "settlement_status": "結果未取得または着順不足",
         }
 
-    top3 = finishes[:3] if len(finishes) >= 3 else finishes
     ticket = tickets[0]
     line_items = ticket.get("line_items", [])
     cost = ticket.get("cost_yen", 0)
@@ -1179,6 +1081,7 @@ def settle_tickets(tickets, finishes, payouts):
     total_return = 0
     win_hit = False
     win_return = 0
+    any_payout_found = False
 
     for line in line_items:
         typ = line["type"]
@@ -1186,43 +1089,49 @@ def settle_tickets(tickets, finishes, payouts):
         stake = line["stake_yen"]
         hit = False
         ret = 0
+        payout = 0
 
         if typ == "win":
             if finishes and horses[0] == finishes[0]:
-                hit = True
                 payout = payouts["win"].get(horses[0], 0)
-                # 払戻は100円単位なので stake/100 * payout
-                ret = int(stake / 100 * payout) if payout else 0
-                win_hit = True
-                win_return = ret
+                if payout:
+                    hit = True
+                    ret = int(stake / 100 * payout)
+                    win_hit = True
+                    win_return = ret
+                    any_payout_found = True
 
         elif typ == "quinella":
             key = frozenset(horses)
-            if key in payouts["quinella"]:
+            payout = payouts["quinella"].get(key, 0)
+            if payout:
                 hit = True
-                payout = payouts["quinella"][key]
                 ret = int(stake / 100 * payout)
+                any_payout_found = True
 
         elif typ == "wide":
             key = frozenset(horses)
-            if key in payouts["wide"]:
+            payout = payouts["wide"].get(key, 0)
+            if payout:
                 hit = True
-                payout = payouts["wide"][key]
                 ret = int(stake / 100 * payout)
+                any_payout_found = True
 
         elif typ == "trio":
             key = frozenset(horses)
-            if key in payouts["trio"]:
+            payout = payouts["trio"].get(key, 0)
+            if payout:
                 hit = True
-                payout = payouts["trio"][key]
                 ret = int(stake / 100 * payout)
+                any_payout_found = True
 
         elif typ == "trifecta":
             key = tuple(horses)
-            if key in payouts["trifecta"]:
+            payout = payouts["trifecta"].get(key, 0)
+            if payout:
                 hit = True
-                payout = payouts["trifecta"][key]
                 ret = int(stake / 100 * payout)
+                any_payout_found = True
 
         settled.append({
             "label": line.get("label", ""),
@@ -1231,11 +1140,18 @@ def settle_tickets(tickets, finishes, payouts):
             "stake_yen": stake,
             "hit": hit,
             "return_yen": ret,
+            "payout_per_100": payout,
         })
         total_return += ret
 
     profit = total_return - cost if cost else None
-    status = "全券種精算完了" if finishes else "着順未取得"
+
+    if finishes and not any_payout_found:
+        status = "着順取得済・払戻未取得（パーサー要確認）"
+    elif finishes:
+        status = "全券種精算完了"
+    else:
+        status = "着順未取得"
 
     return {
         "settlement_complete": bool(finishes and len(finishes) >= 1),
@@ -1271,7 +1187,6 @@ def fetch_and_settle_result(race, source):
         page = get_html(url)
         if not page:
             continue
-        # 結果ページかどうか簡易チェック
         if "着順" not in page and "払戻" not in page and "単勝" not in page:
             continue
         finishes, payouts = parse_result_page(page, race_id)
