@@ -1,7 +1,7 @@
 {
   "site": "BAGEN KEIBA",
   "engine_version": "BAGEN_28.3",
-  "generated_at": "2026-10-27T19:40:31.804702+09:00",
+  "generated_at": "2026-10-27T20:20:56.079004+09:00",
   "race_date": "2026-10-27",
   "status": "OK",
   "warnings": [
@@ -41807,17 +41807,137 @@
           "note": "取得情報に基づく紙上シミュレーション。実購入は行わない。"
         }
       ],
-      "is_finished": false,
-      "result_finishes": [],
-      "payouts": {},
-      "win_hit": null,
-      "win_return": 0,
-      "all_bet_return": null,
+      "is_finished": true,
+      "result_finishes": [
+        5,
+        13,
+        3,
+        2,
+        7,
+        14,
+        1,
+        4,
+        11,
+        10,
+        12,
+        8,
+        9,
+        6
+      ],
+      "payouts": {
+        "win": {
+          "5": 250
+        },
+        "place": {
+          "5": 130,
+          "13": 130,
+          "3": 190
+        },
+        "quinella": {
+          "5-13": 550
+        },
+        "wide": {
+          "5-13": 250,
+          "3-5": 400,
+          "3-13": 650
+        },
+        "trio": {
+          "3-5-13": 1480
+        },
+        "trifecta": {
+          "5-13-3": 5050
+        },
+        "exacta": {
+          "5-13": 840
+        }
+      },
+      "win_hit": true,
+      "win_return": 1250,
+      "all_bet_return": 11780,
       "race_cost": 1900,
-      "race_profit": null,
-      "settlement_complete": false,
-      "settled_lines": [],
-      "settlement_status": "結果精算は未実装・または結果待ち",
+      "race_profit": 9880,
+      "settlement_complete": true,
+      "settled_lines": [
+        {
+          "label": "単勝: 5 (500円)",
+          "type": "win",
+          "horses": [
+            5
+          ],
+          "stake_yen": 500,
+          "hit": true,
+          "return_yen": 1250,
+          "payout_per_100": 250,
+          "matched_by_finish": true
+        },
+        {
+          "label": "馬連: 5-13 (300円)",
+          "type": "quinella",
+          "horses": [
+            5,
+            13
+          ],
+          "stake_yen": 300,
+          "hit": true,
+          "return_yen": 1650,
+          "payout_per_100": 550,
+          "matched_by_finish": true
+        },
+        {
+          "label": "馬連: 3-5 (300円)",
+          "type": "quinella",
+          "horses": [
+            3,
+            5
+          ],
+          "stake_yen": 300,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "3連複: 3-5-13 (600円)",
+          "type": "trio",
+          "horses": [
+            3,
+            5,
+            13
+          ],
+          "stake_yen": 600,
+          "hit": true,
+          "return_yen": 8880,
+          "payout_per_100": 1480,
+          "matched_by_finish": true
+        },
+        {
+          "label": "ワイド: 5-9 (100円)",
+          "type": "wide",
+          "horses": [
+            5,
+            9
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "ワイド: 9-13 (100円)",
+          "type": "wide",
+          "horses": [
+            9,
+            13
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        }
+      ],
+      "settlement_status": "全券種精算完了",
       "is_recommended": false,
       "is_tomorrow": false,
       "prediction_status": "未検証の簡易評価",
@@ -41847,30 +41967,30 @@
       },
       "horses": [
         {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 6,
-          "horse": "ラピルスイメル",
-          "name": "ラピルスイメル",
-          "jockey": "阿部龍",
+          "horse_no": 1,
+          "number": 1,
+          "frame_no": 1,
+          "horse": "ゴールデンシーカー",
+          "name": "ゴールデンシーカー",
+          "jockey": "金山昇馬",
           "odds": null,
-          "popularity": 3,
-          "score": 13.8,
+          "popularity": 4,
+          "score": 13.7,
           "rank": 1,
           "reasons": [
-            "馬体重増減 +6kg",
+            "馬体重増減 +12kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
           "is_apprentice": false,
           "is_top_jockey": false,
-          "is_inner": false,
+          "is_inner": true,
           "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": 6,
+          "w_diff": 12,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -41922,8 +42042,8 @@
           "name": "ニシノエンデヴァー",
           "jockey": "宮内勇樹",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 5,
+          "score": 11.6,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -41949,18 +42069,18 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 1,
-          "number": 1,
-          "frame_no": 1,
-          "horse": "ゴールデンシーカー",
-          "name": "ゴールデンシーカー",
-          "jockey": "金山昇馬",
+          "horse_no": 2,
+          "number": 2,
+          "frame_no": 2,
+          "horse": "ノアルパフェ",
+          "name": "ノアルパフェ",
+          "jockey": "小川悠汰",
           "odds": null,
-          "popularity": 8,
-          "score": 9.3,
+          "popularity": 6,
+          "score": 10.5,
           "rank": 4,
           "reasons": [
-            "馬体重増減 +12kg",
+            "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -41972,41 +42092,7 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": 12,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
-          "horse_no": 5,
-          "number": 5,
-          "frame_no": 5,
-          "horse": "セイルロケット",
-          "name": "セイルロケット",
-          "jockey": "岩橋勇二",
-          "odds": null,
-          "popularity": 9,
-          "score": 7.2,
-          "rank": 5,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": 0,
+          "w_diff": -2,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42024,9 +42110,9 @@
           "name": "レイブンナイト",
           "jockey": "桑村真明",
           "odds": null,
-          "popularity": 9,
-          "score": 7.2,
-          "rank": 6,
+          "popularity": 6,
+          "score": 10.5,
+          "rank": 5,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -42051,16 +42137,16 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 9,
-          "number": 9,
-          "frame_no": 7,
-          "horse": "スキーサンダー",
-          "name": "スキーサンダー",
-          "jockey": "松井伸也",
+          "horse_no": 7,
+          "number": 7,
+          "frame_no": 6,
+          "horse": "ラピルスイメル",
+          "name": "ラピルスイメル",
+          "jockey": "阿部龍",
           "odds": null,
-          "popularity": 10,
-          "score": 6.1,
-          "rank": 7,
+          "popularity": 7,
+          "score": 9.4,
+          "rank": 6,
           "reasons": [
             "馬体重増減 +6kg",
             "単勝オッズ未取得"
@@ -42069,7 +42155,7 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": true,
+          "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
@@ -42085,16 +42171,16 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 2,
-          "number": 2,
-          "frame_no": 2,
-          "horse": "ノアルパフェ",
-          "name": "ノアルパフェ",
-          "jockey": "小川悠汰",
+          "horse_no": 5,
+          "number": 5,
+          "frame_no": 5,
+          "horse": "セイルロケット",
+          "name": "セイルロケット",
+          "jockey": "岩橋勇二",
           "odds": null,
-          "popularity": 11,
-          "score": 5.0,
-          "rank": 8,
+          "popularity": 8,
+          "score": 8.3,
+          "rank": 7,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -42102,81 +42188,13 @@
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
           "is_apprentice": false,
           "is_top_jockey": false,
-          "is_inner": true,
+          "is_inner": false,
           "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": -2,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
-          "horse_no": 8,
-          "number": 8,
-          "frame_no": 7,
-          "horse": "ワイルドタイタン",
-          "name": "ワイルドタイタン",
-          "jockey": "小野楓馬",
-          "odds": null,
-          "popularity": 11,
-          "score": 5.0,
-          "rank": 9,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": true,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
           "w_diff": 0,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
-          "horse_no": 10,
-          "number": 10,
-          "frame_no": 8,
-          "horse": "グランマズドリーム",
-          "name": "グランマズドリーム",
-          "jockey": "落合玄太",
-          "odds": null,
-          "popularity": 11,
-          "score": 5.0,
-          "rank": 10,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": true,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": -2,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42194,9 +42212,9 @@
           "name": "クリイロ",
           "jockey": "黒澤愛斗",
           "odds": null,
-          "popularity": 17,
-          "score": 0.0,
-          "rank": 11,
+          "popularity": 9,
+          "score": 7.2,
+          "rank": 8,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -42219,20 +42237,52 @@
             "weight_change": true
           },
           "score_confidence": 80
-        }
-      ],
-      "top5": [
+        },
         {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 6,
-          "horse": "ラピルスイメル",
-          "name": "ラピルスイメル",
-          "jockey": "阿部龍",
+          "horse_no": 10,
+          "number": 10,
+          "frame_no": 8,
+          "horse": "グランマズドリーム",
+          "name": "グランマズドリーム",
+          "jockey": "落合玄太",
           "odds": null,
-          "popularity": 3,
-          "score": 13.8,
-          "rank": 1,
+          "popularity": 9,
+          "score": 7.2,
+          "rank": 9,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": true,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": -2,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 9,
+          "number": 9,
+          "frame_no": 7,
+          "horse": "スキーサンダー",
+          "name": "スキーサンダー",
+          "jockey": "松井伸也",
+          "odds": null,
+          "popularity": 10,
+          "score": 6.1,
+          "rank": 10,
           "reasons": [
             "馬体重増減 +6kg",
             "単勝オッズ未取得"
@@ -42241,12 +42291,82 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
           "w_diff": 6,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 8,
+          "number": 8,
+          "frame_no": 7,
+          "horse": "ワイルドタイタン",
+          "name": "ワイルドタイタン",
+          "jockey": "小野楓馬",
+          "odds": null,
+          "popularity": 11,
+          "score": 5.0,
+          "rank": 11,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": true,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 0,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        }
+      ],
+      "top5": [
+        {
+          "horse_no": 1,
+          "number": 1,
+          "frame_no": 1,
+          "horse": "ゴールデンシーカー",
+          "name": "ゴールデンシーカー",
+          "jockey": "金山昇馬",
+          "odds": null,
+          "popularity": 4,
+          "score": 13.7,
+          "rank": 1,
+          "reasons": [
+            "馬体重増減 +12kg",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": true,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 12,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42298,8 +42418,8 @@
           "name": "ニシノエンデヴァー",
           "jockey": "宮内勇樹",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 5,
+          "score": 11.6,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -42325,18 +42445,18 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 1,
-          "number": 1,
-          "frame_no": 1,
-          "horse": "ゴールデンシーカー",
-          "name": "ゴールデンシーカー",
-          "jockey": "金山昇馬",
+          "horse_no": 2,
+          "number": 2,
+          "frame_no": 2,
+          "horse": "ノアルパフェ",
+          "name": "ノアルパフェ",
+          "jockey": "小川悠汰",
           "odds": null,
-          "popularity": 8,
-          "score": 9.3,
+          "popularity": 6,
+          "score": 10.5,
           "rank": 4,
           "reasons": [
-            "馬体重増減 +12kg",
+            "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -42348,7 +42468,7 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": 12,
+          "w_diff": -2,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42359,15 +42479,15 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 5,
-          "number": 5,
-          "frame_no": 5,
-          "horse": "セイルロケット",
-          "name": "セイルロケット",
-          "jockey": "岩橋勇二",
+          "horse_no": 11,
+          "number": 11,
+          "frame_no": 8,
+          "horse": "レイブンナイト",
+          "name": "レイブンナイト",
+          "jockey": "桑村真明",
           "odds": null,
-          "popularity": 9,
-          "score": 7.2,
+          "popularity": 6,
+          "score": 10.5,
           "rank": 5,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -42377,12 +42497,12 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": 0,
+          "w_diff": -4,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42401,83 +42521,200 @@
           "pattern": "パターンA（上位評価中心）",
           "cost_yen": 1900,
           "lines": [
-            "単勝: 7 (500円)",
-            "馬連: 6-7 (300円)",
-            "馬連: 4-7 (300円)",
-            "3連複: 4-6-7 (600円)",
-            "ワイド: 1-7 (100円)",
-            "ワイド: 1-6 (100円)"
+            "単勝: 1 (500円)",
+            "馬連: 1-6 (300円)",
+            "馬連: 1-4 (300円)",
+            "3連複: 1-4-6 (600円)",
+            "ワイド: 1-2 (100円)",
+            "ワイド: 2-6 (100円)"
           ],
           "line_items": [
             {
               "type": "win",
               "horses": [
-                7
+                1
               ],
               "stake_yen": 500,
-              "label": "単勝: 7 (500円)"
+              "label": "単勝: 1 (500円)"
             },
             {
               "type": "quinella",
-              "horses": [
-                6,
-                7
-              ],
-              "stake_yen": 300,
-              "label": "馬連: 6-7 (300円)"
-            },
-            {
-              "type": "quinella",
-              "horses": [
-                4,
-                7
-              ],
-              "stake_yen": 300,
-              "label": "馬連: 4-7 (300円)"
-            },
-            {
-              "type": "trio",
-              "horses": [
-                4,
-                6,
-                7
-              ],
-              "stake_yen": 600,
-              "label": "3連複: 4-6-7 (600円)"
-            },
-            {
-              "type": "wide",
-              "horses": [
-                1,
-                7
-              ],
-              "stake_yen": 100,
-              "label": "ワイド: 1-7 (100円)"
-            },
-            {
-              "type": "wide",
               "horses": [
                 1,
                 6
               ],
+              "stake_yen": 300,
+              "label": "馬連: 1-6 (300円)"
+            },
+            {
+              "type": "quinella",
+              "horses": [
+                1,
+                4
+              ],
+              "stake_yen": 300,
+              "label": "馬連: 1-4 (300円)"
+            },
+            {
+              "type": "trio",
+              "horses": [
+                1,
+                4,
+                6
+              ],
+              "stake_yen": 600,
+              "label": "3連複: 1-4-6 (600円)"
+            },
+            {
+              "type": "wide",
+              "horses": [
+                1,
+                2
+              ],
               "stake_yen": 100,
-              "label": "ワイド: 1-6 (100円)"
+              "label": "ワイド: 1-2 (100円)"
+            },
+            {
+              "type": "wide",
+              "horses": [
+                2,
+                6
+              ],
+              "stake_yen": 100,
+              "label": "ワイド: 2-6 (100円)"
             }
           ],
           "note": "取得情報に基づく紙上シミュレーション。実購入は行わない。"
         }
       ],
-      "is_finished": false,
-      "result_finishes": [],
-      "payouts": {},
-      "win_hit": null,
+      "is_finished": true,
+      "result_finishes": [
+        11,
+        2,
+        4,
+        3,
+        6,
+        7,
+        9,
+        1,
+        8,
+        10,
+        5
+      ],
+      "payouts": {
+        "win": {
+          "11": 650
+        },
+        "place": {
+          "11": 150,
+          "2": 230,
+          "4": 160
+        },
+        "quinella": {
+          "2-11": 1970
+        },
+        "wide": {
+          "2-11": 650,
+          "4-11": 400,
+          "2-4": 940
+        },
+        "trio": {
+          "2-4-11": 4280
+        },
+        "trifecta": {
+          "11-2-4": 21350
+        },
+        "exacta": {
+          "11-2": 3800
+        }
+      },
+      "win_hit": false,
       "win_return": 0,
-      "all_bet_return": null,
+      "all_bet_return": 0,
       "race_cost": 1900,
-      "race_profit": null,
-      "settlement_complete": false,
-      "settled_lines": [],
-      "settlement_status": "結果精算は未実装・または結果待ち",
+      "race_profit": -1900,
+      "settlement_complete": true,
+      "settled_lines": [
+        {
+          "label": "単勝: 1 (500円)",
+          "type": "win",
+          "horses": [
+            1
+          ],
+          "stake_yen": 500,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "馬連: 1-6 (300円)",
+          "type": "quinella",
+          "horses": [
+            1,
+            6
+          ],
+          "stake_yen": 300,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "馬連: 1-4 (300円)",
+          "type": "quinella",
+          "horses": [
+            1,
+            4
+          ],
+          "stake_yen": 300,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "3連複: 1-4-6 (600円)",
+          "type": "trio",
+          "horses": [
+            1,
+            4,
+            6
+          ],
+          "stake_yen": 600,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "ワイド: 1-2 (100円)",
+          "type": "wide",
+          "horses": [
+            1,
+            2
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "ワイド: 2-6 (100円)",
+          "type": "wide",
+          "horses": [
+            2,
+            6
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        }
+      ],
+      "settlement_status": "全券種精算完了（的中なし）",
       "is_recommended": true,
       "is_tomorrow": false,
       "prediction_status": "未検証の簡易評価",
@@ -42575,142 +42812,6 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 3,
-          "number": 3,
-          "frame_no": 3,
-          "horse": "グレアネオンライト",
-          "name": "グレアネオンライト",
-          "jockey": "本橋孝太",
-          "odds": null,
-          "popularity": 5,
-          "score": 11.6,
-          "rank": 3,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": -3,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
-          "horse_no": 6,
-          "number": 6,
-          "frame_no": 5,
-          "horse": "ブルマリンシェール",
-          "name": "ブルマリンシェール",
-          "jockey": "谷内貫太",
-          "odds": null,
-          "popularity": 8,
-          "score": 8.3,
-          "rank": 4,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": -5,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 5,
-          "horse": "マイネルボンバー",
-          "name": "マイネルボンバー",
-          "jockey": "福原杏",
-          "odds": null,
-          "popularity": 9,
-          "score": 7.2,
-          "rank": 5,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": -3,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
-          "horse_no": 12,
-          "number": 12,
-          "frame_no": 8,
-          "horse": "フロインフォッサル",
-          "name": "フロインフォッサル",
-          "jockey": "Ｆ．ゴン",
-          "odds": null,
-          "popularity": 10,
-          "score": 7.1,
-          "rank": 6,
-          "reasons": [
-            "馬体重増減 +8kg",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": true,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": 8,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": true
-          },
-          "score_confidence": 80
-        },
-        {
           "horse_no": 2,
           "number": 2,
           "frame_no": 2,
@@ -42718,9 +42819,9 @@
           "name": "フジマサテイオー",
           "jockey": "和田譲治",
           "odds": null,
-          "popularity": 10,
-          "score": 6.1,
-          "rank": 7,
+          "popularity": 8,
+          "score": 8.3,
+          "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -42745,16 +42846,84 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 4,
-          "number": 4,
-          "frame_no": 4,
-          "horse": "ヒロシゲジャック",
-          "name": "ヒロシゲジャック",
-          "jockey": "笠野雄大",
+          "horse_no": 13,
+          "number": 13,
+          "frame_no": 8,
+          "horse": "ゴールドジャッジ",
+          "name": "ゴールドジャッジ",
+          "jockey": "達城龍次",
           "odds": null,
-          "popularity": 11,
-          "score": 5.0,
-          "rank": 8,
+          "popularity": 8,
+          "score": 8.3,
+          "rank": 4,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": true,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 4,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 12,
+          "number": 12,
+          "frame_no": 8,
+          "horse": "フロインフォッサル",
+          "name": "フロインフォッサル",
+          "jockey": "Ｆ．ゴン",
+          "odds": null,
+          "popularity": 9,
+          "score": 8.2,
+          "rank": 5,
+          "reasons": [
+            "馬体重増減 +8kg",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": true,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 8,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 3,
+          "number": 3,
+          "frame_no": 3,
+          "horse": "グレアネオンライト",
+          "name": "グレアネオンライト",
+          "jockey": "本橋孝太",
+          "odds": null,
+          "popularity": 10,
+          "score": 6.1,
+          "rank": 6,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -42768,7 +42937,41 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": -5,
+          "w_diff": -3,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 7,
+          "number": 7,
+          "frame_no": 5,
+          "horse": "マイネルボンバー",
+          "name": "マイネルボンバー",
+          "jockey": "福原杏",
+          "odds": null,
+          "popularity": 10,
+          "score": 6.1,
+          "rank": 7,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": -3,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42786,9 +42989,9 @@
           "name": "オーシンロクゼロ",
           "jockey": "藤本現暉",
           "odds": null,
-          "popularity": 12,
-          "score": 3.9,
-          "rank": 9,
+          "popularity": 11,
+          "score": 5.0,
+          "rank": 8,
           "reasons": [
             "馬体重増減 -8kg",
             "単勝オッズ未取得"
@@ -42820,9 +43023,9 @@
           "name": "ラファールドール",
           "jockey": "笹川翼",
           "odds": null,
-          "popularity": 17,
-          "score": 3.0,
-          "rank": 10,
+          "popularity": 14,
+          "score": 4.7,
+          "rank": 9,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
             "単勝オッズ未取得"
@@ -42837,6 +43040,40 @@
           "is_positive_memo": false,
           "is_negative_memo": false,
           "w_diff": 3,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 4,
+          "number": 4,
+          "frame_no": 4,
+          "horse": "ヒロシゲジャック",
+          "name": "ヒロシゲジャック",
+          "jockey": "笠野雄大",
+          "odds": null,
+          "popularity": 12,
+          "score": 3.9,
+          "rank": 10,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": -5,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42881,12 +43118,12 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 13,
-          "number": 13,
-          "frame_no": 8,
-          "horse": "ゴールドジャッジ",
-          "name": "ゴールドジャッジ",
-          "jockey": "達城龍次",
+          "horse_no": 6,
+          "number": 6,
+          "frame_no": 5,
+          "horse": "ブルマリンシェール",
+          "name": "ブルマリンシェール",
+          "jockey": "谷内貫太",
           "odds": null,
           "popularity": 14,
           "score": 1.7,
@@ -42899,12 +43136,12 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": true,
+          "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": 4,
+          "w_diff": -5,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -42922,8 +43159,8 @@
           "name": "エイシンピストン",
           "jockey": "安藤洋一",
           "odds": null,
-          "popularity": 15,
-          "score": 0.6,
+          "popularity": 14,
+          "score": 1.7,
           "rank": 13,
           "reasons": [
             "馬体重増減 +7kg",
@@ -43019,15 +43256,15 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 3,
-          "number": 3,
-          "frame_no": 3,
-          "horse": "グレアネオンライト",
-          "name": "グレアネオンライト",
-          "jockey": "本橋孝太",
+          "horse_no": 2,
+          "number": 2,
+          "frame_no": 2,
+          "horse": "フジマサテイオー",
+          "name": "フジマサテイオー",
+          "jockey": "和田譲治",
           "odds": null,
-          "popularity": 5,
-          "score": 11.6,
+          "popularity": 8,
+          "score": 8.3,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43036,13 +43273,13 @@
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
           "is_apprentice": false,
           "is_top_jockey": false,
-          "is_inner": false,
+          "is_inner": true,
           "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": -3,
+          "w_diff": 1,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -43053,12 +43290,12 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 6,
-          "number": 6,
-          "frame_no": 5,
-          "horse": "ブルマリンシェール",
-          "name": "ブルマリンシェール",
-          "jockey": "谷内貫太",
+          "horse_no": 13,
+          "number": 13,
+          "frame_no": 8,
+          "horse": "ゴールドジャッジ",
+          "name": "ゴールドジャッジ",
+          "jockey": "達城龍次",
           "odds": null,
           "popularity": 8,
           "score": 8.3,
@@ -43071,12 +43308,12 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": -5,
+          "w_diff": 4,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -43087,30 +43324,30 @@
           "score_confidence": 80
         },
         {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 5,
-          "horse": "マイネルボンバー",
-          "name": "マイネルボンバー",
-          "jockey": "福原杏",
+          "horse_no": 12,
+          "number": 12,
+          "frame_no": 8,
+          "horse": "フロインフォッサル",
+          "name": "フロインフォッサル",
+          "jockey": "Ｆ．ゴン",
           "odds": null,
           "popularity": 9,
-          "score": 7.2,
+          "score": 8.2,
           "rank": 5,
           "reasons": [
-            "取得できた情報に基づく簡易評価",
+            "馬体重増減 +8kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": -3,
+          "w_diff": 8,
           "data_quality": {
             "odds": false,
             "popularity": true,
@@ -43131,10 +43368,10 @@
           "lines": [
             "単勝: 11 (500円)",
             "馬連: 1-11 (300円)",
-            "馬連: 3-11 (300円)",
-            "3連複: 1-3-11 (600円)",
-            "ワイド: 6-11 (100円)",
-            "ワイド: 1-6 (100円)"
+            "馬連: 2-11 (300円)",
+            "3連複: 1-2-11 (600円)",
+            "ワイド: 11-13 (100円)",
+            "ワイド: 1-13 (100円)"
           ],
           "line_items": [
             {
@@ -43157,55 +43394,164 @@
             {
               "type": "quinella",
               "horses": [
-                3,
+                2,
                 11
               ],
               "stake_yen": 300,
-              "label": "馬連: 3-11 (300円)"
+              "label": "馬連: 2-11 (300円)"
             },
             {
               "type": "trio",
               "horses": [
                 1,
-                3,
+                2,
                 11
               ],
               "stake_yen": 600,
-              "label": "3連複: 1-3-11 (600円)"
+              "label": "3連複: 1-2-11 (600円)"
             },
             {
               "type": "wide",
               "horses": [
-                6,
-                11
+                11,
+                13
               ],
               "stake_yen": 100,
-              "label": "ワイド: 6-11 (100円)"
+              "label": "ワイド: 11-13 (100円)"
             },
             {
               "type": "wide",
               "horses": [
                 1,
-                6
+                13
               ],
               "stake_yen": 100,
-              "label": "ワイド: 1-6 (100円)"
+              "label": "ワイド: 1-13 (100円)"
             }
           ],
           "note": "取得情報に基づく紙上シミュレーション。実購入は行わない。"
         }
       ],
-      "is_finished": false,
-      "result_finishes": [],
-      "payouts": {},
-      "win_hit": null,
-      "win_return": 0,
-      "all_bet_return": null,
+      "is_finished": true,
+      "result_finishes": [
+        11,
+        12,
+        2
+      ],
+      "payouts": {
+        "win": {
+          "11": 400
+        },
+        "place": {
+          "11": 200,
+          "12": 830,
+          "2": 390
+        },
+        "quinella": {
+          "11-12": 4250
+        },
+        "wide": {
+          "11-12": 1530,
+          "2-11": 660,
+          "2-12": 3180
+        },
+        "trio": {
+          "2-11-12": 10460
+        },
+        "trifecta": {
+          "11-12-2": 61990
+        },
+        "exacta": {
+          "11-12": 7140
+        }
+      },
+      "win_hit": true,
+      "win_return": 2000,
+      "all_bet_return": 2000,
       "race_cost": 1900,
-      "race_profit": null,
-      "settlement_complete": false,
-      "settled_lines": [],
-      "settlement_status": "結果精算は未実装・または結果待ち",
+      "race_profit": 100,
+      "settlement_complete": true,
+      "settled_lines": [
+        {
+          "label": "単勝: 11 (500円)",
+          "type": "win",
+          "horses": [
+            11
+          ],
+          "stake_yen": 500,
+          "hit": true,
+          "return_yen": 2000,
+          "payout_per_100": 400,
+          "matched_by_finish": true
+        },
+        {
+          "label": "馬連: 1-11 (300円)",
+          "type": "quinella",
+          "horses": [
+            1,
+            11
+          ],
+          "stake_yen": 300,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "馬連: 2-11 (300円)",
+          "type": "quinella",
+          "horses": [
+            2,
+            11
+          ],
+          "stake_yen": 300,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "3連複: 1-2-11 (600円)",
+          "type": "trio",
+          "horses": [
+            1,
+            2,
+            11
+          ],
+          "stake_yen": 600,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "ワイド: 11-13 (100円)",
+          "type": "wide",
+          "horses": [
+            11,
+            13
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        },
+        {
+          "label": "ワイド: 1-13 (100円)",
+          "type": "wide",
+          "horses": [
+            1,
+            13
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": 0,
+          "matched_by_finish": false
+        }
+      ],
+      "settlement_status": "全券種精算完了",
       "is_recommended": true,
       "is_tomorrow": false,
       "prediction_status": "未検証の簡易評価",
@@ -43242,8 +43588,8 @@
           "name": "スキャボロフェアー",
           "jockey": "落合玄太",
           "odds": null,
-          "popularity": 2,
-          "score": 14.9,
+          "popularity": 1,
+          "score": 16.0,
           "rank": 1,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43258,15 +43604,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -4,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 3,
@@ -43276,8 +43622,8 @@
           "name": "ルクスシュナイダー",
           "jockey": "小野楓馬",
           "odds": null,
-          "popularity": 3,
-          "score": 13.8,
+          "popularity": 4,
+          "score": 12.7,
           "rank": 2,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43292,26 +43638,26 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 9,
-          "number": 9,
-          "frame_no": 8,
-          "horse": "ガイストゼーゲン",
-          "name": "ガイストゼーゲン",
-          "jockey": "宮内勇樹",
+          "horse_no": 4,
+          "number": 4,
+          "frame_no": 4,
+          "horse": "カイシンパジェント",
+          "name": "カイシンパジェント",
+          "jockey": "桑村真明",
           "odds": null,
-          "popularity": 5,
-          "score": 11.6,
+          "popularity": 6,
+          "score": 10.5,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43321,32 +43667,66 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": true,
+          "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 0,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 7,
-          "horse": "イケメンパリピ",
-          "name": "イケメンパリピ",
-          "jockey": "金山昇馬",
+          "horse_no": 6,
+          "number": 6,
+          "frame_no": 6,
+          "horse": "シルバーミラージュ",
+          "name": "シルバーミラージュ",
+          "jockey": "石川倭",
+          "odds": null,
+          "popularity": 7,
+          "score": 9.4,
+          "rank": 4,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 2,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 10,
+          "number": 10,
+          "frame_no": 8,
+          "horse": "トーセンジャック",
+          "name": "トーセンジャック",
+          "jockey": "松井伸也",
           "odds": null,
           "popularity": 8,
           "score": 8.3,
-          "rank": 4,
+          "rank": 5,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -43360,15 +43740,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 1,
@@ -43380,7 +43760,7 @@
           "odds": null,
           "popularity": 9,
           "score": 7.2,
-          "rank": 5,
+          "rank": 6,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -43394,60 +43774,26 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 10,
-          "number": 10,
-          "frame_no": 8,
-          "horse": "トーセンジャック",
-          "name": "トーセンジャック",
-          "jockey": "松井伸也",
+          "horse_no": 7,
+          "number": 7,
+          "frame_no": 7,
+          "horse": "イケメンパリピ",
+          "name": "イケメンパリピ",
+          "jockey": "金山昇馬",
           "odds": null,
           "popularity": 9,
           "score": 7.2,
-          "rank": 6,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": true,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": null,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": false
-          },
-          "score_confidence": 60
-        },
-        {
-          "horse_no": 8,
-          "number": 8,
-          "frame_no": 7,
-          "horse": "ファーマシャイン",
-          "name": "ファーマシャイン",
-          "jockey": "小川悠汰",
-          "odds": null,
-          "popularity": 10,
-          "score": 6.1,
           "rank": 7,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43462,26 +43808,26 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 6,
-          "number": 6,
-          "frame_no": 6,
-          "horse": "シルバーミラージュ",
-          "name": "シルバーミラージュ",
-          "jockey": "石川倭",
+          "horse_no": 9,
+          "number": 9,
+          "frame_no": 8,
+          "horse": "ガイストゼーゲン",
+          "name": "ガイストゼーゲン",
+          "jockey": "宮内勇樹",
           "odds": null,
-          "popularity": 11,
-          "score": 5.0,
+          "popularity": 9,
+          "score": 7.2,
           "rank": 8,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43491,31 +43837,31 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 0,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 4,
-          "number": 4,
-          "frame_no": 4,
-          "horse": "カイシンパジェント",
-          "name": "カイシンパジェント",
-          "jockey": "桑村真明",
+          "horse_no": 8,
+          "number": 8,
+          "frame_no": 7,
+          "horse": "ファーマシャイン",
+          "name": "ファーマシャイン",
+          "jockey": "小川悠汰",
           "odds": null,
-          "popularity": 14,
-          "score": 1.7,
+          "popularity": 10,
+          "score": 6.1,
           "rank": 9,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43525,20 +43871,20 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 0,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 2,
@@ -43548,8 +43894,8 @@
           "name": "ブレイキンアウェイ",
           "jockey": "阿部龍",
           "odds": null,
-          "popularity": 16,
-          "score": 0.0,
+          "popularity": 15,
+          "score": 0.6,
           "rank": 10,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43564,15 +43910,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         }
       ],
       "top5": [
@@ -43584,8 +43930,8 @@
           "name": "スキャボロフェアー",
           "jockey": "落合玄太",
           "odds": null,
-          "popularity": 2,
-          "score": 14.9,
+          "popularity": 1,
+          "score": 16.0,
           "rank": 1,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43600,15 +43946,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -4,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 3,
@@ -43618,8 +43964,8 @@
           "name": "ルクスシュナイダー",
           "jockey": "小野楓馬",
           "odds": null,
-          "popularity": 3,
-          "score": 13.8,
+          "popularity": 4,
+          "score": 12.7,
           "rank": 2,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43634,26 +43980,26 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 9,
-          "number": 9,
-          "frame_no": 8,
-          "horse": "ガイストゼーゲン",
-          "name": "ガイストゼーゲン",
-          "jockey": "宮内勇樹",
+          "horse_no": 4,
+          "number": 4,
+          "frame_no": 4,
+          "horse": "カイシンパジェント",
+          "name": "カイシンパジェント",
+          "jockey": "桑村真明",
           "odds": null,
-          "popularity": 5,
-          "score": 11.6,
+          "popularity": 6,
+          "score": 10.5,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -43663,32 +44009,66 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": true,
+          "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 0,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 7,
-          "horse": "イケメンパリピ",
-          "name": "イケメンパリピ",
-          "jockey": "金山昇馬",
+          "horse_no": 6,
+          "number": 6,
+          "frame_no": 6,
+          "horse": "シルバーミラージュ",
+          "name": "シルバーミラージュ",
+          "jockey": "石川倭",
+          "odds": null,
+          "popularity": 7,
+          "score": 9.4,
+          "rank": 4,
+          "reasons": [
+            "取得できた情報に基づく簡易評価",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 2,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 10,
+          "number": 10,
+          "frame_no": 8,
+          "horse": "トーセンジャック",
+          "name": "トーセンジャック",
+          "jockey": "松井伸也",
           "odds": null,
           "popularity": 8,
           "score": 8.3,
-          "rank": 4,
+          "rank": 5,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -43702,49 +44082,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
-        },
-        {
-          "horse_no": 1,
-          "number": 1,
-          "frame_no": 1,
-          "horse": "ホウヨウムーン",
-          "name": "ホウヨウムーン",
-          "jockey": "黒澤愛斗",
-          "odds": null,
-          "popularity": 9,
-          "score": 7.2,
-          "rank": 5,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": true,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": null,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": false
-          },
-          "score_confidence": 60
+          "score_confidence": 80
         }
       ],
       "outsiders": [],
@@ -43757,10 +44103,10 @@
           "lines": [
             "単勝: 5 (500円)",
             "馬連: 3-5 (300円)",
-            "馬連: 5-9 (300円)",
-            "3連複: 3-5-9 (600円)",
-            "ワイド: 5-7 (100円)",
-            "ワイド: 3-7 (100円)"
+            "馬連: 4-5 (300円)",
+            "3連複: 3-4-5 (600円)",
+            "ワイド: 5-6 (100円)",
+            "ワイド: 3-6 (100円)"
           ],
           "line_items": [
             {
@@ -43783,39 +44129,39 @@
             {
               "type": "quinella",
               "horses": [
-                5,
-                9
+                4,
+                5
               ],
               "stake_yen": 300,
-              "label": "馬連: 5-9 (300円)"
+              "label": "馬連: 4-5 (300円)"
             },
             {
               "type": "trio",
               "horses": [
                 3,
-                5,
-                9
+                4,
+                5
               ],
               "stake_yen": 600,
-              "label": "3連複: 3-5-9 (600円)"
+              "label": "3連複: 3-4-5 (600円)"
             },
             {
               "type": "wide",
               "horses": [
                 5,
-                7
+                6
               ],
               "stake_yen": 100,
-              "label": "ワイド: 5-7 (100円)"
+              "label": "ワイド: 5-6 (100円)"
             },
             {
               "type": "wide",
               "horses": [
                 3,
-                7
+                6
               ],
               "stake_yen": 100,
-              "label": "ワイド: 3-7 (100円)"
+              "label": "ワイド: 3-6 (100円)"
             }
           ],
           "note": "取得情報に基づく紙上シミュレーション。実購入は行わない。"
@@ -43869,10 +44215,10 @@
           "jockey": "安藤洋一",
           "odds": null,
           "popularity": 1,
-          "score": 16.0,
+          "score": 17.0,
           "rank": 1,
           "reasons": [
-            "取得できた情報に基づく簡易評価",
+            "馬体重増減 +15kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -43884,15 +44230,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 15,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 8,
@@ -43902,8 +44248,8 @@
           "name": "カクヒメ",
           "jockey": "矢野貴之",
           "odds": null,
-          "popularity": 6,
-          "score": 13.5,
+          "popularity": 5,
+          "score": 14.6,
           "rank": 2,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
@@ -43918,15 +44264,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -1,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 3,
@@ -43936,11 +44282,11 @@
           "name": "キタノプレミアム",
           "jockey": "御神本訓",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 5,
+          "score": 11.6,
           "rank": 3,
           "reasons": [
-            "取得できた情報に基づく簡易評価",
+            "馬体重増減 +23kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -43952,15 +44298,83 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 23,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 1,
+          "number": 1,
+          "frame_no": 1,
+          "horse": "エレパイオ",
+          "name": "エレパイオ",
+          "jockey": "和田譲治",
+          "odds": null,
+          "popularity": 6,
+          "score": 10.5,
+          "rank": 4,
+          "reasons": [
+            "馬体重増減 -21kg",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": true,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": -21,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 9,
+          "number": 9,
+          "frame_no": 6,
+          "horse": "ラインメテオラ",
+          "name": "ラインメテオラ",
+          "jockey": "藤本現暉",
+          "odds": null,
+          "popularity": 7,
+          "score": 9.4,
+          "rank": 5,
+          "reasons": [
+            "馬体重増減 -11kg",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": -11,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
         },
         {
           "horse_no": 2,
@@ -43970,9 +44384,9 @@
           "name": "ラピダニーニャ",
           "jockey": "石川駿介",
           "odds": null,
-          "popularity": 7,
-          "score": 9.4,
-          "rank": 4,
+          "popularity": 8,
+          "score": 8.3,
+          "rank": 6,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -43986,49 +44400,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 4,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
-        },
-        {
-          "horse_no": 9,
-          "number": 9,
-          "frame_no": 6,
-          "horse": "ラインメテオラ",
-          "name": "ラインメテオラ",
-          "jockey": "藤本現暉",
-          "odds": null,
-          "popularity": 8,
-          "score": 8.3,
-          "rank": 5,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": null,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": false
-          },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 11,
@@ -44040,7 +44420,7 @@
           "odds": null,
           "popularity": 9,
           "score": 7.2,
-          "rank": 6,
+          "rank": 7,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -44054,57 +44434,23 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 2,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 6,
-          "number": 6,
-          "frame_no": 4,
-          "horse": "ラブリーファンク",
-          "name": "ラブリーファンク",
-          "jockey": "櫻井光輔",
-          "odds": null,
-          "popularity": 10,
-          "score": 6.1,
-          "rank": 7,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": null,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": false
-          },
-          "score_confidence": 60
-        },
-        {
-          "horse_no": 10,
-          "number": 10,
-          "frame_no": 6,
-          "horse": "ジーティーウララ",
-          "name": "ジーティーウララ",
-          "jockey": "岡村健司",
+          "horse_no": 7,
+          "number": 7,
+          "frame_no": 5,
+          "horse": "エマーユ",
+          "name": "エマーユ",
+          "jockey": "高橋優",
           "odds": null,
           "popularity": 10,
           "score": 6.1,
@@ -44122,26 +44468,26 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 3,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 7,
-          "number": 7,
-          "frame_no": 5,
-          "horse": "エマーユ",
-          "name": "エマーユ",
-          "jockey": "高橋優",
+          "horse_no": 10,
+          "number": 10,
+          "frame_no": 6,
+          "horse": "ジーティーウララ",
+          "name": "ジーティーウララ",
+          "jockey": "岡村健司",
           "odds": null,
-          "popularity": 11,
-          "score": 5.0,
+          "popularity": 10,
+          "score": 6.1,
           "rank": 9,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -44156,15 +44502,49 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 1,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
+        },
+        {
+          "horse_no": 6,
+          "number": 6,
+          "frame_no": 4,
+          "horse": "ラブリーファンク",
+          "name": "ラブリーファンク",
+          "jockey": "櫻井光輔",
+          "odds": null,
+          "popularity": 11,
+          "score": 5.0,
+          "rank": 10,
+          "reasons": [
+            "馬体重増減 +7kg",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": false,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 7,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
         },
         {
           "horse_no": 4,
@@ -44176,7 +44556,7 @@
           "odds": null,
           "popularity": 12,
           "score": 3.9,
-          "rank": 10,
+          "rank": 11,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -44190,49 +44570,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 5,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
-        },
-        {
-          "horse_no": 12,
-          "number": 12,
-          "frame_no": 7,
-          "horse": "ゴールドタリスマン",
-          "name": "ゴールドタリスマン",
-          "jockey": "中村尚平",
-          "odds": null,
-          "popularity": 12,
-          "score": 3.9,
-          "rank": 11,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": false,
-          "is_outer": true,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": null,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": false
-          },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 5,
@@ -44258,26 +44604,26 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -1,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 13,
-          "number": 13,
-          "frame_no": 8,
-          "horse": "ハヴィティペイ",
-          "name": "ハヴィティペイ",
-          "jockey": "本村直樹",
+          "horse_no": 12,
+          "number": 12,
+          "frame_no": 7,
+          "horse": "ゴールドタリスマン",
+          "name": "ゴールドタリスマン",
+          "jockey": "中村尚平",
           "odds": null,
-          "popularity": 14,
-          "score": 1.7,
+          "popularity": 13,
+          "score": 2.8,
           "rank": 13,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -44292,63 +44638,27 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 3,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 1,
-          "number": 1,
-          "frame_no": 1,
-          "horse": "エレパイオ",
-          "name": "エレパイオ",
-          "jockey": "和田譲治",
-          "odds": null,
-          "popularity": 16,
-          "score": 0.0,
-          "rank": 14,
-          "reasons": [
-            "取得できた情報に基づく簡易評価",
-            "単勝オッズ未取得"
-          ],
-          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
-          "is_apprentice": false,
-          "is_top_jockey": false,
-          "is_inner": true,
-          "is_outer": false,
-          "is_dirt_blood": false,
-          "is_power_blood": false,
-          "is_positive_memo": false,
-          "is_negative_memo": false,
-          "w_diff": null,
-          "data_quality": {
-            "odds": false,
-            "popularity": true,
-            "jockey": true,
-            "frame": true,
-            "weight_change": false
-          },
-          "score_confidence": 60
-        }
-      ],
-      "top5": [
-        {
-          "horse_no": 14,
-          "number": 14,
+          "horse_no": 13,
+          "number": 13,
           "frame_no": 8,
-          "horse": "アイビーブリザード",
-          "name": "アイビーブリザード",
-          "jockey": "安藤洋一",
+          "horse": "ハヴィティペイ",
+          "name": "ハヴィティペイ",
+          "jockey": "本村直樹",
           "odds": null,
-          "popularity": 1,
-          "score": 16.0,
-          "rank": 1,
+          "popularity": 14,
+          "score": 1.7,
+          "rank": 14,
           "reasons": [
             "取得できた情報に基づく簡易評価",
             "単勝オッズ未取得"
@@ -44362,15 +44672,51 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 5,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
+        }
+      ],
+      "top5": [
+        {
+          "horse_no": 14,
+          "number": 14,
+          "frame_no": 8,
+          "horse": "アイビーブリザード",
+          "name": "アイビーブリザード",
+          "jockey": "安藤洋一",
+          "odds": null,
+          "popularity": 1,
+          "score": 17.0,
+          "rank": 1,
+          "reasons": [
+            "馬体重増減 +15kg",
+            "単勝オッズ未取得"
+          ],
+          "caution": "簡易評価。過去走・調教・展開の検証は限定的",
+          "is_apprentice": false,
+          "is_top_jockey": false,
+          "is_inner": false,
+          "is_outer": true,
+          "is_dirt_blood": false,
+          "is_power_blood": false,
+          "is_positive_memo": false,
+          "is_negative_memo": false,
+          "w_diff": 15,
+          "data_quality": {
+            "odds": false,
+            "popularity": true,
+            "jockey": true,
+            "frame": true,
+            "weight_change": true
+          },
+          "score_confidence": 80
         },
         {
           "horse_no": 8,
@@ -44380,8 +44726,8 @@
           "name": "カクヒメ",
           "jockey": "矢野貴之",
           "odds": null,
-          "popularity": 6,
-          "score": 13.5,
+          "popularity": 5,
+          "score": 14.6,
           "rank": 2,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
@@ -44396,15 +44742,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -1,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 3,
@@ -44414,11 +44760,11 @@
           "name": "キタノプレミアム",
           "jockey": "御神本訓",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 5,
+          "score": 11.6,
           "rank": 3,
           "reasons": [
-            "取得できた情報に基づく簡易評価",
+            "馬体重増減 +23kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -44430,29 +44776,29 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": 23,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
-          "horse_no": 2,
-          "number": 2,
-          "frame_no": 2,
-          "horse": "ラピダニーニャ",
-          "name": "ラピダニーニャ",
-          "jockey": "石川駿介",
+          "horse_no": 1,
+          "number": 1,
+          "frame_no": 1,
+          "horse": "エレパイオ",
+          "name": "エレパイオ",
+          "jockey": "和田譲治",
           "odds": null,
-          "popularity": 7,
-          "score": 9.4,
+          "popularity": 6,
+          "score": 10.5,
           "rank": 4,
           "reasons": [
-            "取得できた情報に基づく簡易評価",
+            "馬体重増減 -21kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -44464,15 +44810,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -21,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         },
         {
           "horse_no": 9,
@@ -44482,11 +44828,11 @@
           "name": "ラインメテオラ",
           "jockey": "藤本現暉",
           "odds": null,
-          "popularity": 8,
-          "score": 8.3,
+          "popularity": 7,
+          "score": 9.4,
           "rank": 5,
           "reasons": [
-            "取得できた情報に基づく簡易評価",
+            "馬体重増減 -11kg",
             "単勝オッズ未取得"
           ],
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
@@ -44498,15 +44844,15 @@
           "is_power_blood": false,
           "is_positive_memo": false,
           "is_negative_memo": false,
-          "w_diff": null,
+          "w_diff": -11,
           "data_quality": {
             "odds": false,
             "popularity": true,
             "jockey": true,
             "frame": true,
-            "weight_change": false
+            "weight_change": true
           },
-          "score_confidence": 60
+          "score_confidence": 80
         }
       ],
       "outsiders": [],
@@ -44521,8 +44867,8 @@
             "馬連: 8-14 (300円)",
             "馬連: 3-14 (300円)",
             "3連複: 3-8-14 (600円)",
-            "ワイド: 2-14 (100円)",
-            "ワイド: 2-8 (100円)"
+            "ワイド: 1-14 (100円)",
+            "ワイド: 1-8 (100円)"
           ],
           "line_items": [
             {
@@ -44564,20 +44910,20 @@
             {
               "type": "wide",
               "horses": [
-                2,
+                1,
                 14
               ],
               "stake_yen": 100,
-              "label": "ワイド: 2-14 (100円)"
+              "label": "ワイド: 1-14 (100円)"
             },
             {
               "type": "wide",
               "horses": [
-                2,
+                1,
                 8
               ],
               "stake_yen": 100,
-              "label": "ワイド: 2-8 (100円)"
+              "label": "ワイド: 1-8 (100円)"
             }
           ],
           "note": "取得情報に基づく紙上シミュレーション。実購入は行わない。"
@@ -46544,8 +46890,8 @@
           "name": "ソニックスター",
           "jockey": "笹川翼",
           "odds": null,
-          "popularity": 1,
-          "score": 19.0,
+          "popularity": 2,
+          "score": 17.9,
           "rank": 1,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
@@ -46578,8 +46924,8 @@
           "name": "リコースパロー",
           "jockey": "矢野貴之",
           "odds": null,
-          "popularity": 7,
-          "score": 12.4,
+          "popularity": 4,
+          "score": 15.7,
           "rank": 2,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
@@ -46612,8 +46958,8 @@
           "name": "スマイルマンボ",
           "jockey": "和田譲治",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 7,
+          "score": 9.4,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46646,8 +46992,8 @@
           "name": "ウィリアムバローズ",
           "jockey": "御神本訓",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 8,
+          "score": 8.3,
           "rank": 4,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46673,15 +47019,15 @@
           "score_confidence": 60
         },
         {
-          "horse_no": 13,
-          "number": 13,
-          "frame_no": 8,
-          "horse": "ナンセイホワイト",
-          "name": "ナンセイホワイト",
-          "jockey": "安藤洋一",
+          "horse_no": 10,
+          "number": 10,
+          "frame_no": 7,
+          "horse": "アルムラトゥール",
+          "name": "アルムラトゥール",
+          "jockey": "吉原寛人",
           "odds": null,
-          "popularity": 7,
-          "score": 9.4,
+          "popularity": 8,
+          "score": 8.3,
           "rank": 5,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46714,8 +47060,8 @@
           "name": "バハルダール",
           "jockey": "鷹見陸",
           "odds": null,
-          "popularity": 8,
-          "score": 8.3,
+          "popularity": 9,
+          "score": 7.2,
           "rank": 6,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46748,8 +47094,8 @@
           "name": "ランリョウオー",
           "jockey": "本橋孝太",
           "odds": null,
-          "popularity": 9,
-          "score": 7.2,
+          "popularity": 10,
+          "score": 6.1,
           "rank": 7,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46775,15 +47121,15 @@
           "score_confidence": 60
         },
         {
-          "horse_no": 10,
-          "number": 10,
-          "frame_no": 7,
-          "horse": "アルムラトゥール",
-          "name": "アルムラトゥール",
-          "jockey": "吉原寛人",
+          "horse_no": 6,
+          "number": 6,
+          "frame_no": 5,
+          "horse": "ゴールドレガシー",
+          "name": "ゴールドレガシー",
+          "jockey": "Ｆ．ゴン",
           "odds": null,
-          "popularity": 9,
-          "score": 7.2,
+          "popularity": 10,
+          "score": 6.1,
           "rank": 8,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46793,7 +47139,7 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": true,
+          "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
@@ -46809,12 +47155,12 @@
           "score_confidence": 60
         },
         {
-          "horse_no": 6,
-          "number": 6,
-          "frame_no": 5,
-          "horse": "ゴールドレガシー",
-          "name": "ゴールドレガシー",
-          "jockey": "Ｆ．ゴン",
+          "horse_no": 13,
+          "number": 13,
+          "frame_no": 8,
+          "horse": "ナンセイホワイト",
+          "name": "ナンセイホワイト",
+          "jockey": "安藤洋一",
           "odds": null,
           "popularity": 10,
           "score": 6.1,
@@ -46827,7 +47173,7 @@
           "is_apprentice": false,
           "is_top_jockey": false,
           "is_inner": false,
-          "is_outer": false,
+          "is_outer": true,
           "is_dirt_blood": false,
           "is_power_blood": false,
           "is_positive_memo": false,
@@ -46877,15 +47223,15 @@
           "score_confidence": 60
         },
         {
-          "horse_no": 9,
-          "number": 9,
-          "frame_no": 6,
-          "horse": "ベアバッキューン",
-          "name": "ベアバッキューン",
-          "jockey": "野畑凌",
+          "horse_no": 2,
+          "number": 2,
+          "frame_no": 2,
+          "horse": "ハデスキーパー",
+          "name": "ハデスキーパー",
+          "jockey": "達城龍次",
           "odds": null,
-          "popularity": 11,
-          "score": 5.0,
+          "popularity": 12,
+          "score": 3.9,
           "rank": 11,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -46894,7 +47240,7 @@
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
           "is_apprentice": false,
           "is_top_jockey": false,
-          "is_inner": false,
+          "is_inner": true,
           "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
@@ -46911,12 +47257,12 @@
           "score_confidence": 60
         },
         {
-          "horse_no": 2,
-          "number": 2,
-          "frame_no": 2,
-          "horse": "ハデスキーパー",
-          "name": "ハデスキーパー",
-          "jockey": "達城龍次",
+          "horse_no": 9,
+          "number": 9,
+          "frame_no": 6,
+          "horse": "ベアバッキューン",
+          "name": "ベアバッキューン",
+          "jockey": "野畑凌",
           "odds": null,
           "popularity": 12,
           "score": 3.9,
@@ -46928,7 +47274,7 @@
           "caution": "簡易評価。過去走・調教・展開の検証は限定的",
           "is_apprentice": false,
           "is_top_jockey": false,
-          "is_inner": true,
+          "is_inner": false,
           "is_outer": false,
           "is_dirt_blood": false,
           "is_power_blood": false,
@@ -46988,8 +47334,8 @@
           "name": "ソニックスター",
           "jockey": "笹川翼",
           "odds": null,
-          "popularity": 1,
-          "score": 19.0,
+          "popularity": 2,
+          "score": 17.9,
           "rank": 1,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
@@ -47022,8 +47368,8 @@
           "name": "リコースパロー",
           "jockey": "矢野貴之",
           "odds": null,
-          "popularity": 7,
-          "score": 12.4,
+          "popularity": 4,
+          "score": 15.7,
           "rank": 2,
           "reasons": [
             "登録騎手リストに該当（実績保証ではない）",
@@ -47056,8 +47402,8 @@
           "name": "スマイルマンボ",
           "jockey": "和田譲治",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 7,
+          "score": 9.4,
           "rank": 3,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -47090,8 +47436,8 @@
           "name": "ウィリアムバローズ",
           "jockey": "御神本訓",
           "odds": null,
-          "popularity": 6,
-          "score": 10.5,
+          "popularity": 8,
+          "score": 8.3,
           "rank": 4,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -47117,15 +47463,15 @@
           "score_confidence": 60
         },
         {
-          "horse_no": 13,
-          "number": 13,
-          "frame_no": 8,
-          "horse": "ナンセイホワイト",
-          "name": "ナンセイホワイト",
-          "jockey": "安藤洋一",
+          "horse_no": 10,
+          "number": 10,
+          "frame_no": 7,
+          "horse": "アルムラトゥール",
+          "name": "アルムラトゥール",
+          "jockey": "吉原寛人",
           "odds": null,
-          "popularity": 7,
-          "score": 9.4,
+          "popularity": 8,
+          "score": 8.3,
           "rank": 5,
           "reasons": [
             "取得できた情報に基づく簡易評価",
@@ -47247,7 +47593,7 @@
     "today_races": 59,
     "verified_races": 59,
     "unverified_races": 0,
-    "settled_races": 54,
+    "settled_races": 57,
     "note": "出走頭数はHTMLから取得した馬番の数です。頭数未検証のレースは表示しても予想・買い目を作成しません。終了レースは結果ページから着順・払戻を取得して精算します。"
   },
   "prediction_notice": "予想順位・スコアは未検証の簡易評価です。校正済み勝率ではなく、的中や利益を保証しません。",
@@ -47256,18 +47602,18 @@
     "real_betting_enabled": false,
     "stats": {
       "races_seen": 107,
-      "races_settled": 108,
-      "win_bets": 54,
-      "win_hits": 24,
-      "total_stake_yen": 102600,
-      "total_return_yen": 21800,
-      "roi_pct": 21.2,
-      "win_hit_rate_pct": 44.4,
-      "all_bet_settled_races": 54,
-      "all_bet_stake_yen": 102600,
-      "all_bet_return_yen": 68130,
-      "all_bet_roi_pct": 66.4,
-      "all_bet_hit_races": 42,
+      "races_settled": 114,
+      "win_bets": 57,
+      "win_hits": 26,
+      "total_stake_yen": 108300,
+      "total_return_yen": 25050,
+      "roi_pct": 23.1,
+      "win_hit_rate_pct": 45.6,
+      "all_bet_settled_races": 57,
+      "all_bet_stake_yen": 108300,
+      "all_bet_return_yen": 81910,
+      "all_bet_roi_pct": 75.6,
+      "all_bet_hit_races": 44,
       "accounting_note": "旧履歴の単勝成績と全券種精算成績は別集計。未取得・精算保留のレースは回収率に含めません。"
     },
     "history": [
@@ -47300,7 +47646,7 @@
           3,
           11
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202648102712",
@@ -47583,7 +47929,7 @@
           6,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -47751,7 +48097,7 @@
           9,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -47924,7 +48270,7 @@
           6,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -48093,7 +48439,7 @@
           3,
           1
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -48266,7 +48612,7 @@
           3,
           4
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202648102707",
@@ -48550,7 +48896,7 @@
           4,
           6
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -48642,7 +48988,7 @@
           9,
           8
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202648102705",
@@ -48928,7 +49274,7 @@
           10,
           1
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202648102704",
@@ -49212,7 +49558,7 @@
           7,
           6
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202648102703",
@@ -49494,7 +49840,7 @@
           10,
           7
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -49654,7 +50000,7 @@
           4,
           2
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -49822,7 +50168,7 @@
           6,
           9
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -49998,7 +50344,7 @@
           8,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -50160,7 +50506,7 @@
           1,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -50321,7 +50667,7 @@
           5,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -50484,7 +50830,7 @@
           5,
           4
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -50650,7 +50996,7 @@
           9,
           8
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -50815,7 +51161,7 @@
           1,
           2
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -50974,7 +51320,7 @@
           3,
           9
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -51142,7 +51488,7 @@
           5,
           2
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -51298,7 +51644,7 @@
           1,
           6
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -51456,7 +51802,7 @@
           3,
           4
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -51531,7 +51877,7 @@
         "settlement_complete": false,
         "settlement_status": "結果精算は未実装・または結果待ち",
         "result_finishes": [],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -51639,17 +51985,17 @@
           "14": null,
           "8": null,
           "3": null,
-          "2": null,
+          "1": null,
           "9": null,
+          "2": null,
           "11": null,
-          "6": null,
-          "10": null,
           "7": null,
+          "10": null,
+          "6": null,
           "4": null,
-          "12": null,
           "5": null,
-          "13": null,
-          "1": null
+          "12": null,
+          "13": null
         },
         "runner_count": 14,
         "runner_count_verified": true,
@@ -51681,15 +52027,19 @@
         "race_no": 11,
         "name": "オパール賞競走(A2)",
         "cost": 1900,
-        "is_finished": false,
-        "win_hit": null,
-        "win_return": 0,
-        "race_profit": null,
-        "all_bet_return": null,
-        "settlement_complete": false,
-        "settlement_status": "結果精算は未実装・または結果待ち",
-        "result_finishes": [],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "is_finished": true,
+        "win_hit": true,
+        "win_return": 2000,
+        "race_profit": 100,
+        "all_bet_return": 2000,
+        "settlement_complete": true,
+        "settlement_status": "全券種精算完了",
+        "result_finishes": [
+          11,
+          12,
+          2
+        ],
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -51878,16 +52228,16 @@
         "last_odds": {
           "11": null,
           "1": null,
-          "3": null,
-          "6": null,
-          "7": null,
-          "12": null,
           "2": null,
-          "4": null,
+          "13": null,
+          "12": null,
+          "3": null,
+          "7": null,
           "5": null,
           "10": null,
+          "4": null,
           "9": null,
-          "13": null,
+          "6": null,
           "8": null
         },
         "runner_count": 13,
@@ -51922,15 +52272,30 @@
         "race_no": 10,
         "name": "YJSトライアルラウンド大井 第2戦競走(C2)",
         "cost": 1900,
-        "is_finished": false,
-        "win_hit": null,
-        "win_return": 0,
-        "race_profit": null,
-        "all_bet_return": null,
-        "settlement_complete": false,
-        "settlement_status": "結果精算は未実装・または結果待ち",
-        "result_finishes": [],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "is_finished": true,
+        "win_hit": true,
+        "win_return": 1250,
+        "race_profit": 9880,
+        "all_bet_return": 11780,
+        "settlement_complete": true,
+        "settlement_status": "全券種精算完了",
+        "result_finishes": [
+          5,
+          13,
+          3,
+          2,
+          7,
+          14,
+          1,
+          4,
+          11,
+          10,
+          12,
+          8,
+          9,
+          6
+        ],
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -52098,7 +52463,7 @@
           4,
           10
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -52282,7 +52647,7 @@
           7,
           13
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -52450,7 +52815,7 @@
           8,
           7
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -52707,7 +53072,7 @@
           10,
           5
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -52878,7 +53243,7 @@
           7,
           9
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202644102705",
@@ -53141,7 +53506,7 @@
           10,
           13
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202644102704",
@@ -53432,7 +53797,7 @@
           8,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202644102703",
@@ -53693,7 +54058,7 @@
           9,
           11
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202644102702",
@@ -53959,7 +54324,7 @@
           5,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202644102701",
@@ -54175,7 +54540,7 @@
           4,
           5
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -54357,7 +54722,7 @@
           3,
           7
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -54537,7 +54902,7 @@
           11,
           4
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -54715,7 +55080,7 @@
           8,
           5
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -54894,7 +55259,7 @@
           8,
           5
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -55070,7 +55435,7 @@
           3,
           11
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -55240,7 +55605,7 @@
           10,
           11
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -55420,7 +55785,7 @@
           1,
           10
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -55602,7 +55967,7 @@
           9,
           6
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -55775,7 +56140,7 @@
           8,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -55936,7 +56301,7 @@
           1,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -56099,7 +56464,7 @@
           10,
           4
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -56250,7 +56615,7 @@
         "settlement_complete": false,
         "settlement_status": "結果精算は未実装・または結果待ち",
         "result_finishes": [],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -56364,13 +56729,13 @@
         "last_odds": {
           "5": null,
           "3": null,
-          "9": null,
-          "7": null,
-          "1": null,
-          "10": null,
-          "8": null,
-          "6": null,
           "4": null,
+          "6": null,
+          "10": null,
+          "1": null,
+          "7": null,
+          "9": null,
+          "8": null,
           "2": null
         },
         "runner_count": 10,
@@ -56407,15 +56772,27 @@
         "race_no": 11,
         "name": "ツリバナ特別(B4)",
         "cost": 1900,
-        "is_finished": false,
-        "win_hit": null,
+        "is_finished": true,
+        "win_hit": false,
         "win_return": 0,
-        "race_profit": null,
-        "all_bet_return": null,
-        "settlement_complete": false,
-        "settlement_status": "結果精算は未実装・または結果待ち",
-        "result_finishes": [],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "race_profit": -1900,
+        "all_bet_return": 0,
+        "settlement_complete": true,
+        "settlement_status": "全券種精算完了（的中なし）",
+        "result_finishes": [
+          11,
+          2,
+          4,
+          3,
+          6,
+          7,
+          9,
+          1,
+          8,
+          10,
+          5
+        ],
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -56527,17 +56904,17 @@
           "prediction_status": "未検証の簡易評価"
         },
         "last_odds": {
-          "7": null,
+          "1": null,
           "6": null,
           "4": null,
-          "1": null,
-          "5": null,
-          "11": null,
-          "9": null,
           "2": null,
-          "8": null,
+          "11": null,
+          "7": null,
+          "5": null,
+          "3": null,
           "10": null,
-          "3": null
+          "9": null,
+          "8": null
         },
         "runner_count": 11,
         "runner_count_verified": true,
@@ -56593,7 +56970,7 @@
           10,
           9
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -56773,7 +57150,7 @@
           4,
           8
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -56944,7 +57321,7 @@
           2,
           7
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -57100,7 +57477,7 @@
           2,
           6
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -57261,7 +57638,7 @@
           6,
           1
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -57429,7 +57806,7 @@
           2,
           3
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -57600,7 +57977,7 @@
           4,
           10
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "top5": [
             {
@@ -57777,7 +58154,7 @@
           5,
           7
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202630102703",
@@ -58011,7 +58388,7 @@
           1,
           4
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202630102702",
@@ -58234,7 +58611,7 @@
           3,
           8
         ],
-        "updated_at": "2026-10-27T19:40:31.804702+09:00",
+        "updated_at": "2026-10-27T20:20:56.079004+09:00",
         "frozen_prediction": {
           "captured_at": "2026-10-27T03:00:29.479361+09:00",
           "race_id": "202630102701",
