@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v28.0
-中央・地方競馬 / レース一覧取得 / 出走馬解析 / 簡易予想 / 紙上検証
+BAGEN KEIBA v28.1
+中央・地方競馬 / レース一覧取得 / 出走馬解析 / 簡易予想 / 紙上検証 / 結果精算
 
 無料GitHub Actions向け。実際の馬券購入・口座接続は行わない。
 既存 history.json の snapshots / stats / horse_form_cache を維持する。
@@ -16,6 +16,7 @@ import html as html_lib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, parse_qs
+from itertools import combinations
 
 import requests
 from bs4 import BeautifulSoup
@@ -36,7 +37,7 @@ TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
 TODAY_ISO = NOW.strftime("%Y-%m-%d")
 
-ENGINE_VERSION = "BAGEN_28.0"
+ENGINE_VERSION = "BAGEN_28.1"
 
 TIMEOUT = (10, 25)
 DELAY = 0.35
@@ -194,7 +195,6 @@ def get_html(url):
         response = SESSION.get(url, timeout=TIMEOUT)
         response.raise_for_status()
 
-        # requestsの文字コード判定を尊重し、UTF-8固定による文字化けを避ける。
         if not response.encoding or response.encoding.lower() == "iso-8859-1":
             response.encoding = response.apparent_encoding or "utf-8"
 
@@ -261,10 +261,6 @@ def extract_ids_from_url(url):
 # ============================================================
 
 def extract_race_ids(source_html):
-    """
-    リンクのURLだけに依存せず、HTML・埋め込みスクリプトも検索する。
-    同じIDは重複排除する。
-    """
     if not source_html:
         return []
 
@@ -283,7 +279,6 @@ def extract_race_ids(source_html):
         for race_id in extract_ids_from_url(href):
             add(race_id)
 
-    # HTML内の絶対URL、JSON、JavaScriptに埋め込まれたIDも確認
     patterns = [
         r"race_id\s*[\"']?\s*[:=]\s*[\"']?(\d{12,14})",
         r"race_id%3D(\d{12,14})",
@@ -318,8 +313,6 @@ def fetch_race_ids(source, date_str):
         )
 
         for race_id in ids:
-            # 日付違いのIDを混入させない。
-            # JRA IDは開催日を単純に含まないため、中央はこの検査を適用しない。
             if source["kind"] == "地方":
                 id_date = str(race_id)[6:10]
                 expected = date_str[4:8]
@@ -383,7 +376,6 @@ def parse_post_time(meta, soup):
     if match:
         return f"{int(match.group(1)):02d}:{match.group(2)}"
 
-    # 明確な「発走」表記を持つ要素だけを追加検索
     for node in soup.select(".RaceData01, .RaceData02, [class*='RaceData']"):
         value = text_of(node)
         match = re.search(
@@ -457,11 +449,6 @@ def row_has_horse_link(row):
 
 
 def choose_shutuba_table(soup):
-    """
-    重要な修正:
-    最初に見つかった RaceTable01 を無条件採用しない。
-    馬名リンクを含む行が多いテーブルを優先する。
-    """
     candidates = []
     seen = set()
 
@@ -485,7 +472,6 @@ def choose_shutuba_table(soup):
             horse_rows = [row for row in rows if row_has_horse_link(row)]
             score = len(horse_rows)
 
-            # 馬名リンクを含む行数を基準に選ぶ。
             if score:
                 candidates.append((score, table, rows))
 
@@ -495,7 +481,6 @@ def choose_shutuba_table(soup):
     candidates.sort(key=lambda item: item[0], reverse=True)
     best_score, best_table, best_rows = candidates[0]
 
-    # 解析候補が複数ある場合、ログに残して診断可能にする。
     if len(candidates) > 1:
         print(
             f"[INFO] 出馬表候補テーブル={len(candidates)} "
@@ -514,7 +499,6 @@ def get_cell(row, selectors):
 
 
 def parse_horse_no(row):
-    # 馬番専用列を最優先。枠番列は使わない。
     node = get_cell(row, [
         "td.Umaban",
         "td[class*='Umaban']",
@@ -528,7 +512,6 @@ def parse_horse_no(row):
         if value is not None and 1 <= value <= 18:
             return int(value)
 
-    # 一部のページでは列名が異なるため、馬名セルの直前を調べる。
     cells = row.find_all("td", recursive=False)
     horse_cell = get_cell(row, [
         "td.HorseInfo",
@@ -544,7 +527,6 @@ def parse_horse_no(row):
             index = -1
 
         if index > 0:
-            # 馬名セルの直前から最大3セルを確認する。
             for cell in reversed(cells[max(0, index - 3):index]):
                 classes = " ".join(cell.get("class", []))
                 if any(token in classes for token in ("Waku", "Frame")):
@@ -670,7 +652,6 @@ def parse_runners(soup, surface):
     duplicates = []
 
     for row in rows:
-        # ヘッダー・空行・広告行は無視
         name = parse_horse_name(row)
         horse_no = parse_horse_no(row)
 
@@ -966,7 +947,365 @@ def build_tickets(ranked, outsiders):
 
 
 # ============================================================
-# 8. レース解析
+# 8. 結果取得・精算
+# ============================================================
+
+def parse_result_page(html, race_id):
+    """結果ページから着順と払戻を抽出"""
+    soup = soup_of(html)
+    finishes = []  # list of horse_no in order (1着, 2着, ...)
+    payouts = {
+        "win": {},      # horse_no -> payout_yen (100円あたり)
+        "place": {},    # horse_no -> payout
+        "quinella": {}, # frozenset -> payout
+        "wide": {},     # frozenset -> payout
+        "trio": {},     # frozenset -> payout
+        "trifecta": {}, # tuple -> payout
+        "exacta": {},   # tuple -> payout (馬単)
+    }
+
+    # --- 着順テーブル ---
+    # 一般的な結果テーブルを探す
+    result_tables = soup.select(
+        "table.RaceTable01, table.result_table, table.Result_Table, "
+        "table[class*='Result'], table[class*='result'], .ResultTable table"
+    )
+    if not result_tables:
+        result_tables = soup.select("table")
+
+    for table in result_tables:
+        rows = table.select("tr")
+        for row in rows:
+            cells = row.find_all(["td", "th"])
+            if len(cells) < 3:
+                continue
+            # 着順・馬番を探す
+            texts = [text_of(c) for c in cells]
+            # 典型: 着順 | 枠 | 馬番 | 馬名 ...
+            rank_candidate = None
+            horse_no_candidate = None
+            for i, t in enumerate(texts):
+                if re.fullmatch(r"\d{1,2}", t) and 1 <= safe_int(t) <= 18:
+                    if rank_candidate is None:
+                        rank_candidate = safe_int(t)
+                    elif horse_no_candidate is None and i > 0:
+                        horse_no_candidate = safe_int(t)
+                        break
+            if rank_candidate and horse_no_candidate and 1 <= rank_candidate <= 18:
+                while len(finishes) < rank_candidate:
+                    finishes.append(None)
+                if finishes[rank_candidate - 1] is None:
+                    finishes[rank_candidate - 1] = horse_no_candidate
+
+    # フォールバック: より緩いパース
+    if not finishes or all(x is None for x in finishes):
+        finishes = []
+        for row in soup.select("tr"):
+            tds = row.find_all("td")
+            if len(tds) < 4:
+                continue
+            rank_txt = text_of(tds[0])
+            umaban_txt = text_of(tds[2]) if len(tds) > 2 else ""
+            rank = safe_int(rank_txt)
+            umaban = safe_int(umaban_txt)
+            if 1 <= rank <= 18 and 1 <= umaban <= 18:
+                while len(finishes) < rank:
+                    finishes.append(None)
+                finishes[rank - 1] = umaban
+
+    finishes = [x for x in finishes if x is not None]
+
+    # --- 払戻テーブル ---
+    # 単勝・複勝・馬連・ワイド・3連複・3連単 など
+    pay_blocks = soup.select(
+        ".FullResult, .Result_Pay_Back, .Pay_Back, "
+        "[class*='Pay'], [class*='payout'], .Refund"
+    )
+    if not pay_blocks:
+        pay_blocks = [soup]
+
+    for block in pay_blocks:
+        text = text_of(block)
+        # 単勝
+        for m in re.finditer(
+            r"単勝\s*[:：]?\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            h = safe_int(m.group(1))
+            p = safe_int(m.group(2).replace(",", ""))
+            if h and p:
+                payouts["win"][h] = p
+
+        # 複勝
+        for m in re.finditer(
+            r"複勝\s*[:：]?\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            h = safe_int(m.group(1))
+            p = safe_int(m.group(2).replace(",", ""))
+            if h and p:
+                payouts["place"][h] = p
+
+        # 馬連 (無順)
+        for m in re.finditer(
+            r"馬連\s*[:：]?\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            a, b = safe_int(m.group(1)), safe_int(m.group(2))
+            p = safe_int(m.group(3).replace(",", ""))
+            if a and b and p:
+                payouts["quinella"][frozenset([a, b])] = p
+
+        # ワイド
+        for m in re.finditer(
+            r"ワイド\s*[:：]?\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            a, b = safe_int(m.group(1)), safe_int(m.group(2))
+            p = safe_int(m.group(3).replace(",", ""))
+            if a and b and p:
+                payouts["wide"][frozenset([a, b])] = p
+
+        # 3連複
+        for m in re.finditer(
+            r"3連複\s*[:：]?\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
+            p = safe_int(m.group(4).replace(",", ""))
+            if a and b and c and p:
+                payouts["trio"][frozenset([a, b, c])] = p
+
+        # 3連単
+        for m in re.finditer(
+            r"3連単\s*[:：]?\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
+            p = safe_int(m.group(4).replace(",", ""))
+            if a and b and c and p:
+                payouts["trifecta"][(a, b, c)] = p
+
+        # 馬単
+        for m in re.finditer(
+            r"馬単\s*[:：]?\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[:：]?\s*([\d,]+)\s*円",
+            text,
+        ):
+            a, b = safe_int(m.group(1)), safe_int(m.group(2))
+            p = safe_int(m.group(3).replace(",", ""))
+            if a and b and p:
+                payouts["exacta"][(a, b)] = p
+
+    # テーブル形式の払戻も追加で拾う
+    for table in soup.select("table"):
+        rows = table.select("tr")
+        for row in rows:
+            cells = [text_of(c) for c in row.find_all(["td", "th"])]
+            if len(cells) < 2:
+                continue
+            label = cells[0]
+            # 単勝
+            if "単勝" in label:
+                for i in range(1, len(cells) - 1, 2):
+                    h = safe_int(cells[i])
+                    p = safe_int(cells[i + 1].replace(",", "").replace("円", ""))
+                    if h and p:
+                        payouts["win"][h] = p
+            # 馬連
+            if "馬連" in label:
+                for cell in cells[1:]:
+                    m = re.search(r"(\d{1,2})\s*[-－]\s*(\d{1,2})\s*([\d,]+)", cell)
+                    if m:
+                        a, b = safe_int(m.group(1)), safe_int(m.group(2))
+                        p = safe_int(m.group(3).replace(",", ""))
+                        if a and b and p:
+                            payouts["quinella"][frozenset([a, b])] = p
+            # ワイド
+            if "ワイド" in label:
+                for cell in cells[1:]:
+                    m = re.search(r"(\d{1,2})\s*[-－]\s*(\d{1,2})\s*([\d,]+)", cell)
+                    if m:
+                        a, b = safe_int(m.group(1)), safe_int(m.group(2))
+                        p = safe_int(m.group(3).replace(",", ""))
+                        if a and b and p:
+                            payouts["wide"][frozenset([a, b])] = p
+            # 3連複
+            if "3連複" in label or "三連複" in label:
+                for cell in cells[1:]:
+                    m = re.search(
+                        r"(\d{1,2})\s*[-－]\s*(\d{1,2})\s*[-－]\s*(\d{1,2})\s*([\d,]+)",
+                        cell,
+                    )
+                    if m:
+                        a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
+                        p = safe_int(m.group(4).replace(",", ""))
+                        if a and b and c and p:
+                            payouts["trio"][frozenset([a, b, c])] = p
+            # 3連単
+            if "3連単" in label or "三連単" in label:
+                for cell in cells[1:]:
+                    m = re.search(
+                        r"(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*[-－→]\s*(\d{1,2})\s*([\d,]+)",
+                        cell,
+                    )
+                    if m:
+                        a, b, c = safe_int(m.group(1)), safe_int(m.group(2)), safe_int(m.group(3))
+                        p = safe_int(m.group(4).replace(",", ""))
+                        if a and b and c and p:
+                            payouts["trifecta"][(a, b, c)] = p
+
+    return finishes, payouts
+
+
+def settle_tickets(tickets, finishes, payouts):
+    """紙上買い目を着順・払戻で精算。100円あたり配当をstakeに合わせて計算。"""
+    if not tickets or not finishes:
+        return {
+            "settlement_complete": False,
+            "all_bet_return": 0,
+            "race_profit": None,
+            "settled_lines": [],
+            "win_hit": None,
+            "win_return": 0,
+            "settlement_status": "結果未取得または着順不足",
+        }
+
+    top3 = finishes[:3] if len(finishes) >= 3 else finishes
+    ticket = tickets[0]
+    line_items = ticket.get("line_items", [])
+    cost = ticket.get("cost_yen", 0)
+
+    settled = []
+    total_return = 0
+    win_hit = False
+    win_return = 0
+
+    for line in line_items:
+        typ = line["type"]
+        horses = line["horses"]
+        stake = line["stake_yen"]
+        hit = False
+        ret = 0
+
+        if typ == "win":
+            if finishes and horses[0] == finishes[0]:
+                hit = True
+                payout = payouts["win"].get(horses[0], 0)
+                # 払戻は100円単位なので stake/100 * payout
+                ret = int(stake / 100 * payout) if payout else 0
+                win_hit = True
+                win_return = ret
+
+        elif typ == "quinella":
+            key = frozenset(horses)
+            if key in payouts["quinella"]:
+                hit = True
+                payout = payouts["quinella"][key]
+                ret = int(stake / 100 * payout)
+
+        elif typ == "wide":
+            key = frozenset(horses)
+            if key in payouts["wide"]:
+                hit = True
+                payout = payouts["wide"][key]
+                ret = int(stake / 100 * payout)
+
+        elif typ == "trio":
+            key = frozenset(horses)
+            if key in payouts["trio"]:
+                hit = True
+                payout = payouts["trio"][key]
+                ret = int(stake / 100 * payout)
+
+        elif typ == "trifecta":
+            key = tuple(horses)
+            if key in payouts["trifecta"]:
+                hit = True
+                payout = payouts["trifecta"][key]
+                ret = int(stake / 100 * payout)
+
+        settled.append({
+            "label": line.get("label", ""),
+            "type": typ,
+            "horses": horses,
+            "stake_yen": stake,
+            "hit": hit,
+            "return_yen": ret,
+        })
+        total_return += ret
+
+    profit = total_return - cost if cost else None
+    status = "全券種精算完了" if finishes else "着順未取得"
+
+    return {
+        "settlement_complete": bool(finishes and len(finishes) >= 1),
+        "all_bet_return": total_return,
+        "race_profit": profit,
+        "settled_lines": settled,
+        "win_hit": win_hit,
+        "win_return": win_return,
+        "settlement_status": status,
+        "result_finishes": finishes,
+        "payouts_summary": {
+            "win": payouts.get("win", {}),
+            "quinella_count": len(payouts.get("quinella", {})),
+            "wide_count": len(payouts.get("wide", {})),
+            "trio_count": len(payouts.get("trio", {})),
+            "trifecta_count": len(payouts.get("trifecta", {})),
+        },
+    }
+
+
+def fetch_and_settle_result(race, source):
+    """結果ページを取得して精算する"""
+    race_id = race["id"]
+    base = source["base"]
+    urls = [
+        f"{base}/race/result.html?race_id={race_id}",
+        f"{base}/race/result.html?race_id={race_id}&rf=race_submenu",
+    ]
+
+    finishes = []
+    payouts = {}
+    for url in urls:
+        page = get_html(url)
+        if not page:
+            continue
+        # 結果ページかどうか簡易チェック
+        if "着順" not in page and "払戻" not in page and "単勝" not in page:
+            continue
+        finishes, payouts = parse_result_page(page, race_id)
+        if finishes:
+            break
+
+    if not finishes:
+        race["settlement_status"] = "結果ページから着順を取得できませんでした"
+        race["result_finishes"] = []
+        return race
+
+    settlement = settle_tickets(race.get("tickets", []), finishes, payouts)
+
+    race["result_finishes"] = finishes
+    race["payouts"] = payouts
+    race["win_hit"] = settlement["win_hit"]
+    race["win_return"] = settlement["win_return"]
+    race["all_bet_return"] = settlement["all_bet_return"]
+    race["race_profit"] = settlement["race_profit"]
+    race["settlement_complete"] = settlement["settlement_complete"]
+    race["settled_lines"] = settlement["settled_lines"]
+    race["settlement_status"] = settlement["settlement_status"]
+    race["is_finished"] = True
+
+    print(
+        f"[SETTLE] {race_id} 着順={finishes} "
+        f"回収={settlement['all_bet_return']}円 "
+        f"収支={settlement['race_profit']}"
+    )
+    return race
+
+
+# ============================================================
+# 9. レース解析
 # ============================================================
 
 def parse_race(source_html, race_id, source, date_iso, is_tomorrow):
@@ -1016,7 +1355,6 @@ def parse_race(source_html, race_id, source, date_iso, is_tomorrow):
             f"有効行={diagnostic.get('valid_rows', 0)})"
         )
 
-    # 未検証のレースでは買い目を生成しない。
     tickets = build_tickets(ranked, outsiders) if verified else []
 
     is_finished = False
@@ -1081,7 +1419,7 @@ def parse_race(source_html, race_id, source, date_iso, is_tomorrow):
 
 
 # ============================================================
-# 9. 日付別レース取得
+# 10. 日付別レース取得
 # ============================================================
 
 def fetch_races_for_date(date_str, is_tomorrow):
@@ -1100,7 +1438,6 @@ def fetch_races_for_date(date_str, is_tomorrow):
         )
 
         for race_id in race_ids:
-            # 先に標準の出馬表URLを試す。
             urls = [
                 f"{source['base']}/race/shutuba.html?race_id={race_id}",
                 f"{source['base']}/race/shutuba.html?race_id={race_id}&rf=race_submenu",
@@ -1114,8 +1451,6 @@ def fetch_races_for_date(date_str, is_tomorrow):
                     continue
 
                 soup = soup_of(page)
-
-                # ページがエラーや別コンテンツの場合は解析を試みない。
                 has_horse_link = bool(soup.select("a[href*='/horse/']"))
                 if not has_horse_link:
                     warn(
@@ -1142,8 +1477,15 @@ def fetch_races_for_date(date_str, is_tomorrow):
                 warn(f"{source['kind']} {race_id}: レースページ解析失敗")
                 continue
 
-            # 重要: 頭数未検証でもレース自体は一覧に残す。
-            # ただし買い目・推奨は作らない。
+            # 終了済みなら結果を取得して精算
+            if parsed_race.get("is_finished") and not is_tomorrow:
+                try:
+                    parsed_race = fetch_and_settle_result(parsed_race, source)
+                except Exception as exc:
+                    warn(
+                        f"{race_id}: 結果精算例外 {exc.__class__.__name__}"
+                    )
+
             all_races.append(parsed_race)
 
     all_races.sort(
@@ -1159,7 +1501,7 @@ def fetch_races_for_date(date_str, is_tomorrow):
 
 
 # ============================================================
-# 10. 履歴互換
+# 11. 履歴互換
 # ============================================================
 
 def load_history():
@@ -1202,11 +1544,10 @@ def update_snapshot(snapshots, race):
     race_id = str(race["id"])
     old = snapshots.get(race_id, {})
 
-    # 精算済み履歴は上書きしない。
-    if old.get("settlement_complete") is True:
+    # 精算済み履歴は上書きしない（結果が取れている場合は更新）
+    if old.get("settlement_complete") is True and race.get("settlement_complete") is not True:
         return
 
-    # 頭数未検証なら新規予想を履歴に固定しない。
     if not race.get("runner_count_verified"):
         if old:
             old["last_data_warning"] = "出走頭数未検証"
@@ -1232,6 +1573,7 @@ def update_snapshot(snapshots, race):
         "all_bet_return": race.get("all_bet_return"),
         "settlement_complete": bool(race.get("settlement_complete")),
         "settlement_status": race.get("settlement_status", ""),
+        "result_finishes": race.get("result_finishes", []),
         "updated_at": NOW.isoformat(),
         "frozen_prediction": old.get("frozen_prediction") or {
             "top5": [
@@ -1273,6 +1615,7 @@ def calculate_stats(snapshots):
         in (
             "単勝のみ確定・他券種は組合せ検証未対応",
             "win_only_legacy",
+            "全券種精算完了",
         )
     ]
 
@@ -1321,7 +1664,7 @@ def calculate_stats(snapshots):
 
 
 # ============================================================
-# 11. メイン
+# 12. メイン
 # ============================================================
 
 def main():
@@ -1348,7 +1691,6 @@ def main():
             if item_date < cutoff:
                 del snapshots[race_id]
         except (ValueError, TypeError):
-            # 日付不明の既存履歴は削除しない。
             continue
 
     stats = calculate_stats(snapshots)
@@ -1357,7 +1699,6 @@ def main():
     history_data["updated_at"] = NOW.isoformat()
     history_data["stats"] = stats
     history_data["snapshots"] = snapshots
-    # horse_form_cacheなど既存トップレベルデータは維持する。
     save_json(HISTORY, history_data)
 
     tomorrow_recommended = [
@@ -1367,6 +1708,9 @@ def main():
     status = "OK" if today_races or tomorrow_races else "NO_RACES"
     verified_count = sum(
         1 for r in today_races if r.get("runner_count_verified")
+    )
+    settled_count = sum(
+        1 for r in today_races if r.get("settlement_complete")
     )
 
     data = {
@@ -1383,9 +1727,11 @@ def main():
             "today_races": len(today_races),
             "verified_races": verified_count,
             "unverified_races": len(today_races) - verified_count,
+            "settled_races": settled_count,
             "note": (
                 "出走頭数はHTMLから取得した馬番の数です。"
                 "頭数未検証のレースは表示しても予想・買い目を作成しません。"
+                "終了レースは結果ページから着順・払戻を取得して精算します。"
             ),
         },
         "prediction_notice": (
@@ -1410,6 +1756,7 @@ def main():
         f"{ENGINE_VERSION} | status={status}"
         f" | today={len(today_races)}"
         f" | verified={verified_count}"
+        f" | settled={settled_count}"
         f" | tomorrow={len(tomorrow_races)}"
         f" | tomorrow_recommended={len(tomorrow_recommended)}"
         f" | history={len(snapshots)}"
