@@ -256,6 +256,13 @@ def extract_ids_from_url(url):
     return [x for x in ids if valid_race_id(x) and race_no_from_id(x)]
 
 
+def combo_key(horses, ordered=False):
+    """JSONシリアライズ可能な組み合わせキーを生成"""
+    if ordered:
+        return "-".join(str(h) for h in horses)
+    return "-".join(str(h) for h in sorted(horses))
+
+
 # ============================================================
 # 3. レース一覧取得
 # ============================================================
@@ -947,21 +954,23 @@ def build_tickets(ranked, outsiders):
 
 
 # ============================================================
-# 8. 結果取得・精算（改善版）
+# 8. 結果取得・精算（修正版：frozenset排除）
 # ============================================================
 
 def parse_result_page(html, race_id):
-    """結果ページから着順と払戻を抽出（NAR/JRA両対応・構造ベース）"""
+    """結果ページから着順と払戻を抽出（NAR/JRA両対応・構造ベース）
+    キーはすべて文字列にしてJSONシリアライズ可能にする
+    """
     soup = soup_of(html)
     finishes = []
     payouts = {
-        "win": {},
-        "place": {},
-        "quinella": {},
-        "wide": {},
-        "trio": {},
-        "trifecta": {},
-        "exacta": {},
+        "win": {},          # "5": 6700
+        "place": {},        # "5": 340
+        "quinella": {},     # "2-5": 1590
+        "wide": {},         # "2-5": 380
+        "trio": {},         # "1-2-5": 1040
+        "trifecta": {},     # "5-2-1": 30540
+        "exacta": {},       # "5-2": 8130
     }
 
     # ---------- 着順 ----------
@@ -975,7 +984,6 @@ def parse_result_page(html, race_id):
             if not (1 <= rank <= 18):
                 continue
 
-            # 馬番は通常 3番目の td.Num（枠の次）
             num_cells = tr.select("td.Num")
             horse_no = None
             if len(num_cells) >= 2:
@@ -1007,14 +1015,12 @@ def parse_result_page(html, race_id):
             if not result_td or not payout_td:
                 continue
 
-            # 馬番リスト（空spanを除外）
             horse_nums = []
             for span in result_td.select("span"):
                 val = safe_int(text_of(span))
                 if 1 <= val <= 18:
                     horse_nums.append(val)
 
-            # 払戻金額リスト
             payout_text = payout_td.get_text(" ", strip=True)
             money_list = []
             for m in re.finditer(r"([\d,]+)\s*円", payout_text):
@@ -1025,36 +1031,37 @@ def parse_result_page(html, race_id):
 
             if "単勝" in label:
                 if horse_nums and money_list:
-                    payouts["win"][horse_nums[0]] = money_list[0]
+                    payouts["win"][str(horse_nums[0])] = money_list[0]
 
             elif "複勝" in label:
                 for h, p in zip(horse_nums, money_list):
-                    payouts["place"][h] = p
+                    payouts["place"][str(h)] = p
 
             elif "馬連" in label:
                 if len(horse_nums) >= 2 and money_list:
-                    key = frozenset(horse_nums[:2])
+                    key = combo_key(horse_nums[:2], ordered=False)
                     payouts["quinella"][key] = money_list[0]
 
             elif "ワイド" in label:
                 pairs = [horse_nums[i:i+2] for i in range(0, len(horse_nums), 2)]
                 for pair, p in zip(pairs, money_list):
                     if len(pair) == 2:
-                        payouts["wide"][frozenset(pair)] = p
+                        key = combo_key(pair, ordered=False)
+                        payouts["wide"][key] = p
 
             elif "3連複" in label or "三連複" in label:
                 if len(horse_nums) >= 3 and money_list:
-                    key = frozenset(horse_nums[:3])
+                    key = combo_key(horse_nums[:3], ordered=False)
                     payouts["trio"][key] = money_list[0]
 
             elif "3連単" in label or "三連単" in label:
                 if len(horse_nums) >= 3 and money_list:
-                    key = tuple(horse_nums[:3])
+                    key = combo_key(horse_nums[:3], ordered=True)
                     payouts["trifecta"][key] = money_list[0]
 
             elif "馬単" in label:
                 if len(horse_nums) >= 2 and money_list:
-                    key = tuple(horse_nums[:2])
+                    key = combo_key(horse_nums[:2], ordered=True)
                     payouts["exacta"][key] = money_list[0]
 
     return finishes, payouts
@@ -1093,7 +1100,7 @@ def settle_tickets(tickets, finishes, payouts):
 
         if typ == "win":
             if finishes and horses[0] == finishes[0]:
-                payout = payouts["win"].get(horses[0], 0)
+                payout = payouts["win"].get(str(horses[0]), 0)
                 if payout:
                     hit = True
                     ret = int(stake / 100 * payout)
@@ -1102,7 +1109,7 @@ def settle_tickets(tickets, finishes, payouts):
                     any_payout_found = True
 
         elif typ == "quinella":
-            key = frozenset(horses)
+            key = combo_key(horses, ordered=False)
             payout = payouts["quinella"].get(key, 0)
             if payout:
                 hit = True
@@ -1110,7 +1117,7 @@ def settle_tickets(tickets, finishes, payouts):
                 any_payout_found = True
 
         elif typ == "wide":
-            key = frozenset(horses)
+            key = combo_key(horses, ordered=False)
             payout = payouts["wide"].get(key, 0)
             if payout:
                 hit = True
@@ -1118,7 +1125,7 @@ def settle_tickets(tickets, finishes, payouts):
                 any_payout_found = True
 
         elif typ == "trio":
-            key = frozenset(horses)
+            key = combo_key(horses, ordered=False)
             payout = payouts["trio"].get(key, 0)
             if payout:
                 hit = True
@@ -1126,7 +1133,7 @@ def settle_tickets(tickets, finishes, payouts):
                 any_payout_found = True
 
         elif typ == "trifecta":
-            key = tuple(horses)
+            key = combo_key(horses, ordered=True)
             payout = payouts["trifecta"].get(key, 0)
             if payout:
                 hit = True
