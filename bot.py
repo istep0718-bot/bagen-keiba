@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v28.2
+BAGEN KEIBA v28.3
 中央・地方競馬 / レース一覧取得 / 出走馬解析 / 簡易予想 / 紙上検証 / 結果精算
 
 無料GitHub Actions向け。実際の馬券購入・口座接続は行わない。
@@ -37,7 +37,7 @@ TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
 TODAY_ISO = NOW.strftime("%Y-%m-%d")
 
-ENGINE_VERSION = "BAGEN_28.2"
+ENGINE_VERSION = "BAGEN_28.3"
 
 TIMEOUT = (10, 25)
 DELAY = 0.35
@@ -954,127 +954,108 @@ def build_tickets(ranked, outsiders):
 
 
 # ============================================================
-# 8. 結果取得・精算（v28.2 大幅修正）
+# 8. 結果取得・精算（v28.3 着順抽出を完全書き直し）
 # ============================================================
 
 def parse_result_page(html, race_id):
-    """結果ページから着順と払戻を抽出（NAR/JRA両対応・構造ベース）
-    キーはすべて文字列にしてJSONシリアライズ可能にする
+    """結果ページから着順と払戻を抽出（NAR/JRA両対応）
+    着順は「着順」「枠」「馬番」の列構造を正しく読む
     """
     soup = soup_of(html)
     finishes = []
     payouts = {
-        "win": {},          # "6": 180
-        "place": {},        # "6": 110
-        "quinella": {},     # "6-9": 1380
-        "wide": {},         # "6-9": 440
-        "trio": {},         # "6-8-9": 1560
-        "trifecta": {},     # "6-9-8": 6330
-        "exacta": {},       # "6-9": 1970
+        "win": {},
+        "place": {},
+        "quinella": {},
+        "wide": {},
+        "trio": {},
+        "trifecta": {},
+        "exacta": {},
     }
 
-    # ---------- 着順抽出（堅牢版） ----------
-    # 方法1: 一般的な結果テーブルを探す
-    result_tables = []
+    # ========== 着順抽出（完全書き直し） ==========
+    # 着順テーブルを探す（ヘッダーに「着順」「馬番」があるもの）
+    result_table = None
     for table in soup.find_all("table"):
-        header_text = " ".join(text_of(th) for th in table.select("th, thead td"))
+        headers = []
+        for th in table.select("th, thead td, tr:first-child td"):
+            headers.append(text_of(th))
+        header_text = " ".join(headers)
         if "着順" in header_text and ("馬番" in header_text or "馬名" in header_text):
-            result_tables.append(table)
+            result_table = table
+            break
 
-    # 方法2: フォールバック
-    if not result_tables:
-        for sel in ["#All_Result_Table", "table.RaceTable01", "table.ResultTable", "table"]:
-            for t in soup.select(sel):
-                if t not in result_tables:
-                    result_tables.append(t)
+    if result_table is None:
+        # フォールバック
+        for sel in ["#All_Result_Table", "table.RaceTable01", "table.Result_Table"]:
+            result_table = soup.select_one(sel)
+            if result_table:
+                break
 
-    for table in result_tables:
-        rows = table.select("tr")
+    if result_table:
+        rows = result_table.select("tr")
         for tr in rows:
             cells = tr.find_all(["td", "th"])
-            if len(cells) < 3:
+            if len(cells) < 4:
                 continue
 
-            # 着順を探す
+            # 列の位置を推定
+            # 一般的な構造: 着順 | 枠 | 馬番 | 馬名 | ...
             rank = None
             horse_no = None
 
-            # 最初の数セルから着順・馬番を抽出
-            cell_texts = [text_of(c) for c in cells[:6]]
+            cell_texts = [text_of(c) for c in cells[:5]]
 
-            for i, txt in enumerate(cell_texts):
-                val = safe_int(txt)
-                if 1 <= val <= 18:
-                    # 最初に出てきた1-18は着順候補、次が馬番候補
-                    if rank is None:
-                        rank = val
-                    elif horse_no is None and val != rank:
-                        horse_no = val
-                        break
+            # 1列目が着順の可能性が高い
+            first_val = safe_int(cell_texts[0]) if cell_texts else 0
+            if 1 <= first_val <= 18:
+                rank = first_val
 
-            # クラス名ベースのフォールバック
-            if rank is None:
-                rank_node = tr.select_one(".Rank, td.Result_Num, .Arrival")
-                if rank_node:
-                    rank = safe_int(text_of(rank_node))
+                # 馬番は通常3列目（index 2）
+                if len(cell_texts) >= 3:
+                    cand = safe_int(cell_texts[2])
+                    if 1 <= cand <= 18:
+                        horse_no = cand
 
-            if horse_no is None:
-                # 馬番セルを探す
-                for cell in cells:
-                    classes = " ".join(cell.get("class") or [])
-                    if any(k in classes for k in ("Umaban", "HorseNo", "Num", "Waku")):
-                        val = safe_int(text_of(cell))
-                        if 1 <= val <= 18:
-                            horse_no = val
+                # 見つからなければ2列目や他を探す
+                if horse_no is None:
+                    for txt in cell_texts[1:4]:
+                        cand = safe_int(txt)
+                        if 1 <= cand <= 18 and cand != rank:
+                            horse_no = cand
                             break
 
-            if rank and 1 <= rank <= 18 and horse_no and 1 <= horse_no <= 18:
+            if rank and horse_no and 1 <= rank <= 18 and 1 <= horse_no <= 18:
                 while len(finishes) < rank:
                     finishes.append(None)
                 if finishes[rank - 1] is None:
                     finishes[rank - 1] = horse_no
 
-        if finishes and all(x is not None for x in finishes[:3]):
-            break
-
+    # Noneを除去して確定
     finishes = [x for x in finishes if x is not None]
 
-    # ---------- 払戻抽出 ----------
-    # 払戻セクションを探す
-    payout_sections = soup.select("table.Payout_Detail_Table, .Payout, #Payout, table")
-    for table in payout_sections:
-        rows = table.select("tr")
-        for tr in rows:
-            th = tr.select_one("th")
-            tds = tr.select("td")
-            if not th or not tds:
-                continue
+    # 重複チェック（おかしい場合は警告）
+    if finishes and len(finishes) != len(set(finishes)):
+        warn(f"{race_id}: 着順に重複あり {finishes} → パーサー要再確認")
 
+    # ========== 払戻抽出 ==========
+    for table in soup.select("table.Payout_Detail_Table, table"):
+        for tr in table.select("tr"):
+            th = tr.select_one("th")
+            if not th:
+                continue
             label = text_of(th)
             if not label:
                 continue
 
-            # ResultセルとPayoutセルを探す
-            result_td = None
-            payout_td = None
-            for td in tds:
-                classes = " ".join(td.get("class") or [])
-                txt = text_of(td)
-                if "Result" in classes or re.search(r"\d", txt) and not re.search(r"円", txt):
-                    if result_td is None:
-                        result_td = td
-                if "Payout" in classes or "円" in txt:
-                    payout_td = td
+            tds = tr.select("td")
+            if not tds:
+                continue
 
-            if result_td is None:
-                # 最初のtdをResult、2番目をPayoutと仮定
-                if len(tds) >= 2:
-                    result_td = tds[0]
-                    payout_td = tds[1]
-                else:
-                    continue
+            result_td = tds[0] if tds else None
+            payout_td = tds[1] if len(tds) > 1 else tds[0]
 
-            if payout_td is None:
+            if not result_td or not payout_td:
                 continue
 
             # 馬番抽出
@@ -1084,17 +1065,15 @@ def parse_result_page(html, race_id):
                 if 1 <= val <= 18:
                     horse_nums.append(val)
             if not horse_nums:
-                # spanが無い場合はテキストから数字を抽出
                 nums = re.findall(r"\b([1-9]|1[0-8])\b", text_of(result_td))
                 horse_nums = [safe_int(n) for n in nums if 1 <= safe_int(n) <= 18]
 
-            # 払戻金額抽出
+            # 金額抽出
             payout_text = text_of(payout_td)
             money_list = []
             for m in re.finditer(r"([\d,]+)\s*円", payout_text):
                 money_list.append(safe_int(m.group(1).replace(",", "")))
             if not money_list:
-                # 「円」が無い場合も数字を拾う
                 for m in re.finditer(r"([\d,]+)", payout_text):
                     val = safe_int(m.group(1).replace(",", ""))
                     if 100 <= val <= 10000000:
@@ -1104,40 +1083,30 @@ def parse_result_page(html, race_id):
                 continue
 
             if "単勝" in label:
-                if horse_nums and money_list:
-                    payouts["win"][str(horse_nums[0])] = money_list[0]
-
+                payouts["win"][str(horse_nums[0])] = money_list[0]
             elif "複勝" in label:
                 for h, p in zip(horse_nums, money_list):
                     payouts["place"][str(h)] = p
-
             elif "馬連" in label:
-                if len(horse_nums) >= 2 and money_list:
+                if len(horse_nums) >= 2:
                     key = combo_key(horse_nums[:2], ordered=False)
                     payouts["quinella"][key] = money_list[0]
-
             elif "ワイド" in label:
-                # ワイドは複数組が並ぶことが多い
-                pairs = []
-                for i in range(0, len(horse_nums) - 1, 2):
-                    pairs.append([horse_nums[i], horse_nums[i+1]])
+                pairs = [horse_nums[i:i+2] for i in range(0, len(horse_nums)-1, 2)]
                 for pair, p in zip(pairs, money_list):
                     if len(pair) == 2:
                         key = combo_key(pair, ordered=False)
                         payouts["wide"][key] = p
-
             elif "3連複" in label or "三連複" in label:
-                if len(horse_nums) >= 3 and money_list:
+                if len(horse_nums) >= 3:
                     key = combo_key(horse_nums[:3], ordered=False)
                     payouts["trio"][key] = money_list[0]
-
             elif "3連単" in label or "三連単" in label:
-                if len(horse_nums) >= 3 and money_list:
+                if len(horse_nums) >= 3:
                     key = combo_key(horse_nums[:3], ordered=True)
                     payouts["trifecta"][key] = money_list[0]
-
             elif "馬単" in label:
-                if len(horse_nums) >= 2 and money_list:
+                if len(horse_nums) >= 2:
                     key = combo_key(horse_nums[:2], ordered=True)
                     payouts["exacta"][key] = money_list[0]
 
@@ -1145,9 +1114,7 @@ def parse_result_page(html, race_id):
 
 
 def settle_tickets(tickets, finishes, payouts):
-    """紙上買い目を着順・払戻で精算。
-    着順一致を優先し、払戻が取れなくても的中判定する。
-    """
+    """紙上買い目を着順・払戻で精算。着順一致を優先。"""
     if not tickets or not finishes:
         return {
             "settlement_complete": False,
@@ -1339,7 +1306,6 @@ def parse_race(source_html, race_id, source, date_iso, is_tomorrow):
     soup = soup_of(source_html)
 
     kind = source["kind"]
-    base_url = source["base"]
     race_no = race_no_from_id(race_id)
     venue = venue_from_id(race_id, kind)
 
@@ -1504,7 +1470,6 @@ def fetch_races_for_date(date_str, is_tomorrow):
                 warn(f"{source['kind']} {race_id}: レースページ解析失敗")
                 continue
 
-            # 終了済みなら結果を取得して精算
             if parsed_race.get("is_finished") and not is_tomorrow:
                 try:
                     parsed_race = fetch_and_settle_result(parsed_race, source)
@@ -1571,7 +1536,6 @@ def update_snapshot(snapshots, race):
     race_id = str(race["id"])
     old = snapshots.get(race_id, {})
 
-    # 精算済み履歴は上書きしない（結果が取れている場合は更新）
     if old.get("settlement_complete") is True and race.get("settlement_complete") is not True:
         return
 
