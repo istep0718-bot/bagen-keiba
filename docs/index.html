@@ -57,6 +57,7 @@ main{width:100%;max-width:1050px;margin:0 auto;padding:13px 11px}
 .blue{color:var(--blue)!important}.purple{color:var(--purple)!important}.muted{color:var(--muted)!important}
 .notice{margin-top:10px;padding:9px 10px;background:#0b192a;border:1px solid var(--line);border-radius:9px;color:var(--muted);font-size:11px;line-height:1.7}
 .notice.warning{border-color:#71532b;color:#ffdaa0}.notice.error{border-color:#753d4a;color:#ffb5c0}
+.notice.success{border-color:#285a46;color:#a6f3cf}
 .toolbar{display:flex;gap:7px;overflow-x:auto;padding:2px 0 7px;margin-bottom:7px;-webkit-overflow-scrolling:touch}
 .tab-btn{min-height:41px;padding:9px 13px;background:#122138;border:1px solid var(--border);border-radius:10px;color:var(--muted);font-size:12px;font-weight:850;white-space:nowrap;flex-shrink:0;cursor:pointer}
 .tab-btn.active{background:var(--gold);color:#201909;border-color:var(--gold)}
@@ -85,7 +86,7 @@ main{width:100%;max-width:1050px;margin:0 auto;padding:13px 11px}
 .section-title{display:flex;align-items:center;gap:6px;margin-bottom:9px;font-size:13px;font-weight:950;color:var(--gold)}
 .horse-row{padding:9px 0;border-bottom:1px solid #ffffff12}.horse-row:last-child{border-bottom:0}
 .horse-main{display:flex;align-items:flex-start;gap:8px}
-.rank-badge{display:flex;align-items:center;justify-content:center;width:30px;min-height:28px;flex-shrink:0;border:1px solid #5d4b2a;border-radius:8px;background:#332816;color:var(--gold);font-size:11px;font-weight:950}
+.rank-badge{display:flex;align-items:center;justify-content:center;width:34px;min-height:29px;flex-shrink:0;border:1px solid #5d4b2a;border-radius:8px;background:#332816;color:var(--gold);font-size:11px;font-weight:950}
 .rank-badge.rank-1{background:var(--gold);color:#1b160a;border-color:var(--gold)}
 .horse-main-copy{min-width:0;flex:1}.horse-name{font-size:14px;font-weight:950;line-height:1.55}
 .horse-number{color:var(--gold);font-weight:950}.horse-detail{margin-top:3px;color:var(--muted);font-size:11px;line-height:1.75}
@@ -130,7 +131,7 @@ details[open] summary::after{content:"－"}
    <div class="brand-copy"><div class="brand-title">馬玄 BAGEN</div><div class="brand-sub">CENTRAL & LOCAL RACING AI</div></div>
   </div>
   <div class="header-actions">
-   <div class="header-badge">📡 <span id="connection-status">接続中</span></div>
+   <div class="header-badge">📡 <span id="connection-status">読込前</span></div>
    <button class="btn" id="refresh-btn" type="button">↻ 更新</button>
   </div>
  </div>
@@ -141,9 +142,9 @@ details[open] summary::after{content:"－"}
   <h2 class="panel-title">📊 紙上シミュレーション実績</h2>
   <p class="panel-subtitle">bot.pyの集計値を表示。実際の馬券購入・実利益ではありません。</p>
   <div class="stats-grid">
-   <div class="metric"><div class="metric-label">累計投資額</div><div class="metric-val" id="stat-stake">—</div><div class="metric-sub">集計対象の投資額</div></div>
-   <div class="metric"><div class="metric-label">累計回収額</div><div class="metric-val" id="stat-return">—</div><div class="metric-sub">確定払戻額</div></div>
-   <div class="metric"><div class="metric-label">回収率</div><div class="metric-val" id="stat-roi">—</div><div class="metric-sub">回収額 ÷ 投資額</div></div>
+   <div class="metric"><div class="metric-label">全券種・累計投資</div><div class="metric-val" id="stat-stake">—</div><div class="metric-sub">精算対象の投資額</div></div>
+   <div class="metric"><div class="metric-label">全券種・累計回収</div><div class="metric-val" id="stat-return">—</div><div class="metric-sub">確定払戻額</div></div>
+   <div class="metric"><div class="metric-label">全券種・回収率</div><div class="metric-val" id="stat-roi">—</div><div class="metric-sub">回収額 ÷ 投資額</div></div>
    <div class="metric"><div class="metric-label">単勝的中率</div><div class="metric-val" id="stat-hit">—</div><div class="metric-sub" id="stat-hit-sub">確定集計基準</div></div>
   </div>
   <div class="notice" id="stats-note">集計データを確認しています。</div>
@@ -178,9 +179,9 @@ details[open] summary::after{content:"－"}
  </section>
  <div class="footer">
   <strong>馬玄 BAGEN</strong><br>
-  推定勝率・AI評価・期待回収率は参考値であり、的中・利益を保証しません。<br>
-  紙上シミュレーションは実際の馬券購入・実利益ではありません。<br>
-  未取得・未確定データは確定情報と区別して表示します。
+  推定勝率はモデルによる参考値で、実測的中率を保証しません。<br>
+  オッズ・過去走・払戻が未取得の場合は、確定データとして扱いません。<br>
+  紙上シミュレーションは実際の馬券購入・実利益ではありません。
  </div>
 </main>
 <button class="bottom-top" type="button" aria-label="ページの先頭へ戻る" id="top-button">↑</button>
@@ -204,7 +205,11 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function money(v){const n=num(v);return n===null?'未取得':Math.round(n).toLocaleString('ja-JP')+'円'}
 function pct(v,d=1){const n=num(v);return n===null?'未取得':n.toFixed(d)+'%'}
 function odds(v){const n=num(v);return n===null||n<=0?'未取得':n.toFixed(1)+'倍'}
-function first(o,keys,fallback=null){if(!o||typeof o!=='object')return fallback;for(const k of keys)if(o[k]!==undefined&&o[k]!==null&&o[k]!=='')return o[k];return fallback}
+function first(o,keys,fallback=null){
+ if(!o||typeof o!=='object')return fallback;
+ for(const k of keys)if(o[k]!==undefined&&o[k]!==null&&o[k]!=='')return o[k];
+ return fallback;
+}
 function arr(v){return Array.isArray(v)?v:[]}
 function pill(text,kind=''){return '<span class="pill '+esc(kind)+'">'+esc(text)+'</span>'}
 function section(title,body,kind=''){return '<section class="section '+kind+'"><div class="section-title">'+title+'</div>'+body+'</section>'}
@@ -212,6 +217,7 @@ function horseNo(h){return first(h,['horse_no','number','umaban'])}
 function horseName(h){return val(first(h,['horse','name','horse_name']),'馬名未取得')}
 function probability(h){return num(first(h,['estimated_win_probability_pct','win_probability_pct']))}
 function ev(h){return num(first(h,['estimated_win_return_pct','expected_return_pct','ev_pct']))}
+function hasOdds(h){const n=num(h?.odds);return n!==null&&n>0}
 function category(r){
  const c=String(first(r,['category','kind'],'')).toLowerCase();
  if(['central','jra','中央','中央競馬'].includes(c)||c.includes('中央'))return 'central';
@@ -220,7 +226,10 @@ function category(r){
 }
 function venue(r){return val(first(r,['course','venue','racecourse','track_name','place']),'')}
 function normalizeVenue(v){return String(v||'').replace(/競馬場/g,'').replace(/競馬/g,'').trim()}
-function venueMatches(a,b){const x=normalizeVenue(a),y=normalizeVenue(b);return !!x&&!!y&&(x===y||x.includes(y)||y.includes(x))}
+function venueMatches(a,b){
+ const x=normalizeVenue(a),y=normalizeVenue(b);
+ return !!x&&!!y&&(x===y||x.includes(y)||y.includes(x));
+}
 async function fetchJSON(path){
  const res=await fetch(path+'?t='+Date.now(),{cache:'no-store'});
  if(!res.ok)throw Error(path+' HTTP '+res.status);
@@ -241,108 +250,193 @@ async function loadData(){
 }
 async function init(){
  if(IS_LOADING)return;
- IS_LOADING=true;$('refresh-btn').disabled=true;$('refresh-btn').textContent='読込中…';
- $('connection-status').textContent='接続中';
+ IS_LOADING=true;
+ $('refresh-btn').disabled=true;
+ $('refresh-btn').textContent='読込中…';
+ $('connection-status').textContent='読込中';
  try{
-  DATA=await loadData();$('connection-status').textContent='読込成功';
-  updateStats();updateVenueOptions();render();
+  DATA=await loadData();
+  $('connection-status').textContent='読込成功';
+  updateStats();
+  updateVenueOptions();
+  render();
  }catch(e){
   $('connection-status').textContent='読込エラー';
-  $('data-alert').hidden=false;$('data-alert').className='notice error';
-  $('data-alert').textContent='データ取得エラー：'+(e.message||String(e))+'。GitHub Actionsと公開先JSONを確認してください。';
-  if(!DATA){$('race-list').innerHTML='<div class="loading">データを読み込めませんでした。GitHub Actionsの実行結果とdocs/data.jsonを確認してください。</div>';$('result-count').textContent='データ取得エラー'}
- }finally{IS_LOADING=false;$('refresh-btn').disabled=false;$('refresh-btn').textContent='↻ 更新'}
+  $('data-alert').hidden=false;
+  $('data-alert').className='notice error';
+  $('data-alert').textContent='データ取得エラー：'+(e.message||String(e))+'。GitHub Actionsの実行結果と公開先JSONを確認してください。';
+  if(!DATA){
+   $('race-list').innerHTML='<div class="loading">データを読み込めませんでした。GitHub Actionsの実行結果とdocs/data.jsonを確認してください。</div>';
+   $('result-count').textContent='データ取得エラー';
+  }
+ }finally{
+  IS_LOADING=false;
+  $('refresh-btn').disabled=false;
+  $('refresh-btn').textContent='↻ 更新';
+ }
 }
 function updateStats(){
  const s=DATA?.paper_betting?.stats;
- if(!s){['stat-stake','stat-return','stat-roi','stat-hit'].forEach(id=>$(id).textContent='未取得');$('stats-note').textContent='paper_betting.statsがJSONにありません。';return}
- const stake=num(first(s,['all_bet_stake_yen','total_stake_yen']));
- const ret=num(first(s,['all_bet_return_yen','total_return_yen']));
- let roi=num(first(s,['all_bet_roi_pct','roi_pct']));
+ if(!s){
+  ['stat-stake','stat-return','stat-roi','stat-hit'].forEach(id=>$(id).textContent='未取得');
+  $('stats-note').textContent='paper_betting.statsがJSONにありません。';
+  return;
+ }
+ const stake=num(first(s,['all_bet_stake_yen']));
+ const ret=num(first(s,['all_bet_return_yen']));
+ let roi=num(first(s,['all_bet_roi_pct']));
  if(roi===null&&stake!==null&&ret!==null&&stake>0)roi=ret/stake*100;
  const hit=num(s.win_hit_rate_pct);
- $('stat-stake').textContent=money(stake);$('stat-return').textContent=money(ret);
- $('stat-roi').textContent=pct(roi);$('stat-hit').textContent=pct(hit);
+ $('stat-stake').textContent=money(stake);
+ $('stat-return').textContent=money(ret);
+ $('stat-roi').textContent=pct(roi);
+ $('stat-hit').textContent=pct(hit);
  $('stat-return').className='metric-val '+(ret!==null&&ret>0?'pos':'');
  $('stat-roi').className='metric-val '+(roi===null?'':roi>=100?'pos':'neg');
- $('stat-hit-sub').textContent='単勝的中率（確定集計）';
- $('stats-note').textContent='集計レース：'+val(first(s,['all_bet_settled_races','races_settled']),'未取得')+'｜'+val(s.accounting_note,'未確定レースは集計対象外');
+ $('stat-hit-sub').textContent='単勝的中率（JSON集計値）';
+ const settled=first(s,['all_bet_settled_races','races_settled'],'未取得');
+ const wins=first(s,['win_bets'],'未取得');
+ $('stats-note').textContent=
+  '全券種精算レース：'+val(settled,'未取得')+
+  '｜単勝対象件数：'+val(wins,'未取得')+
+  '｜'+val(s.accounting_note,'未確定レースの集計範囲はbot.pyの集計仕様に依存します。');
 }
 function currentRaces(){return arr(DATA?.[CURRENT_TAB==='today'?'races':'tomorrow_races'])}
-function setTab(t){CURRENT_TAB=t;document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));updateVenueOptions();render()}
-function setCategory(c){CURRENT_CATEGORY=c;document.querySelectorAll('[data-category]').forEach(b=>b.classList.toggle('active',b.dataset.category===c));updateVenueOptions();render()}
+function setTab(t){
+ CURRENT_TAB=t;
+ document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));
+ updateVenueOptions();render();
+}
+function setCategory(c){
+ CURRENT_CATEGORY=c;
+ document.querySelectorAll('[data-category]').forEach(b=>b.classList.toggle('active',b.dataset.category===c));
+ updateVenueOptions();render();
+}
 function updateVenueOptions(){
  const select=$('venue-filter'),previous=select.value||'all',list=currentRaces();
  let venues=CURRENT_CATEGORY==='central'?VENUES.central.slice():CURRENT_CATEGORY==='local'?VENUES.local.slice():[...VENUES.central,...VENUES.local];
- list.forEach(r=>{if(CURRENT_CATEGORY!=='all'&&category(r)!==CURRENT_CATEGORY)return;const v=normalizeVenue(venue(r));if(v&&!venues.some(x=>venueMatches(x,v)))venues.push(v)});
+ list.forEach(r=>{
+  if(CURRENT_CATEGORY!=='all'&&category(r)!==CURRENT_CATEGORY)return;
+  const v=normalizeVenue(venue(r));
+  if(v&&!venues.some(x=>venueMatches(x,v)))venues.push(v);
+ });
  select.innerHTML='';
- const opt=document.createElement('option');opt.value='all';opt.textContent='すべての競馬場';select.appendChild(opt);
- venues.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;select.appendChild(o)});
+ const opt=document.createElement('option');
+ opt.value='all';opt.textContent='すべての競馬場';select.appendChild(opt);
+ venues.forEach(v=>{
+  const o=document.createElement('option');o.value=v;o.textContent=v;select.appendChild(o);
+ });
  select.value=Array.from(select.options).some(o=>o.value===previous)?previous:'all';
  $('filter-hint').textContent=CURRENT_CATEGORY==='central'?'中央競馬を表示中。競馬場で絞り込めます。':CURRENT_CATEGORY==='local'?'地方競馬を表示中。競馬場で絞り込めます。':'中央・地方を切り替えて検索できます。';
 }
 function filteredRaces(){
- const query=$('race-search').value.trim().toLowerCase(),selected=$('venue-filter').value,status=$('status-filter').value;
+ const query=$('race-search').value.trim().toLowerCase();
+ const selected=$('venue-filter').value,status=$('status-filter').value;
  return currentRaces().filter(r=>{
   if(CURRENT_CATEGORY!=='all'&&category(r)!==CURRENT_CATEGORY)return false;
   if(selected!=='all'&&!venueMatches(venue(r),selected))return false;
   if(status==='finished'&&r.is_finished!==true)return false;
   if(status==='upcoming'&&r.is_finished===true)return false;
-  if(query){const text=[venue(r),r.name,r.race_no,r.date,r.surface,r.distance_m,r.category].join(' ').toLowerCase().replace(/\s/g,'');if(!text.includes(query.replace(/\s/g,'')))return false}
+  if(query){
+   const text=[venue(r),r.name,r.race_no,r.date,r.surface,r.distance_m,r.category].join(' ').toLowerCase().replace(/\s/g,'');
+   if(!text.includes(query.replace(/\s/g,'')))return false;
+  }
   return true;
  });
 }
-function horseRow(h,i){
- const no=horseNo(h),name=horseName(h),p=probability(h),e=ev(h),score=num(h.score),rank=num(h.rank,i+1);
+function formStatus(f){
+ if(!f||typeof f!=='object')return '未取得';
+ if(f.available===true)return '取得あり';
+ if(num(f.starts)===0)return '0走（取得状態要確認）';
+ return 'データ不足';
+}
+function displayRecentWinRate(f){
+ const n=num(f?.win_rate_recent);
+ if(n===null)return '未取得';
+ // 値が1以下なら比率として%換算。1より大きい値は既に%とみなす。
+ return pct(n<=1?n*100:n);
+}
+function horseRow(h,i,options={}){
+ const no=horseNo(h),name=horseName(h),p=probability(h),e=ev(h);
+ const score=num(h.score),rank=num(h.rank,i+1);
  const tags=[];
  if(p!==null)tags.push(pill('推定勝率 '+pct(p),'green'));
- if(e!==null)tags.push(pill('期待回収率指標 '+pct(e),e>=100?'green':'red'));
  if(score!==null)tags.push(pill('AI評価 '+score,'gold'));
- if(h.score_confidence!==undefined&&h.score_confidence!==null)tags.push(pill('信頼度 '+h.score_confidence));
+ if(h.score_confidence!==undefined&&h.score_confidence!==null)tags.push(pill('モデル信頼度 '+h.score_confidence));
+ if(!hasOdds(h))tags.push(pill('単勝オッズ未取得','red'));
+ else tags.push(pill('単勝 '+odds(h.odds),'blue'));
+ if(e!==null&&!hasOdds(h))tags.push(pill('回収率指標は要確認','red'));
  const reasons=arr(h.reasons);
  const f=h.past_form&&typeof h.past_form==='object'?h.past_form:null;
  let form='';
  if(f){
   const starts=num(f.starts);
-  form='<div class="explain">📋 過去走：'+(f.available===true?'取得あり':'十分なデータなし')+
-   '｜確認 '+(starts===null?'不明':starts+'走')+
-   '｜直近勝率 '+(num(f.win_rate_recent)===null?'未取得':pct(num(f.win_rate_recent)<=1?num(f.win_rate_recent)*100:f.win_rate_recent))+
-   '｜平均着順 '+(num(f.avg_finish)===null?'未取得':num(f.avg_finish).toFixed(1)+'着')+
-   (arr(f.recent_results).length?'｜近走 '+esc(f.recent_results.slice(0,5).join('・')):'')+'</div>';
+  form='<div class="explain">📋 過去走：'+esc(formStatus(f))+
+   '｜確認 '+(starts===null?'不明':esc(starts)+'走')+
+   '｜直近勝率 '+esc(displayRecentWinRate(f))+
+   '｜平均着順 '+(num(f.avg_finish)===null?'未取得':esc(num(f.avg_finish).toFixed(1)+'着'))+
+   (arr(f.recent_results).length?'｜近走 '+esc(arr(f.recent_results).slice(0,5).join('・')):'')+'</div>';
+ }else{
+  form='<div class="explain">📋 過去走：未取得</div>';
  }
- return '<div class="horse-row"><div class="horse-main"><div class="rank-badge '+(rank===1?'rank-1':'')+'">'+esc(rank)+'位</div><div class="horse-main-copy"><div class="horse-name"><span class="horse-number">'+esc(no??'—')+'番</span> '+esc(name)+'</div><div class="horse-detail">騎手 '+esc(val(h.jockey,'未取得'))+'｜単勝 '+esc(odds(h.odds))+'｜人気 '+esc(h.popularity??'未取得')+'｜評価 '+esc(score===null?'未取得':score)+'</div><div class="pills">'+tags.join('')+'</div>'+(reasons.length?'<div class="explain">📝 評価根拠：'+esc(reasons.slice(0,5).join('／'))+'</div>':'')+form+(h.caution?'<div class="explain">⚠️ '+esc(h.caution)+'</div>':'')+'</div></div></div>';
+ return '<div class="horse-row"><div class="horse-main"><div class="rank-badge '+(rank===1?'rank-1':'')+'">'+esc(rank)+'位</div><div class="horse-main-copy">'+
+  '<div class="horse-name"><span class="horse-number">'+esc(no??'—')+'番</span> '+esc(name)+'</div>'+
+  '<div class="horse-detail">騎手 '+esc(val(h.jockey,'未取得'))+'｜人気 '+esc(h.popularity??'未取得')+'｜評価 '+esc(score===null?'未取得':score)+'</div>'+
+  '<div class="pills">'+tags.join('')+'</div>'+
+  (reasons.length?'<div class="explain">📝 評価根拠：'+esc(reasons.slice(0,5).join('／'))+'</div>':'')+
+  form+(h.caution?'<div class="explain">⚠️ '+esc(h.caution)+'</div>':'')+
+  '</div></div></div>';
 }
 function renderTop(r){
- let horses=arr(r.top5);if(!horses.length)horses=arr(r.horses).slice().sort((a,b)=>(num(b.score,-Infinity)-num(a.score,-Infinity))).slice(0,5);
+ let horses=arr(r.top5);
+ if(!horses.length)horses=arr(r.horses).slice().sort((a,b)=>(num(b.score,-Infinity)-num(a.score,-Infinity))).slice(0,5);
  return horses.length?horses.slice(0,5).map(horseRow).join(''):'<div class="empty">AI評価データ未取得</div>';
 }
-function renderCandidates(list,type,label,kind){
+function renderCandidates(list,type,label){
  if(!arr(list).length)return '<div class="empty">'+label+'候補データ未取得。該当候補なしとは限りません。</div>';
- return arr(list).slice(0,8).map((h,i)=>{
+ const noOdds=arr(list).some(h=>!hasOdds(h));
+ const caution=noOdds?'<div class="notice warning">候補の一部または全部で単勝オッズが未取得です。高配当条件や期待値を確認できていないため、候補表示は暫定評価です。</div>':'';
+ return caution+arr(list).slice(0,8).map((h,i)=>{
   const reason=first(h,type==='outsider'?['outsider_reason','reason']:['longshot_reason','reason'],'');
   return horseRow(h,i)+(reason?'<div class="explain">💡 '+esc(label)+'の選定理由：'+esc(reason)+'</div>':'');
  }).join('');
 }
 function renderEV(r){
- let horses=arr(r.top5);if(!horses.length)horses=arr(r.horses);
+ let horses=arr(r.top5);
+ if(!horses.length)horses=arr(r.horses);
  const list=horses.filter(h=>probability(h)!==null||ev(h)!==null).slice(0,10);
  if(!list.length)return '<div class="empty">推定勝率・期待回収率指標は未取得です。</div>';
  return '<div class="table-wrap"><table class="mini-table"><thead><tr><th>馬</th><th>単勝</th><th>推定勝率</th><th>期待回収率指標</th></tr></thead><tbody>'+
- list.map(h=>'<tr><td>'+esc(horseNo(h)??'—')+'番 '+esc(horseName(h))+'</td><td>'+esc(odds(h.odds))+'</td><td>'+esc(pct(probability(h)))+'</td><td class="'+(ev(h)===null?'':ev(h)>=100?'pos':'neg')+'">'+esc(pct(ev(h)))+'</td></tr>').join('')+
- '</tbody></table></div><div class="explain">※ 推定値です。確率モデルの校正や実績検証が十分でない場合、実際の勝率・回収率とは一致しません。</div>';
+ list.map(h=>{
+  const p=probability(h),o=hasOdds(h)?num(h.odds):null;
+  // オッズがない時は、bot.pyに数値が残っていても期待回収率を表示しない。
+  const validEV=o!==null&&p!==null?ev(h):null;
+  return '<tr><td>'+esc(horseNo(h)??'—')+'番 '+esc(horseName(h))+'</td>'+
+   '<td>'+esc(odds(o))+'</td><td>'+esc(pct(p))+'</td>'+
+   '<td class="'+(validEV===null?'muted':validEV>=100?'pos':'neg')+'">'+
+   (validEV===null?'計算不能（オッズ未取得）':esc(pct(validEV)))+'</td></tr>';
+ }).join('')+
+ '</tbody></table></div><div class="explain">※ 推定勝率はモデルによる参考値です。期待回収率指標は推定勝率と単勝オッズを使った参考値であり、実績に基づく予測精度・利益を保証しません。</div>';
 }
 function renderPast(r){
  const horses=(arr(r.top5).length?arr(r.top5):arr(r.horses)).slice(0,10);
  const rows=horses.filter(h=>h.past_form&&typeof h.past_form==='object');
- if(!rows.length)return '<div class="empty">bot.pyのpast_formに表示できる過去走情報がありません。未取得を0として扱っていません。</div>';
+ if(!rows.length)return '<div class="empty">bot.pyのpast_formに表示できる過去走情報がありません。未取得を0走として扱っていません。</div>';
  return rows.map(h=>{
   const f=h.past_form,results=arr(f.recent_results);
-  return '<div class="horse-row"><strong>'+esc(horseNo(h)??'—')+'番 '+esc(horseName(h))+'</strong><div class="horse-detail">取得状態：'+(f.available===true?'取得あり':'データ不足')+'｜確認走数：'+esc(f.starts??'未取得')+'｜直近勝率：'+(num(f.win_rate_recent)===null?'未取得':esc(pct(num(f.win_rate_recent)<=1?num(f.win_rate_recent)*100:f.win_rate_recent)))+'｜平均着順：'+(num(f.avg_finish)===null?'未取得':esc(num(f.avg_finish).toFixed(1)+'着'))+'</div>'+(results.length?'<div class="explain">近走：'+esc(results.slice(0,5).join(' ／ '))+'</div>':'')+'<div class="horse-detail">データ元：'+esc(f.source??'未取得')+'</div></div>';
- }).join('');
+  return '<div class="horse-row"><strong>'+esc(horseNo(h)??'—')+'番 '+esc(horseName(h))+'</strong>'+
+   '<div class="horse-detail">取得状態：'+esc(formStatus(f))+
+   '｜確認走数：'+esc(f.starts??'未取得')+
+   '｜直近勝率：'+esc(displayRecentWinRate(f))+
+   '｜平均着順：'+(num(f.avg_finish)===null?'未取得':esc(num(f.avg_finish).toFixed(1)+'着'))+'</div>'+
+   (results.length?'<div class="explain">近走：'+esc(results.slice(0,5).join(' ／ '))+'</div>':'')+
+   '<div class="horse-detail">データ元：'+esc(f.source??'未取得')+'</div></div>';
+ }).join('')+
+ '<div class="notice warning">「0走（取得状態要確認）」は、実際に出走歴がないと断定する表示ではありません。取得処理が正常だったかはbot.pyのログと取得元の確認が必要です。</div>';
 }
 function renderOdds(r){
  const snap=first(r,['odds_monitor','odds_trend','odds_snapshots']);
- if(!snap)return '<div class="empty">オッズ変動履歴はJSONにありません。現時点のオッズがあっても、過去の変動を確認できるとは限りません。</div>';
+ if(!snap)return '<div class="empty">オッズ変動履歴はJSONにありません。現在オッズの表示と、過去の変動履歴は別の情報です。</div>';
  return '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d5e6;font-size:11px">'+esc(JSON.stringify(snap,null,2))+'</pre>';
 }
 function renderTickets(r){
@@ -356,37 +450,69 @@ function renderTickets(r){
    (!lines.length&&!items.length?'<div class="ticket-line">買い目詳細未取得</div>':'')+
    '<div class="ticket-cost">予定投資額：'+esc(money(first(t,['cost_yen','stake_yen'])))+'</div>'+
    (t.note?'<div class="explain">'+esc(t.note)+'</div>':'')+'</div>';
- }).join('');
+ }).join('')+
+ '<div class="notice">ここに表示される買い目は紙上シミュレーション用です。実際の馬券購入は行いません。</div>';
 }
 function renderResult(r){
  if(r.is_finished!==true)return '';
  const finishes=arr(r.result_finishes);
- const finishText=finishes.length?finishes.slice(0,5).map((x,i)=>(i+1)+'着 '+(typeof x==='object'?val(first(x,['horse_no','number','horse']), '未取得'):x)+'番').join(' ／ '):'着順未取得';
- const cost=num(r.race_cost),ret=num(first(r,['all_bet_return','race_return','win_return'])),profit=num(r.race_profit);
+ const finishText=finishes.length?finishes.slice(0,5).map((x,i)=>(i+1)+'着 '+(typeof x==='object'?val(first(x,['horse_no','number','horse']),'未取得'):x)+'番').join(' ／ '):'着順未取得';
+ const cost=num(r.race_cost);
+ const ret=num(first(r,['all_bet_return','race_return','win_return']));
+ const profit=num(r.race_profit);
  const complete=r.settlement_complete===true;
  const settled=arr(r.settled_lines);
  const hits=settled.filter(x=>x&&x.hit===true);
  const hitText=complete?(hits.length||r.win_hit===true?'🎯 的中':'❌ 不的中'):'精算未確定';
- return section('🏁 レース結果','<div class="horse-name">'+hitText+'</div><div class="horse-detail">'+esc(finishText)+'</div><div class="horse-detail">投資：'+esc(money(cost))+'｜回収：'+esc(money(ret))+'｜収支：<strong class="'+(profit===null?'':profit>=0?'pos':'neg')+'">'+esc(money(profit))+'</strong></div>'+(hits.length?'<div class="explain">的中：'+esc(hits.map(x=>x.label||x.type||'券種').join('／'))+'</div>':'')+'<div class="horse-detail">精算状態：'+esc(r.settlement_status??(complete?'確定':'未確定'))+'｜'+(complete?'確定済み':'集計対象に含める前に確認が必要')+'</div>','section-result');
+ return section('🏁 レース結果',
+  '<div class="horse-name">'+hitText+'</div>'+
+  '<div class="horse-detail">'+esc(finishText)+'</div>'+
+  '<div class="horse-detail">投資：'+esc(money(cost))+'｜回収：'+esc(money(ret))+'｜収支：<strong class="'+(profit===null?'':profit>=0?'pos':'neg')+'">'+esc(money(profit))+'</strong></div>'+
+  (hits.length?'<div class="explain">的中：'+esc(hits.map(x=>x.label||x.type||'券種').join('／'))+'</div>':'')+
+  '<div class="horse-detail">精算状態：'+esc(r.settlement_status??(complete?'確定':'未確定'))+'｜'+(complete?'確定済み':'確定情報がそろうまで実績確定扱いにしないでください')+'</div>',
+  'section-result');
+}
+function raceQuality(r){
+ const horses=arr(r.horses);
+ const valid=horses.length;
+ const oddsCount=horses.filter(hasOdds).length;
+ const forms=horses.filter(h=>h.past_form&&h.past_form.available===true).length;
+ const issues=[];
+ if(!valid)issues.push('出走馬未取得');
+ if(valid&&oddsCount===0)issues.push('単勝オッズ未取得');
+ else if(oddsCount>0&&oddsCount<valid)issues.push('オッズ一部未取得');
+ if(valid&&forms===0)issues.push('過去走の取得確認が必要');
+ if(r.weather==null||r.weather==='')issues.push('天候未取得');
+ if(r.going==null||r.going==='')issues.push('馬場状態未取得');
+ return {valid,oddsCount,forms,issues};
 }
 function renderRace(r){
  const finished=r.is_finished===true,cat=category(r);
  const catName=cat==='central'?'中央競馬':cat==='local'?'地方競馬':'競馬区分未取得';
  const dist=num(r.distance_m),count=num(r.runner_count);
- const meta='📍 '+esc(venue(r)||'競馬場未取得')+'<br>🕒 発走 '+esc(r.post_time??'未取得')+'｜📅 '+esc(r.date??'未取得')+'<br>🏟️ '+esc(r.surface??'未取得')+'｜'+(dist===null?'距離未取得':dist+'m')+'｜出走 '+(count===null?'未取得':count+'頭')+'<br>🌦️ 天候 '+esc(r.weather??'未取得')+'｜馬場 '+esc(r.going??'未取得');
- const warning=arr(r.warnings);
+ const meta='📍 '+esc(venue(r)||'競馬場未取得')+'<br>🕒 発走 '+esc(r.post_time??'未取得')+'｜📅 '+esc(r.date??'未取得')+
+  '<br>🏟️ '+esc(r.surface??'未取得')+'｜'+(dist===null?'距離未取得':dist+'m')+'｜出走 '+(count===null?'未取得':count+'頭')+
+  '<br>🌦️ 天候 '+esc(r.weather??'未取得')+'｜馬場 '+esc(r.going??'未取得');
+ const q=raceQuality(r);
+ const qualityText='確認できる出走馬：'+q.valid+'頭｜単勝オッズ取得：'+q.oddsCount+'/'+q.valid+'頭｜過去走available=true：'+q.forms+'/'+q.valid+'頭';
+ const qualityNotice=q.issues.length
+  ?'<div class="notice warning">⚠️ データ品質チェック：'+esc(q.issues.join('／'))+'<br>'+esc(qualityText)+'</div>'
+  :'<div class="notice success">データ品質チェック：必須表示項目は取得済みです。<br>'+esc(qualityText)+'</div>';
  return '<article class="race-card '+(finished?'finished':'')+'"><div class="race-header"><div class="race-heading"><span class="race-category">'+catName+'</span><h3 class="race-title">'+esc(r.race_no??'')+(r.race_no?'R ':' ')+esc(r.name??'レース名未取得')+'</h3></div><span class="race-status '+(finished?'finished':'')+'">'+(finished?'レース終了':'発走前')+'</span></div>'+
- '<div class="race-meta">'+meta+'</div>'+
- (r.prediction_status?'<div class="notice">'+esc(r.prediction_status)+'</div>':'')+
- (r.runner_diagnostic?'<div class="notice warning">出走馬データ：'+esc(typeof r.runner_diagnostic==='string'?r.runner_diagnostic:JSON.stringify(r.runner_diagnostic))+'</div>':'')+
- section('🏆 AI評価 上位5頭',renderTop(r),'section-top')+
- section('💡 穴馬候補',renderCandidates(r.outsiders,'outsider','穴馬','blue'),'section-outsider')+
- section('🚀 大穴候補',renderCandidates(r.longshots,'longshot','大穴','purple'),'section-longshot')+
- section('📈 推定勝率・期待回収率指標',renderEV(r),'section-ev')+
- '<details><summary>📋 過去走・前走情報</summary><div class="details-body">'+renderPast(r)+'</div></details>'+
- '<details><summary>📉 オッズ履歴</summary><div class="details-body">'+renderOdds(r)+'</div></details>'+
- '<details><summary>🎟️ 紙上シミュレーション買い目</summary><div class="details-body">'+renderTickets(r)+'</div></details>'+
- renderResult(r)+'</article>';
+  '<div class="race-meta">'+meta+'</div>'+
+  qualityNotice+
+  (r.prediction_status?'<div class="notice">'+esc(r.prediction_status)+'</div>':'')+
+  (r.prediction_notice?'<div class="notice warning">'+esc(r.prediction_notice)+'</div>':'')+
+  (r.runner_diagnostic?'<div class="notice">出走馬検証：'+esc(typeof r.runner_diagnostic==='string'?r.runner_diagnostic:JSON.stringify(r.runner_diagnostic))+'</div>':'')+
+  (r.past_form_status?'<div class="notice">過去走データ状態：'+esc(r.past_form_status)+'</div>':'')+
+  section('🏆 AI評価 上位5頭',renderTop(r),'section-top')+
+  section('💡 穴馬候補',renderCandidates(r.outsiders,'outsider','穴馬'),'section-outsider')+
+  section('🚀 大穴候補',renderCandidates(r.longshots,'longshot','大穴'),'section-longshot')+
+  section('📈 推定勝率・期待回収率指標',renderEV(r),'section-ev')+
+  '<details><summary>📋 過去走・前走情報</summary><div class="details-body">'+renderPast(r)+'</div></details>'+
+  '<details><summary>📉 オッズ履歴</summary><div class="details-body">'+renderOdds(r)+'</div></details>'+
+  '<details><summary>🎟️ 紙上シミュレーション買い目</summary><div class="details-body">'+renderTickets(r)+'</div></details>'+
+  renderResult(r)+'</article>';
 }
 function render(){
  if(!DATA)return;
@@ -394,8 +520,14 @@ function render(){
  $('data-updated').textContent='更新：'+val(DATA.generated_at,'時刻未取得');
  const all=currentRaces(),list=filteredRaces(),tab=CURRENT_TAB==='today'?'本日':'翌日';
  $('result-count').textContent=tab+'：'+list.length+'レース（全'+all.length+'レース）';
- if(!all.length){$('race-list').innerHTML='<div class="loading">この日のレースデータがありません。JSONのraces / tomorrow_racesを確認してください。</div>';return}
- if(!list.length){$('race-list').innerHTML='<div class="loading">条件に一致するレースがありません。検索条件を変更してください。</div>';return}
+ if(!all.length){
+  $('race-list').innerHTML='<div class="loading">この日のレースデータがありません。JSONのraces / tomorrow_racesを確認してください。</div>';
+  return;
+ }
+ if(!list.length){
+  $('race-list').innerHTML='<div class="loading">条件に一致するレースがありません。検索条件を変更してください。</div>';
+  return;
+ }
  $('race-list').innerHTML=list.map(renderRace).join('');
 }
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
@@ -403,8 +535,16 @@ document.querySelectorAll('[data-category]').forEach(b=>b.addEventListener('clic
 $('venue-filter').addEventListener('change',render);
 $('status-filter').addEventListener('change',render);
 let searchTimer;
-$('race-search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(render,120)});
-$('clear-search').addEventListener('click',()=>{$('race-search').value='';$('venue-filter').value='all';$('status-filter').value='all';render()});
+$('race-search').addEventListener('input',()=>{
+ clearTimeout(searchTimer);
+ searchTimer=setTimeout(render,120);
+});
+$('clear-search').addEventListener('click',()=>{
+ $('race-search').value='';
+ $('venue-filter').value='all';
+ $('status-filter').value='all';
+ render();
+});
 $('refresh-btn').addEventListener('click',init);
 $('top-button').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
 init();
