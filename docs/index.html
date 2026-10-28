@@ -10,6 +10,7 @@
 <link rel="apple-touch-icon" href="./IMG_6215.jpeg">
 <link rel="icon" type="image/jpeg" href="./IMG_6215.jpeg">
 <title>馬玄 BAGEN｜中央・地方競馬 AI予想</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" defer></script>
 <style>
 :root{color-scheme:dark;--bg:#07101d;--panel:#101d30;--panel2:#172840;--gold:#efcb72;--gold2:#9c7831;--text:#f5f7fb;--muted:#a2b1c6;--line:#2a3a53;--green:#70e0ae;--red:#ff8794;--blue:#83baff;--orange:#ffc58a}
 *{box-sizing:border-box}
@@ -94,6 +95,25 @@ summary{cursor:pointer;color:#e5d2a0;font-size:12px;font-weight:700}
 .qitem span{font-size:10px;color:var(--muted)}
 @media(min-width:700px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.racebody{padding:15px}.racehead{padding:15px}.horsegrid{grid-template-columns:1fr 1fr;column-gap:18px}.qualitygrid{grid-template-columns:repeat(4,minmax(0,1fr))}main{padding:20px 16px 50px}}
 @media(max-width:360px){h1{font-size:17px}.metric strong{font-size:18px}.panel{padding:10px}.racebody{padding:10px}.tab,.filter,.btn{padding:7px 8px;font-size:11px}}
+
+.hero-grid{display:grid;gap:12px}
+.hero-card{padding:0;overflow:hidden;border-color:#8b713d88;background:linear-gradient(135deg,#2a2210f0,#152038f5 40%,#0e1a2cf5);box-shadow:0 12px 40px #0005,0 0 0 1px #efcb7230,inset 0 1px 0 #ffecb820}
+.hero-card .racehead{background:linear-gradient(100deg,#3d3018,#1b2c44 55%,#111e31)}
+.hero-badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.hero-shine{display:inline-flex;align-items:center;gap:4px;background:linear-gradient(90deg,#fff0b5,#d4a03a);color:#1a1408;font-weight:900;font-size:11px;padding:3px 10px;border-radius:999px;box-shadow:0 2px 12px #efcb7255}
+.badge.super{border-color:#efcb72;color:#1a1408;background:linear-gradient(90deg,#fff0b5,#d4a03a);font-weight:800}
+.badge.rec{border-color:#5ee4a888;color:#a8f5d0;background:#14352e55}
+.charts{display:grid;gap:12px}
+.chart-card{background:linear-gradient(155deg,#12233af8,#0c1728f5);border:1px solid var(--line);border-radius:17px;padding:13px;box-shadow:0 7px 25px #0002}
+.chart-card h3{margin:0 0 4px;font-size:13px;color:#e5d2a0}
+.chart-wrap{position:relative;height:220px;margin-top:8px}
+.seg-filters{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px}
+.seg{border:1px solid var(--line);background:#0f1c2e;border-radius:999px;padding:6px 12px;font-size:11px;color:var(--muted);cursor:pointer}
+.seg.active{border-color:var(--gold);color:#ffe4a1;background:#3d301855}
+.metric strong.green{color:var(--green)}
+.metric strong.red{color:var(--red)}
+@media(min-width:700px){.charts{grid-template-columns:1fr 1fr}.chart-wrap{height:240px}}
+
 </style>
 </head>
 <body>
@@ -119,7 +139,36 @@ summary{cursor:pointer;color:#e5d2a0;font-size:12px;font-weight:700}
 <p class="small" id="statsNote">精算済みデータのみ集計。払戻未確認のレースは除外。</p>
 </section>
 
+
+<section>
+<div class="sectionhead"><h2>📈 日別パフォーマンス</h2><span class="small" id="chartScopeNote">精算済み履歴</span></div>
+<div class="seg-filters" id="chartSeg">
+<button class="seg active" type="button" data-seg="all">全体</button>
+<button class="seg" type="button" data-seg="中央">中央</button>
+<button class="seg" type="button" data-seg="地方">地方</button>
+<button class="seg" type="button" data-seg="recommended">おすすめ</button>
+<button class="seg" type="button" data-seg="super">超おすすめ</button>
+</div>
+<div class="charts">
+<div class="chart-card">
+<h3>日別 的中率（%）</h3>
+<p class="small">精算完了レースのうち払戻が発生した割合</p>
+<div class="chart-wrap"><canvas id="chartHitRate"></canvas></div>
+</div>
+<div class="chart-card">
+<h3>日別 損益（円）</h3>
+<p class="small">回収 − 投資（紙上・払戻確認済みのみ）</p>
+<div class="chart-wrap"><canvas id="chartProfit"></canvas></div>
+</div>
+</div>
+</section>
+
 <section class="notice">⚠️ この予想は公開ページから取得した情報に基づく簡易スコアです。推定勝率は未校正で、的中・利益を保証しません。実際の馬券購入は行いません。未取得データは推測で埋めません。</section>
+
+<section id="superSection" style="display:none">
+<div class="sectionhead"><h2>✨ 超おすすめレース</h2><span class="small" id="superCount">—</span></div>
+<div class="hero-grid" id="superList"></div>
+</section>
 
 <section>
 <div class="sectionhead"><h2>🏇 レース一覧</h2><span class="small" id="raceCount">—</span></div>
@@ -132,9 +181,12 @@ summary{cursor:pointer;color:#e5d2a0;font-size:12px;font-weight:700}
 <button class="filter active" type="button" data-kind="all">中央＋地方</button>
 <button class="filter" type="button" data-kind="中央">中央競馬</button>
 <button class="filter" type="button" data-kind="地方">地方競馬</button>
+<button class="filter" type="button" data-grade="超おすすめ">超おすすめ</button>
+<button class="filter" type="button" data-grade="注目レース">注目</button>
 <select id="sortSelect" class="filter" aria-label="並び順">
 <option value="time">発走時刻順</option>
 <option value="score">おすすめ度順</option>
+<option value="confidence">信頼度順</option>
 </select>
 </div>
 <div id="raceList" class="loading">データを読み込んでいます…</div>
@@ -163,6 +215,103 @@ const $ = id => document.getElementById(id);
 let DATA = null;
 let DAY = 'today';
 let KIND = 'all';
+
+let GRADE = '';
+let CHART_SEG = 'all';
+let hitChart = null;
+let profitChart = null;
+
+function isSuper(r) { return r.race_grade === '超おすすめ'; }
+
+function getSuperRaces() {
+  if (!DATA) return [];
+  const pool = [...(DATA.races || []), ...(DATA.tomorrow_races || [])];
+  return pool.filter(isSuper).sort((a, b) => Number(b.race_confidence_score || 0) - Number(a.race_confidence_score || 0));
+}
+
+function gradeBadge(r) {
+  if (isSuper(r)) return '<span class="badge super">✨ 超おすすめ</span>';
+  if (r.race_grade === '注目レース') return '<span class="badge rec">注目レース</span>';
+  if (r.is_recommended) return '<span class="badge gold">おすすめ</span>';
+  return '';
+}
+
+function historyItems() {
+  const hist = DATA?.paper_betting?.history;
+  if (!Array.isArray(hist)) return [];
+  return hist.filter(x => x && x.settlement_complete === true && x.all_bet_return != null && x.race_profit != null && x.payout_confirmed !== false);
+}
+
+function filterHist(items) {
+  if (CHART_SEG === '中央' || CHART_SEG === '地方') return items.filter(x => x.kind === CHART_SEG);
+  if (CHART_SEG === 'recommended') return items.filter(x => x.is_recommended === true || x.race_grade === '注目レース' || x.race_grade === '超おすすめ' || (x.frozen_prediction && x.frozen_prediction.is_recommended));
+  if (CHART_SEG === 'super') return items.filter(x => x.race_grade === '超おすすめ' || (x.frozen_prediction && x.frozen_prediction.race_grade === '超おすすめ'));
+  return items;
+}
+
+function buildDailySeries(items) {
+  const map = {};
+  for (const x of items) {
+    const d = x.date || 'unknown';
+    if (!map[d]) map[d] = { date: d, races: 0, hits: 0, stake: 0, ret: 0, profit: 0 };
+    map[d].races += 1;
+    const ret = Number(x.all_bet_return) || 0;
+    const cost = Number(x.cost) || 0;
+    const profit = x.race_profit != null ? Number(x.race_profit) : (ret - cost);
+    if (ret > 0) map[d].hits += 1;
+    map[d].stake += cost;
+    map[d].ret += ret;
+    map[d].profit += profit;
+  }
+  return Object.values(map).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function destroyCharts() {
+  if (hitChart) { hitChart.destroy(); hitChart = null; }
+  if (profitChart) { profitChart.destroy(); profitChart = null; }
+}
+
+function renderCharts() {
+  if (typeof Chart === 'undefined') return;
+  destroyCharts();
+  const items = filterHist(historyItems());
+  const series = buildDailySeries(items);
+  const note = document.getElementById('chartScopeNote');
+  if (note) note.textContent = items.length
+    ? ('精算済み ' + items.length + 'レース · 区分: ' + (CHART_SEG === 'all' ? '全体' : CHART_SEG === 'recommended' ? 'おすすめ' : CHART_SEG === 'super' ? '超おすすめ' : CHART_SEG))
+    : '精算済みデータなし';
+  const labels = series.map(s => { const p = String(s.date).split('-'); return p.length >= 3 ? (p[1] + '/' + p[2]) : s.date; });
+  const hitRates = series.map(s => s.races ? +(s.hits / s.races * 100).toFixed(1) : 0);
+  const profits = series.map(s => s.profit);
+  const grid = 'rgba(42,58,83,.6)';
+  const tick = '#93a4bb';
+  const elH = document.getElementById('chartHitRate');
+  const elP = document.getElementById('chartProfit');
+  if (!elH || !elP) return;
+  hitChart = new Chart(elH, {
+    type: 'line',
+    data: { labels, datasets: [{ label: '的中率%', data: hitRates, borderColor: '#efcb72', backgroundColor: 'rgba(239,203,114,.15)', fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#efcb72' }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: tick, maxRotation: 0 }, grid: { color: grid } }, y: { ticks: { color: tick, callback: v => v + '%' }, grid: { color: grid }, suggestedMin: 0, suggestedMax: 100 } } }
+  });
+  profitChart = new Chart(elP, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: '損益円', data: profits, backgroundColor: profits.map(v => v >= 0 ? 'rgba(94,228,168,.7)' : 'rgba(255,138,151,.7)'), borderRadius: 6 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: tick, maxRotation: 0 }, grid: { color: grid } }, y: { ticks: { color: tick }, grid: { color: grid } } } }
+  });
+}
+
+function renderSuper() {
+  const list = getSuperRaces();
+  const sec = document.getElementById('superSection');
+  if (!sec) return;
+  if (!list.length) { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const sc = document.getElementById('superCount');
+  if (sc) sc.textContent = list.length + 'レース';
+  const sl = document.getElementById('superList');
+  if (sl) sl.innerHTML = list.map((r, i) => renderRace(r, 'super-' + i)).join('').replace(/class="race"/g, 'class="hero-card"');
+}
+
 
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -193,10 +342,19 @@ function getRaces() {
     a = a.filter(r => r.kind === KIND);
   }
 
+  if (GRADE === '超おすすめ') {
+    a = a.filter(r => r.race_grade === '超おすすめ');
+  } else if (GRADE === '注目レース') {
+    a = a.filter(r => r.race_grade === '注目レース' || r.race_grade === '超おすすめ');
+  }
+
   a = [...a];
 
-  if ($('sortSelect').value === 'score') {
+  const sort = $('sortSelect').value;
+  if (sort === 'score') {
     a.sort((x, y) => recommendScore(y) - recommendScore(x));
+  } else if (sort === 'confidence') {
+    a.sort((x, y) => Number(y.race_confidence_score || 0) - Number(x.race_confidence_score || 0));
   } else {
     a.sort((x, y) =>
       String(x.post_time || '99:99').localeCompare(String(y.post_time || '99:99')) ||
@@ -390,13 +548,14 @@ function renderRace(r, i) {
           '<span class="badge ' + (r.kind === '地方' ? '' : 'gold') + '">' + esc(r.kind || '区分未取得') + '</span>' +
           '<span class="badge">' + esc(timeText(r.post_time)) + '</span>' +
           '<span class="badge ' + (verified ? '' : 'warn') + '">' + (verified ? '出走頭数検証OK' : '出走頭数未検証') + '</span>' +
-          (r.is_recommended ? '<span class="badge gold">おすすめ</span>' : '') +
+          gradeBadge(r) +
           (r.is_finished ? '<span class="badge">結果確認対象</span>' : '') +
         '</div>' +
       '</div>' +
       '<div class="topodds">' + esc(r.runner_count ?? '—') + '頭<small>取得頭数</small></div>' +
     '</div>' +
     '<div class="racebody">' +
+      /* hrefを正しいIDに直接結びつけ、JS依存のクリック処理を使わない */
       '<a class="btn primary jumpbtn" href="#' + esc(anchor) + '" aria-label="' +
         esc((r.course || '') + ' ' + (r.race_no || '') + 'Rの予想を見る') + '">このレースの予想を見る ↓</a>' +
       '<div class="meta"><span>' + esc(r.surface || '馬場未取得') +
@@ -436,6 +595,7 @@ function render() {
   } else {
     $('raceList').innerHTML = a.map(renderRace).join('');
   }
+  if (typeof renderSuper === 'function') renderSuper();
 }
 
 function updateQuality() {
@@ -500,6 +660,11 @@ async function loadData() {
     ' · 更新 ' + (DATA.generated_at || '時刻不明');
   $('statusDot').style.background = DATA.status === 'OK' ? 'var(--green)' : 'var(--orange)';
   render();
+  const tryCharts = () => {
+    if (typeof Chart !== 'undefined' && typeof renderCharts === 'function') renderCharts();
+    else setTimeout(tryCharts, 80);
+  };
+  tryCharts();
 }
 
 /* iPhoneでも、画面を描画した後にIDが存在することを確認して移動する */
@@ -542,12 +707,32 @@ document.querySelectorAll('[data-day]').forEach(b => {
 document.querySelectorAll('[data-kind]').forEach(b => {
   b.addEventListener('click', () => {
     KIND = b.dataset.kind;
+    GRADE = '';
     document.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-grade]').forEach(x => x.classList.remove('active'));
     render();
   });
 });
 
 $('sortSelect').addEventListener('change', render);
+
+document.querySelectorAll('[data-grade]').forEach(b => {
+  b.addEventListener('click', () => {
+    GRADE = b.dataset.grade;
+    KIND = 'all';
+    document.querySelectorAll('[data-grade]').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('active', x.dataset.kind === 'all'));
+    render();
+  });
+});
+document.querySelectorAll('[data-seg]').forEach(b => {
+  b.addEventListener('click', () => {
+    CHART_SEG = b.dataset.seg;
+    document.querySelectorAll('[data-seg]').forEach(x => x.classList.toggle('active', x === b));
+    if (typeof renderCharts === 'function') renderCharts();
+  });
+});
+
 $('reloadBtn').addEventListener('click', loadData);
 
 loadData();
