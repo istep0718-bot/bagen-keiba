@@ -27,7 +27,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_33.0_STRICT"
+ENGINE_VERSION = "BAGEN_33.1_PATTERN"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -54,10 +54,15 @@ SOURCES = [
 ]
 JRA_CODES = {"01": "札幌", "02": "函館", "03": "福島", "04": "新潟", "05": "東京", "06": "中山",
              "07": "中京", "08": "京都", "09": "阪神", "10": "小倉"}
-NAR_CODES = {"30": "帯広", "35": "盛岡", "36": "水沢", "37": "門別", "38": "門別", "39": "門別",
-             "40": "浦和", "41": "船橋", "42": "大井", "43": "川崎", "44": "大井", "45": "川崎",
-             "46": "金沢", "47": "笠松", "48": "名古屋", "50": "園田", "51": "姫路", "54": "姫路",
-             "55": "高知", "56": "佐賀"}
+NAR_CODES = {
+    "30": "帯広", "35": "盛岡", "36": "水沢",
+    "37": "門別", "38": "門別", "39": "門別",
+    "40": "浦和", "41": "船橋", "42": "大井", "43": "川崎",
+    "44": "大井", "45": "川崎",
+    "46": "金沢", "47": "笠松", "48": "名古屋", "49": "園田",
+    "50": "園田", "51": "姫路", "52": "園田", "53": "園田", "54": "姫路",
+    "55": "高知", "56": "佐賀",
+}
 DIRT_SIRES = ["ヘニーヒューズ", "シニスターミニスター", "パイロ", "マジェスティックウォリアー",
               "ホッコータルマエ", "アジアエクスプレス", "スマートファルコン", "ゴールドアリュール", "コパノリッキー"]
 POWER_SIRES = ["ロードカナロア", "エピファネイア", "キズナ", "オルフェーヴル", "モーリス",
@@ -1479,6 +1484,12 @@ def update_snapshot(snapshots, race):
         "race_id": rid, "date": race.get("date"), "kind": race.get("kind"),
         "course": race.get("course"), "race_no": race.get("race_no"),
         "name": race.get("name"), "cost": safe_int(race.get("race_cost"), 0),
+        "pattern_type": ticket.get("pattern_type") or old.get("pattern_type") or (
+            (old.get("frozen_prediction") or {}).get("tickets") or {}
+        ).get("pattern_type"),
+        "race_grade": race.get("race_grade") or old.get("race_grade"),
+        "is_recommended": bool(race.get("is_recommended")),
+        "race_confidence_score": race.get("race_confidence_score"),
         "is_finished": bool(race.get("is_finished")),
         "win_hit": race.get("win_hit"),
         "win_return": safe_int(race.get("win_return"), 0),
@@ -1508,21 +1519,60 @@ def update_snapshot(snapshots, race):
 
 
 def calculate_stats(snapshots):
-    """払戻確認済みの精算完了レースのみ集計。未確定は除外。"""
+    """払戻確認済みの精算完了レースのみ集計。パターンA/B別も算出。"""
     items = list(snapshots.values())
     settled = [
         x for x in items
         if x.get("settlement_complete") is True
         and x.get("all_bet_return") is not None
         and x.get("race_profit") is not None
-        and x.get("payout_confirmed", True)  # 後方互換: 旧データは True 扱い
+        and x.get("payout_confirmed", True)
     ]
+
+    def pattern_of(x):
+        pt = x.get("pattern_type")
+        if pt in ("A", "B"):
+            return pt
+        fp = x.get("frozen_prediction") or {}
+        t = fp.get("tickets") or {}
+        if isinstance(t, list) and t:
+            t = t[0]
+        if isinstance(t, dict):
+            pt = t.get("pattern_type")
+            if pt in ("A", "B"):
+                return pt
+            lab = str(t.get("pattern") or "")
+            if "パターンA" in lab:
+                return "A"
+            if "パターンB" in lab:
+                return "B"
+        return "?"
+
+    def agg(rows):
+        stake = sum(safe_int(x.get("cost"), 0) for x in rows)
+        ret = sum(safe_int(x.get("all_bet_return"), 0) for x in rows)
+        hits = sum(1 for x in rows if safe_int(x.get("all_bet_return"), 0) > 0)
+        profit = sum(safe_int(x.get("race_profit"), 0) for x in rows)
+        n = len(rows)
+        return {
+            "races": n,
+            "hit_races": hits,
+            "hit_rate_pct": round(hits / n * 100, 1) if n else 0.0,
+            "stake_yen": stake,
+            "return_yen": ret,
+            "profit_yen": profit,
+            "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
+        }
+
     win_items = [x for x in settled if x.get("win_hit") is not None]
     win_stake = sum(safe_int(x.get("cost"), 0) for x in win_items)
     win_return = sum(safe_int(x.get("win_return"), 0) for x in win_items)
     all_stake = sum(safe_int(x.get("cost"), 0) for x in settled)
     all_return = sum(safe_int(x.get("all_bet_return"), 0) for x in settled)
     hits = sum(1 for x in settled if safe_int(x.get("all_bet_return"), 0) > 0)
+    by_a = [x for x in settled if pattern_of(x) == "A"]
+    by_b = [x for x in settled if pattern_of(x) == "B"]
+    by_u = [x for x in settled if pattern_of(x) not in ("A", "B")]
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -1539,11 +1589,16 @@ def calculate_stats(snapshots):
         "all_bet_return_yen": all_return,
         "all_bet_roi_pct": round(all_return / all_stake * 100, 1) if all_stake else 0.0,
         "all_bet_hit_races": hits,
+        "pattern_a": agg(by_a),
+        "pattern_b": agg(by_b),
+        "pattern_unknown": agg(by_u),
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
-            "着順一致のみで払戻未確認のレースは回収率から除外。"),
+            "着順一致のみで払戻未確認のレースは回収率から除外。"
+            "パターンA=上位評価中心 / パターンB=穴候補含む。"),
     }
+
 
 
 def main():
@@ -1659,9 +1714,16 @@ def main():
             "real_betting_enabled": False,
             "stats": stats,
             "history": sorted(
-                snapshots.values(),
+                (
+                    x for x in snapshots.values()
+                    if x.get("settlement_complete") is True
+                    and x.get("all_bet_return") is not None
+                    and x.get("race_profit") is not None
+                    and x.get("payout_confirmed", True)
+                ),
                 key=lambda x: (x.get("date", ""), x.get("race_id", "")),
-                reverse=True)[:100],
+                reverse=True
+            ),
         },
     }
     save_json(OUT, data)
