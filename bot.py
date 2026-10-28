@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v29.0
+BAGEN KEIBA v30.1
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache を維持する。
 """
@@ -20,7 +20,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_30.0"
+ENGINE_VERSION = "BAGEN_30.1"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -236,21 +236,36 @@ def parse_jockey(row):
     return text_of(get_cell(row,["td.Jockey a","td.Jockey","td[class*='Jockey']",".Jockey"]))
 
 def parse_odds_popularity(row):
-    odds=pop=None
-    for sel in ["td.Odds span", "td.Odds", "td[class*='Odds']", ".Odds", "[class*='Odds']", "[data-odds]", "[data-odds-win]"]:
-        for n in row.select(sel):
-            t=text_of(n)
-            if not t or "---" in t or "取消" in t: continue
-            raw=n.get("data-odds") or n.get("data-odds-win") or t
-            m=re.search(r"(?<!\d)(\d+(?:\.\d+)?)(?!\d)",clean(raw).replace(",","."))
-            if m and 0<float(m.group(1))<=9999: odds=float(m.group(1)); break
-        if odds is not None: break
-    for sel in ["td.Popular_Ninki","td.Popular","td[class*='Ninki']","td[class*='Popular']"]:
-        for n in row.select(sel):
-            v=numeric(text_of(n))
-            if v is not None and 1<=v<=18: pop=int(v); break
-        if pop is not None: break
-    return odds,pop
+    odds = pop = None
+    # Explicit attributes and known odds cells first. Do not scan the whole row's arbitrary numeric text.
+    odds_nodes = []
+    for sel in ["[data-odds-win]", "[data-odds]", "td.Odds span", "td.Odds", "td[class~='Odds']", "td[class*='Odds']"]:
+        for node in row.select(sel):
+            if node not in odds_nodes:
+                odds_nodes.append(node)
+    for node in odds_nodes:
+        raw = node.get("data-odds-win") or node.get("data-odds") or text_of(node)
+        raw = clean(raw).replace(",", ".")
+        if not raw or re.search(r"---|取消|除外|発売前|未発売", raw):
+            continue
+        m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*", raw)
+        if m:
+            val = float(m.group(1))
+            if 0 < val <= 9999:
+                odds = val
+                break
+    for sel in ["td.Popular_Ninki", "td.Popular", "td[class*='Ninki']", "td[class*='Popular']"]:
+        for node in row.select(sel):
+            raw = text_of(node)
+            m = re.fullmatch(r"\s*(\d{1,2})\s*(?:人気)?\s*", raw)
+            if m:
+                val = int(m.group(1))
+                if 1 <= val <= 18:
+                    pop = val
+                    break
+        if pop is not None:
+            break
+    return odds, pop
 
 def parse_weight_change(row):
     n=get_cell(row,["td.Horse_Weight","td.Weight","td[class*='HorseWeight']","td[class*='Weight']"])
@@ -265,40 +280,69 @@ def horse_id_from_row(row):
     return (m.group(1) if m else "", href if href.startswith("http") else "https://db.netkeiba.com"+href)
 
 def parse_horse_form_page(page):
-    soup=soup_of(page); table=None
-    for sel in ["table.db_h_race_results", "table.race_table_01", "table"]:
-        for t in soup.select(sel):
-            headers=" ".join(text_of(x) for x in t.select("th"))
-            if ("着順" in headers or "確定着順" in headers) and ("距離" in headers or "開催" in headers):
-                table=t; break
-        if table: break
-    if not table: return {"available":False,"starts":0,"recent_results":[],"win_rate_recent":None,"source":"公開馬ページ・成績表未検出"}
-    headers=[text_of(x) for x in table.select("tr th")]
-    results=[]
+    """馬成績表をヘッダー列に基づいて解析。列位置を推測して着順と誤認しない。"""
+    soup = soup_of(page)
+    table = None
+    for t in soup.select("table"):
+        heads = [text_of(x) for x in t.select("thead th")]
+        if not heads:
+            first = t.select_one("tr")
+            heads = [text_of(x) for x in first.find_all(["th", "td"], recursive=False)] if first else []
+        joined = " ".join(heads)
+        if any("着順" in h or "確定着順" in h for h in heads) and any(("距離" in h or "開催" in h or "コース" in h) for h in heads):
+            table = t
+            break
+    if table is None:
+        return {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
+                "source": "公開馬ページ・成績表未検出"}
+
+    header_row = table.select_one("thead tr") or table.select_one("tr")
+    headers = [text_of(x) for x in header_row.find_all(["th", "td"], recursive=False)] if header_row else []
+    def col_index(patterns):
+        for i, h in enumerate(headers):
+            if any(re.search(p, h) for p in patterns):
+                return i
+        return None
+    rank_i = col_index([r"確定着順", r"着順"])
+    dist_i = col_index([r"距離", r"コース"])
+    date_i = col_index([r"日付", r"開催日"])
+    if rank_i is None:
+        return {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
+                "source": "着順列を特定できず安全のため未解析"}
+
+    results = []
     for tr in table.select("tr"):
-        cells=tr.find_all(["td","th"],recursive=False)
-        if not cells or cells[0].name=="th": continue
-        vals=[text_of(c) for c in cells]
-        if len(vals)<4: continue
-        rowtext=" ".join(vals)
-        # 近走らしい行のみ。未来の出走表や空行は除外。
-        rank=None
-        for val in vals[:5]:
-            n=numeric(val)
-            if n is not None and 1<=n<=18 and float(n).is_integer(): rank=int(n); break
-        if rank is None: continue
-        dist=None
-        for val in vals:
-            m=re.search(r"(?:芝|ダ|障)?\s*(\d{3,4})",val)
-            if m and 800<=int(m.group(1))<=5000: dist=int(m.group(1)); break
-        results.append({"finish":rank,"distance_m":dist,"row":rowtext[:220]})
-        if len(results)>=5: break
-    if not results: return {"available":False,"starts":0,"recent_results":[],"win_rate_recent":None,"source":"公開馬ページ・近走解析不可"}
-    return {"available":True,"starts":len(results),"recent_results":results,
-            "wins":sum(1 for x in results if x["finish"]==1),
-            "win_rate_recent":round(sum(1 for x in results if x["finish"]==1)/len(results),4),
-            "avg_finish":round(sum(x["finish"] for x in results)/len(results),2),
-            "source":"公開馬ページから抽出。列構造の自動解析のため要検証"}
+        cells = tr.find_all("td", recursive=False)
+        if not cells or len(cells) <= rank_i:
+            continue
+        vals = [text_of(c) for c in cells]
+        rank_text = vals[rank_i]
+        # 中止・除外・失格・取消などは順位として数えない。
+        if re.search(r"中止|除外|失格|取消|取止|未出走", rank_text):
+            continue
+        m = re.fullmatch(r"\s*(\d{1,2})\s*", rank_text)
+        if not m:
+            continue
+        rank = int(m.group(1))
+        if not 1 <= rank <= 18:
+            continue
+        dist = None
+        if dist_i is not None and dist_i < len(vals):
+            dm = re.search(r"(\d{3,4})", vals[dist_i])
+            if dm and 800 <= int(dm.group(1)) <= 5000:
+                dist = int(dm.group(1))
+        date_text = vals[date_i] if date_i is not None and date_i < len(vals) else ""
+        results.append({"finish": rank, "distance_m": dist, "date": date_text, "row": " ".join(vals)[:220]})
+        if len(results) >= 5:
+            break
+    if not results:
+        return {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
+                "source": "着順列は検出したが有効な近走順位を抽出できず"}
+    return {"available": True, "starts": len(results), "recent_results": results,
+            "wins": sum(1 for x in results if x["finish"] == 1),
+            "win_rate_recent": round(sum(1 for x in results if x["finish"] == 1) / len(results), 4),
+            "avg_finish": round(sum(x["finish"] for x in results) / len(results), 2),
+            "source": "公開馬ページの着順ヘッダー列から抽出。直近最大5走"}
 
 def get_horse_form(row):
     global FORM_FETCHED_THIS_RUN
@@ -586,7 +630,7 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
     if not name: name=f"{venue}{rno}R" if venue and rno else "レース名未取得"
     runners,diag=parse_runners(soup,surface); ranked=score_runners(runners,surface,venue)
     outsiders,longshots,candidate_mode=select_outsiders(ranked)
-    count=len(runners); verified=count>=5 and diag["table_found"] and len({h["horse_no"] for h in runners})==count and not diag["duplicate_numbers"]
+    count=len(runners); verified=count>=5 and diag["table_found"] and len({h["horse_no"] for h in runners})==count and not diag["duplicate_numbers"] and diag.get("valid_rows", 0)==count
     if not verified: warn(f"{rid}: 出走頭数検証未通過 ({count}頭)")
     tickets=build_tickets(ranked,outsiders,verified)
     finished=False
@@ -595,7 +639,7 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
             hh,mm=map(int,post.split(":")); scheduled=NOW.replace(hour=hh,minute=mm,second=0,microsecond=0)
             finished=NOW>=scheduled+timedelta(minutes=10)
         except ValueError: pass
-    recommended=bool(verified and (rno==11 or len(outsiders)>=2 or len(longshots)>=2))
+    recommended=bool(verified and len(ranked)>=5 and (rno==11 or (candidate_mode=="odds_based" and (len(outsiders)>=2 or len(longshots)>=1)) or (candidate_mode=="heuristic_no_odds" and len(outsiders)>=3)))
     return {"id":str(rid),"date":date_iso,"kind":kind,"category":source["category"],"race_no":rno,"name":name,
       "course":venue or "競馬場未取得","post_time":post or "未取得","surface":surface or "未取得",
       "distance_m":distance,"weather":weather or "未取得","going":going or "未取得","runner_count":count,
