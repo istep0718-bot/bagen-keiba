@@ -138,6 +138,28 @@ summary{cursor:pointer;color:#e5d2a0;font-size:12px;font-weight:700}
 </div>
 <p class="small" id="statsNote">精算済みデータのみ集計。払戻未確認のレースは除外。</p>
 </section>
+<section>
+<div class="sectionhead"><h2>🅰️🅱️ パターン別 成績</h2><span class="small">A=上位中心 / B=穴候補含む</span></div>
+<div class="metrics">
+<div class="metric">
+<label>パターンA 的中率</label><strong id="mPatAHit">—</strong>
+<span class="small" id="mPatADetail" style="display:block;margin-top:4px;color:var(--muted)"></span>
+</div>
+<div class="metric">
+<label>パターンB 的中率</label><strong id="mPatBHit">—</strong>
+<span class="small" id="mPatBDetail" style="display:block;margin-top:4px;color:var(--muted)"></span>
+</div>
+<div class="metric">
+<label>パターンA 損益</label><strong id="mPatAProfit">—</strong>
+<span class="small" id="mPatARoi" style="display:block;margin-top:4px;color:var(--muted)"></span>
+</div>
+<div class="metric">
+<label>パターンB 損益</label><strong id="mPatBProfit">—</strong>
+<span class="small" id="mPatBRoi" style="display:block;margin-top:4px;color:var(--muted)"></span>
+</div>
+</div>
+</section>
+
 
 
 <section>
@@ -148,6 +170,8 @@ summary{cursor:pointer;color:#e5d2a0;font-size:12px;font-weight:700}
 <button class="seg" type="button" data-seg="地方">地方</button>
 <button class="seg" type="button" data-seg="recommended">おすすめ</button>
 <button class="seg" type="button" data-seg="super">超おすすめ</button>
+<button class="seg" type="button" data-seg="A">パターンA</button>
+<button class="seg" type="button" data-seg="B">パターンB</button>
 </div>
 <div class="charts">
 <div class="chart-card">
@@ -239,13 +263,34 @@ function gradeBadge(r) {
 function historyItems() {
   const hist = DATA?.paper_betting?.history;
   if (!Array.isArray(hist)) return [];
-  return hist.filter(x => x && x.settlement_complete === true && x.all_bet_return != null && x.race_profit != null && x.payout_confirmed !== false);
+  return hist.filter(x =>
+    x &&
+    x.settlement_complete === true &&
+    x.all_bet_return != null &&
+    x.race_profit != null &&
+    (x.payout_confirmed === undefined || x.payout_confirmed === null || x.payout_confirmed === true)
+  );
 }
 
 function filterHist(items) {
   if (CHART_SEG === '中央' || CHART_SEG === '地方') return items.filter(x => x.kind === CHART_SEG);
   if (CHART_SEG === 'recommended') return items.filter(x => x.is_recommended === true || x.race_grade === '注目レース' || x.race_grade === '超おすすめ' || (x.frozen_prediction && x.frozen_prediction.is_recommended));
   if (CHART_SEG === 'super') return items.filter(x => x.race_grade === '超おすすめ' || (x.frozen_prediction && x.frozen_prediction.race_grade === '超おすすめ'));
+  if (CHART_SEG === 'A' || CHART_SEG === 'B') {
+    return items.filter(x => {
+      let pt = x.pattern_type;
+      if (pt !== 'A' && pt !== 'B') {
+        const t = (x.frozen_prediction && x.frozen_prediction.tickets) || {};
+        const tt = Array.isArray(t) ? t[0] : t;
+        pt = (tt && tt.pattern_type) || '';
+        if (!pt && tt && tt.pattern) {
+          if (String(tt.pattern).indexOf('パターンA') >= 0) pt = 'A';
+          if (String(tt.pattern).indexOf('パターンB') >= 0) pt = 'B';
+        }
+      }
+      return pt === CHART_SEG;
+    });
+  }
   return items;
 }
 
@@ -278,7 +323,7 @@ function renderCharts() {
   const series = buildDailySeries(items);
   const note = document.getElementById('chartScopeNote');
   if (note) note.textContent = items.length
-    ? ('精算済み ' + items.length + 'レース · 区分: ' + (CHART_SEG === 'all' ? '全体' : CHART_SEG === 'recommended' ? 'おすすめ' : CHART_SEG === 'super' ? '超おすすめ' : CHART_SEG))
+    ? ('精算済み ' + items.length + 'レース · 区分: ' + (CHART_SEG === 'all' ? '全体' : CHART_SEG === 'recommended' ? 'おすすめ' : CHART_SEG === 'super' ? '超おすすめ' : (CHART_SEG === 'A' ? 'パターンA' : CHART_SEG === 'B' ? 'パターンB' : CHART_SEG)))
     : '精算済みデータなし';
   const labels = series.map(s => { const p = String(s.date).split('-'); return p.length >= 3 ? (p[1] + '/' + p[2]) : s.date; });
   const hitRates = series.map(s => s.races ? +(s.hits / s.races * 100).toFixed(1) : 0);
@@ -381,6 +426,32 @@ function metricUpdate() {
   $('mReturn').textContent = has(s.all_bet_return_yen) ? yen(s.all_bet_return_yen) : '—';
   $('mHits').textContent = num(s.all_bet_hit_races);
   $('statsNote').textContent = s.accounting_note || '精算済みデータのみ集計。未確定レースは回収率から除外。';
+  const pa = s.pattern_a || {};
+  const pb = s.pattern_b || {};
+  const setPat = (hitId, detId, profitId, roiId, p) => {
+    const elH = $(hitId);
+    if (!elH) return;
+    const n = Number(p.races || 0);
+    if (!n) {
+      elH.textContent = '—';
+      if ($(detId)) $(detId).textContent = '精算データなし（再実行後に集計）';
+      if ($(profitId)) { $(profitId).textContent = '—'; $(profitId).className = ''; }
+      if ($(roiId)) $(roiId).textContent = '';
+      return;
+    }
+    elH.textContent = pct(p.hit_rate_pct) + '（' + num(p.hit_races) + '/' + num(p.races) + '）';
+    if ($(detId)) $(detId).textContent = '投資 ' + yen(p.stake_yen) + ' → 回収 ' + yen(p.return_yen);
+    const pr = Number(p.profit_yen || 0);
+    if ($(profitId)) {
+      $(profitId).textContent = (pr > 0 ? '+' : '') + '¥' + Math.abs(pr).toLocaleString('ja-JP');
+      if (pr < 0) $(profitId).textContent = '-¥' + Math.abs(pr).toLocaleString('ja-JP');
+      if (pr === 0) $(profitId).textContent = '¥0';
+      $(profitId).className = pr > 0 ? 'green' : (pr < 0 ? 'red' : '');
+    }
+    if ($(roiId)) $(roiId).textContent = '回収率 ' + pct(p.roi_pct);
+  };
+  setPat('mPatAHit', 'mPatADetail', 'mPatAProfit', 'mPatARoi', pa);
+  setPat('mPatBHit', 'mPatBDetail', 'mPatBProfit', 'mPatBRoi', pb);
 }
 
 function horseNo(h) {
