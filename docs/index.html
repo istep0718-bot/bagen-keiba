@@ -13,10 +13,11 @@
 <style>
 :root{color-scheme:dark;--bg:#07101d;--panel:#101d30;--panel2:#172840;--gold:#efcb72;--gold2:#9c7831;--text:#f5f7fb;--muted:#a2b1c6;--line:#2a3a53;--green:#70e0ae;--red:#ff8794;--blue:#83baff;--orange:#ffc58a}
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;scroll-padding-top:110px}
 body{margin:0;background:radial-gradient(ellipse at 50% -10%,#203959 0,#0a1424 42%,#07101d 78%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.55}
 button,select{font:inherit;color:inherit}
-button{cursor:pointer}
+button{cursor:pointer;touch-action:manipulation}
+a{-webkit-tap-highlight-color:rgba(239,203,114,.25)}
 header{padding:calc(14px + env(safe-area-inset-top)) 14px 12px;border-bottom:1px solid var(--line);background:#081321ed;position:sticky;top:0;z-index:10;backdrop-filter:blur(16px)}
 .headerinner,main{max-width:1050px;margin:auto}
 .brand{display:flex;align-items:center;gap:11px}
@@ -43,6 +44,10 @@ h3{font-size:14px;margin:0}
 .tab,.filter,.btn{border:1px solid var(--line);background:#122239;border-radius:10px;padding:8px 11px;font-size:12px}
 .tab.active,.filter.active{border-color:var(--gold);background:#4a3a1c;color:#ffe4a1}
 .btn.primary{border-color:var(--gold2);color:#ffe5a1}
+.jumpbtn{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;margin:0 0 12px;text-decoration:none;font-weight:800;font-size:14px;touch-action:manipulation;-webkit-tap-highlight-color:rgba(239,203,114,.25);position:relative;z-index:2;pointer-events:auto;cursor:pointer;user-select:none}
+.prediction-target{scroll-margin-top:115px;position:relative}
+.prediction-target:target{border-radius:10px;animation:targetFlash 1.1s ease-out}
+@keyframes targetFlash{0%{background:#5a4824}100%{background:transparent}}
 .race{padding:0;overflow:hidden;margin-bottom:12px}
 .racehead{padding:13px;background:linear-gradient(100deg,#1b2c44,#111e31);align-items:flex-start}
 .racetitle{font-size:15px;font-weight:800}
@@ -87,632 +92,460 @@ summary{cursor:pointer;color:#e5d2a0;font-size:12px;font-weight:700}
 .qitem{background:#0b1727;border:1px solid var(--line);border-radius:10px;padding:8px}
 .qitem b{display:block;font-size:14px}
 .qitem span{font-size:10px;color:var(--muted)}
-/* 超おすすめレース */
-.super-panel{border:1px solid #82672f;background:linear-gradient(145deg,#28251c,#101b2b 72%);border-radius:17px;padding:12px;box-shadow:0 8px 28px #0003}
-.super-intro{font-size:11px;color:#d6c69e;margin-bottom:10px}
-.super-card{border:1px solid #65532e;border-radius:13px;background:#0b1727;margin:9px 0;overflow:hidden}
-.super-card-head{padding:11px;background:linear-gradient(100deg,#40331b,#17253a);display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.super-name{font-size:14px;font-weight:900}
-.super-score{font-size:21px;font-weight:1000;color:var(--gold);white-space:nowrap;line-height:1.1}
-.super-score small{display:block;font-size:9px;color:var(--muted);text-align:right}
-.score-track{height:6px;border-radius:9px;background:#253349;margin-top:7px;overflow:hidden}
-.score-fill{height:100%;border-radius:9px;background:linear-gradient(90deg,#b18a36,#ffe6a0)}
-.super-body{padding:10px}
-.super-label{display:inline-block;border-radius:7px;padding:3px 7px;font-size:10px;font-weight:800;margin-bottom:6px}
-.label-hot{background:#4a3919;color:#ffe5a1;border:1px solid #9a7835}
-.label-watch{background:#163a31;color:#a4f0c9;border:1px solid #326f5d}
-.label-caution{background:#3a2930;color:#ffc0c5;border:1px solid #774650}
-.super-reasons{font-size:11px;color:#d1dbea;margin:5px 0 9px}
-.super-reasons li{margin:3px 0}
-.super-link{width:100%;border:1px solid #6c5830;border-radius:9px;background:#1b2a40;padding:9px;color:#ffe5a1;font-weight:800;font-size:12px}
-.super-link:active{opacity:.75}
-.super-foot{font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6}
-@media(min-width:700px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.racebody{padding:15px}.racehead{padding:15px}.horsegrid{grid-template-columns:1fr 1fr;column-gap:18px}.qualitygrid{grid-template-columns:repeat(4,minmax(0,1fr))}main{padding:20px 16px 50px}.super-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}.super-card{margin:0}}
-@media(max-width:360px){h1{font-size:17px}.metric strong{font-size:18px}.panel{padding:10px}.racebody{padding:10px}.tab,.filter,.btn{padding:7px 8px;font-size:11px}.super-score{font-size:18px}}
+@media(min-width:700px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.racebody{padding:15px}.racehead{padding:15px}.horsegrid{grid-template-columns:1fr 1fr;column-gap:18px}.qualitygrid{grid-template-columns:repeat(4,minmax(0,1fr))}main{padding:20px 16px 50px}}
+@media(max-width:360px){h1{font-size:17px}.metric strong{font-size:18px}.panel{padding:10px}.racebody{padding:10px}.tab,.filter,.btn{padding:7px 8px;font-size:11px}}
 </style>
 </head>
 <body>
 <header>
-  <div class="headerinner">
-    <div class="brand">
-      <div class="logo">馬</div>
-      <div>
-        <h1>馬玄 BAGEN</h1>
-        <div class="sub">CENTRAL & LOCAL · PAPER PREDICTION LAB</div>
-      </div>
-    </div>
-    <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">データ読み込み中…</span></div>
-  </div>
+<div class="headerinner">
+<div class="brand">
+<div class="logo">馬</div>
+<div><h1>馬玄 BAGEN</h1><div class="sub">CENTRAL & LOCAL · PAPER PREDICTION LAB</div></div>
+</div>
+<div class="status"><span class="dot" id="statusDot"></span><span id="statusText">データ読み込み中…</span></div>
+</div>
 </header>
 
 <main>
 <section>
-  <div class="sectionhead"><h2>📊 紙上検証サマリー</h2><button class="btn" id="reloadBtn">↻ 更新</button></div>
-  <div class="metrics">
-    <div class="metric"><label>精算済みレース</label><strong id="mSettled">—</strong></div>
-    <div class="metric"><label>全券種 回収率</label><strong class="gold" id="mRoi">—</strong></div>
-    <div class="metric"><label>払戻合計</label><strong id="mReturn">—</strong></div>
-    <div class="metric"><label>全券種 的中レース</label><strong id="mHits">—</strong></div>
-  </div>
-  <p class="small" id="statsNote">精算済みデータのみ集計。払戻未確認のレースは除外。</p>
-</section>
-
-<section class="notice">
-  ⚠️ 公開ページから取得したデータを使う簡易予想です。推定勝率は未校正で、的中・利益を保証しません。実際の馬券購入は行いません。取得できない情報は推測で埋めません。
-</section>
-
-<section>
-  <div class="sectionhead">
-    <h2>🔥 超おすすめレース</h2>
-    <span class="small">データ根拠から自動抽出</span>
-  </div>
-  <div class="super-panel">
-    <div class="super-intro">
-      出走頭数・オッズ・近走データ・予想順位の情報量を確認し、当日の注目候補を抽出します。評価が低い場合は無理におすすめしません。
-    </div>
-    <div id="superRaces"><div class="loading">レースを分析しています…</div></div>
-    <div class="super-foot">
-      ※ 狙い目スコアはデータの充実度と予想根拠をまとめた暫定評価です。実測の的中率・回収率を示すものではありません。実績に基づく検証が必要です。
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="sectionhead"><h2>🏇 レース一覧</h2><span class="small" id="raceCount">—</span></div>
-  <div class="tabs">
-    <button class="tab active" data-day="today">本日のレース</button>
-    <button class="tab" data-day="tomorrow">翌日おすすめ</button>
-    <button class="tab" data-day="tomorrowAll">翌日すべて</button>
-  </div>
-  <div class="filters">
-    <button class="filter active" data-kind="all">中央＋地方</button>
-    <button class="filter" data-kind="中央">中央競馬</button>
-    <button class="filter" data-kind="地方">地方競馬</button>
-    <select id="sortSelect" class="filter" aria-label="並び順">
-      <option value="time">発走時刻順</option>
-      <option value="score">おすすめ度順</option>
-    </select>
-  </div>
-  <div id="raceList" class="loading">データを読み込んでいます…</div>
-</section>
-
-<section>
-  <div class="sectionhead"><h2>🧪 データ品質</h2><span class="small" id="buildLabel">—</span></div>
-  <div class="panel">
-    <div class="qualitygrid">
-      <div class="qitem"><b id="qRaces">—</b><span>本日のレース</span></div>
-      <div class="qitem"><b id="qVerified">—</b><span>出走頭数検証OK</span></div>
-      <div class="qitem"><b id="qOdds">—</b><span>単勝オッズ取得頭数</span></div>
-      <div class="qitem"><b id="qForm">—</b><span>新規過去走取得数</span></div>
-    </div>
-    <div id="warnings" class="small" style="margin-top:10px;overflow-wrap:anywhere"></div>
-  </div>
-</section>
-
-<div class="footer">
-  BAGEN KEIBA / 馬玄<br>
-  無料GitHub Actions対応・紙上検証専用。レース情報・オッズ・結果は公開ページの取得状況に依存します。予想順位は的中を保証せず、投票推奨や金融助言ではありません。
+<div class="sectionhead"><h2>📊 紙上検証サマリー</h2><button class="btn" id="reloadBtn" type="button">↻ 更新</button></div>
+<div class="metrics">
+<div class="metric"><label>精算済みレース</label><strong id="mSettled">—</strong></div>
+<div class="metric"><label>全券種 回収率</label><strong class="gold" id="mRoi">—</strong></div>
+<div class="metric"><label>払戻合計</label><strong id="mReturn">—</strong></div>
+<div class="metric"><label>全券種 的中レース</label><strong id="mHits">—</strong></div>
 </div>
+<p class="small" id="statsNote">精算済みデータのみ集計。払戻未確認のレースは除外。</p>
+</section>
+
+<section class="notice">⚠️ この予想は公開ページから取得した情報に基づく簡易スコアです。推定勝率は未校正で、的中・利益を保証しません。実際の馬券購入は行いません。未取得データは推測で埋めません。</section>
+
+<section>
+<div class="sectionhead"><h2>🏇 レース一覧</h2><span class="small" id="raceCount">—</span></div>
+<div class="tabs">
+<button class="tab active" type="button" data-day="today">本日のレース</button>
+<button class="tab" type="button" data-day="tomorrow">翌日おすすめ</button>
+<button class="tab" type="button" data-day="tomorrowAll">翌日すべて</button>
+</div>
+<div class="filters">
+<button class="filter active" type="button" data-kind="all">中央＋地方</button>
+<button class="filter" type="button" data-kind="中央">中央競馬</button>
+<button class="filter" type="button" data-kind="地方">地方競馬</button>
+<select id="sortSelect" class="filter" aria-label="並び順">
+<option value="time">発走時刻順</option>
+<option value="score">おすすめ度順</option>
+</select>
+</div>
+<div id="raceList" class="loading">データを読み込んでいます…</div>
+</section>
+
+<section>
+<div class="sectionhead"><h2>🧪 データ品質</h2><span class="small" id="buildLabel">—</span></div>
+<div class="panel">
+<div class="qualitygrid">
+<div class="qitem"><b id="qRaces">—</b><span>本日のレース</span></div>
+<div class="qitem"><b id="qVerified">—</b><span>出走頭数検証OK</span></div>
+<div class="qitem"><b id="qOdds">—</b><span>単勝オッズ取得頭数</span></div>
+<div class="qitem"><b id="qForm">—</b><span>新規過去走取得数</span></div>
+</div>
+<div id="warnings" class="small" style="margin-top:10px;overflow-wrap:anywhere"></div>
+</div>
+</section>
+
+<div class="footer">BAGEN KEIBA / 馬玄<br>無料GitHub Actions対応・紙上検証専用。レース情報・オッズ・結果は公開ページの取得状況に依存します。予想順位は的中を保証せず、投票推奨や金融助言ではありません。</div>
 </main>
 
 <script>
 'use strict';
 
-const $=id=>document.getElementById(id);
-let DATA=null,DAY='today',KIND='all';
+const $ = id => document.getElementById(id);
+let DATA = null;
+let DAY = 'today';
+let KIND = 'all';
 
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const has=v=>v!==null&&v!==undefined&&v!=='';
-const yen=v=>has(v)&&Number.isFinite(Number(v))?'¥'+Number(v).toLocaleString('ja-JP'):'未確定';
-const pct=v=>has(v)&&Number.isFinite(Number(v))?Number(v).toFixed(1)+'%':'—';
-const num=v=>has(v)&&Number.isFinite(Number(v))?Number(v).toLocaleString('ja-JP'):'—';
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[c]));
 
-function timeText(v){
-  if(!v||v==='未取得')return '時刻未取得';
+const has = v => v !== null && v !== undefined && v !== '';
+const yen = v => has(v) ? '¥' + Number(v).toLocaleString('ja-JP') : '未確定';
+const pct = v => has(v) ? Number(v).toFixed(1) + '%' : '—';
+const num = v => has(v) && Number.isFinite(Number(v)) ? Number(v).toLocaleString('ja-JP') : '—';
+
+function timeText(v) {
+  if (!v || v === '未取得') return '時刻未取得';
   return String(v);
 }
 
-function allRaces(){
-  if(!DATA)return [];
-  const today=Array.isArray(DATA.races)?DATA.races:[];
-  const tomorrow=Array.isArray(DATA.tomorrow_races)?DATA.tomorrow_races:[];
-  return {today,tomorrow};
-}
+function getRaces() {
+  if (!DATA) return [];
 
-function getRaces(){
-  if(!DATA)return [];
-  const sets=allRaces();
-  let a=DAY==='today'?sets.today:sets.tomorrow;
-  if(DAY==='tomorrow'&&Array.isArray(DATA.tomorrow_races)){
-    a=a.filter(r=>r.is_recommended===true);
+  let a = DAY === 'today'
+    ? (DATA.races || [])
+    : (DATA.tomorrow_races || []);
+
+  if (DAY === 'tomorrow' && Array.isArray(DATA.tomorrow_races)) {
+    a = a.filter(r => r.is_recommended === true);
   }
-  if(KIND!=='all')a=a.filter(r=>r.kind===KIND);
-  a=[...a];
-  if($('sortSelect').value==='score'){
-    a.sort((x,y)=>recommendScore(y)-recommendScore(x));
-  }else{
-    a.sort((x,y)=>
-      String(x.post_time||'99:99').localeCompare(String(y.post_time||'99:99'))||
-      String(x.course||'').localeCompare(String(y.course||''))||
-      Number(x.race_no||0)-Number(y.race_no||0)
+
+  if (KIND !== 'all') {
+    a = a.filter(r => r.kind === KIND);
+  }
+
+  a = [...a];
+
+  if ($('sortSelect').value === 'score') {
+    a.sort((x, y) => recommendScore(y) - recommendScore(x));
+  } else {
+    a.sort((x, y) =>
+      String(x.post_time || '99:99').localeCompare(String(y.post_time || '99:99')) ||
+      String(x.course || '').localeCompare(String(y.course || '')) ||
+      Number(x.race_no || 0) - Number(y.race_no || 0)
     );
   }
+
   return a;
 }
 
-/* 一覧の並び替え用。予想の強さや的中確率そのものではない。 */
-function recommendScore(r){
-  const quality=scoreRace(r);
-  return quality.score;
+function recommendScore(r) {
+  const top = (r.top5 || [])[0] || {};
+  return (r.runner_count_verified ? 3 : 0)
+    + (r.is_recommended ? 2 : 0)
+    + Math.min(2, Number(top.score || 0) / 30)
+    + (r.candidate_mode === 'odds_based' ? 1 : 0);
 }
 
-function metricUpdate(){
-  const s=DATA?.paper_betting?.stats||{};
-  $('mSettled').textContent=num(s.all_bet_settled_races??s.races_settled);
-  $('mRoi').textContent=has(s.all_bet_roi_pct)?pct(s.all_bet_roi_pct):'—';
-  $('mReturn').textContent=has(s.all_bet_return_yen)?yen(s.all_bet_return_yen):'—';
-  $('mHits').textContent=num(s.all_bet_hit_races);
-  $('statsNote').textContent=s.accounting_note||'精算済みデータのみ集計。未確定レースは回収率から除外。';
+function metricUpdate() {
+  const s = DATA?.paper_betting?.stats || {};
+  $('mSettled').textContent = num(s.all_bet_settled_races ?? s.races_settled);
+  $('mRoi').textContent = has(s.all_bet_roi_pct) ? pct(s.all_bet_roi_pct) : '—';
+  $('mReturn').textContent = has(s.all_bet_return_yen) ? yen(s.all_bet_return_yen) : '—';
+  $('mHits').textContent = num(s.all_bet_hit_races);
+  $('statsNote').textContent = s.accounting_note || '精算済みデータのみ集計。未確定レースは回収率から除外。';
 }
 
-function horseNo(h){return h.horse_no??h.number??'—'}
-function horseName(h){return h.name||h.horse||'馬名未取得'}
-function fmtOdds(v){return has(v)&&Number(v)>0?Number(v).toFixed(1)+'倍':'未取得'}
-
-function getHorseList(r){
-  if(Array.isArray(r.horses)&&r.horses.length)return r.horses;
-  if(Array.isArray(r.runners)&&r.runners.length)return r.runners;
-  return [];
+function horseNo(h) {
+  return h.horse_no ?? h.number ?? '—';
 }
 
-function getTopList(r){
-  return Array.isArray(r.top5)?r.top5:[];
+function horseName(h) {
+  return h.name || h.horse || '馬名未取得';
 }
 
-function numericOddsCount(r){
-  const horses=getHorseList(r);
-  return horses.filter(h=>has(h.odds)&&Number(h.odds)>0).length;
+function fmtOdds(v) {
+  return has(v) && Number(v) > 0 ? Number(v).toFixed(1) + '倍' : '未取得';
 }
 
-function formAvailableCount(r){
-  const horses=getHorseList(r);
-  return horses.filter(h=>h.past_form?.available===true||
-    (Number(h.past_form?.starts||0)>0)||
-    (Array.isArray(h.past_form?.finishes)&&h.past_form.finishes.length>0)
-  ).length;
-}
+function renderTop(r) {
+  const a = Array.isArray(r.top5) ? r.top5.slice(0, 5) : [];
 
-/*
- * 暫定のレース評価:
- * - 出走頭数検証、オッズ取得率、過去走データ、上位予想のスコア差を評価
- * - オッズだけで高評価にならないようにする
- * - 欠損が多い場合は必ず評価を抑える
- * - 0〜100点は経験的な品質指標であり、的中確率ではない
- */
-function scoreRace(r){
-  const horses=getHorseList(r);
-  const top=getTopList(r);
-  const n=Math.max(0,Number(r.runner_count||horses.length||0));
-  const verified=r.runner_count_verified===true;
-  const oddsCount=numericOddsCount(r);
-  const formCount=formAvailableCount(r);
-  const oddsRate=n>0?oddsCount/n:0;
-  const formRate=n>0?formCount/n:0;
-  let score=0;
-  const reasons=[];
-  const cautions=[];
-
-  if(verified){
-    score+=20;
-    reasons.push('出走頭数の検証OK');
-  }else{
-    cautions.push('出走頭数が未検証');
+  if (!a.length) {
+    return '<div class="empty">予想順位データがありません。馬番順を順位として代用していません。</div>';
   }
 
-  if(n>=6&&n<=18){
-    score+=8;
-    reasons.push('出走頭数の基本条件を満たす');
-  }else if(n>0){
-    score+=3;
-  }else{
-    cautions.push('出走頭数が不明');
-  }
-
-  score+=Math.round(20*oddsRate);
-  if(oddsRate>=0.8){
-    reasons.push('単勝オッズの取得率が高い');
-  }else{
-    cautions.push('オッズの未取得馬あり');
-  }
-
-  score+=Math.round(22*formRate);
-  if(formRate>=0.6){
-    reasons.push('近走データが比較的そろっている');
-  }else{
-    cautions.push('近走データが不足');
-  }
-
-  if(top.length>=5){
-    score+=10;
-    reasons.push('予想TOP5がそろっている');
-  }else if(top.length>=3){
-    score+=5;
-    cautions.push('予想順位の一部が不足');
-  }else{
-    cautions.push('予想順位データが不足');
-  }
-
-  const topScores=top
-    .map(h=>Number(h.score))
-    .filter(v=>Number.isFinite(v))
-    .sort((a,b)=>b-a);
-
-  if(topScores.length>=3){
-    const gap=topScores[0]-topScores[2];
-    if(gap>=5){
-      score+=8;
-      reasons.push('上位候補にスコア差がある');
-    }else if(gap>=2){
-      score+=4;
-      reasons.push('上位候補をある程度比較できる');
-    }else{
-      cautions.push('上位候補の評価が拮抗');
-    }
-  }else{
-    cautions.push('比較できるスコアが不足');
-  }
-
-  const oddsFree=horses.filter(h=>has(h.odds_free_rank));
-  if(oddsFree.length>=Math.min(3,n||3)){
-    score+=5;
-    reasons.push('オッズ抜きの評価順位あり');
-  }else{
-    cautions.push('オッズ抜き順位が不足');
-  }
-
-  const outsiders=Array.isArray(r.outsiders)?r.outsiders:[];
-  const longshots=Array.isArray(r.longshots)?r.longshots:[];
-  if(outsiders.length){
-    score+=3;
-    reasons.push('穴候補の情報あり');
-  }
-  if(longshots.length){
-    score+=2;
-    reasons.push('大穴候補の情報あり');
-  }
-
-  if(r.is_finished){
-    cautions.push('レース終了済み');
-  }
-
-  if(n===0||horses.length===0){
-    score=Math.min(score,15);
-    cautions.push('出走馬一覧がないため評価を制限');
-  }
-  if(!verified)score=Math.min(score,59);
-  if(oddsRate<0.5)score=Math.min(score,54);
-  if(formRate<0.2)score=Math.min(score,64);
-  if(top.length<3)score=Math.min(score,49);
-  if(r.is_finished)score=Math.min(score,30);
-
-  score=Math.max(0,Math.min(100,Math.round(score)));
-
-  let level='様子見';
-  let labelClass='label-caution';
-  if(score>=78&&verified&&oddsRate>=0.8&&formRate>=0.5&&top.length>=5&&!r.is_finished){
-    level='超おすすめ候補';
-    labelClass='label-hot';
-  }else if(score>=60&&verified&&top.length>=3&&!r.is_finished){
-    level='注目レース';
-    labelClass='label-watch';
-  }
-
-  return {
-    score,level,labelClass,reasons,cautions,
-    oddsRate,formRate,oddsCount,formCount,n,verified
-  };
-}
-
-function renderSuperRaces(){
-  const root=$('superRaces');
-  const races=Array.isArray(DATA?.races)?DATA.races:[];
-  if(!races.length){
-    root.innerHTML='<div class="empty">本日のレースデータがありません。取得状況を確認してください。</div>';
-    return;
-  }
-
-  const ranked=races
-    .map((r,index)=>({r,index,quality:scoreRace(r)}))
-    .filter(x=>!x.r.is_finished)
-    .sort((a,b)=>b.quality.score-a.quality.score);
-
-  if(!ranked.length){
-    root.innerHTML='<div class="empty">未終了のレースがありません。翌日タブで翌日のデータを確認してください。</div>';
-    return;
-  }
-
-  const qualified=ranked.filter(x=>x.quality.level==='超おすすめ候補');
-  const watches=ranked.filter(x=>x.quality.level==='注目レース');
-
-  let chosen=[];
-  if(qualified.length){
-    chosen=qualified.slice(0,5);
-  }else if(watches.length){
-    chosen=watches.slice(0,3);
-  }else{
-    chosen=ranked.slice(0,2);
-  }
-
-  const intro=qualified.length
-    ?'基準を満たす超おすすめ候補を表示しています。'
-    :watches.length
-      ?'厳しい基準を満たすレースがないため、注目レースを表示しています。'
-      :'十分な根拠がそろったレースはありません。参考としてデータが比較的整った候補を表示します。';
-
-  root.innerHTML='<div class="small" style="margin-bottom:9px">'+esc(intro)+'</div>'+
-    '<div class="super-list">'+chosen.map((x,i)=>{
-      const r=x.r,q=x.quality;
-      const title=(r.course||'競馬場未取得')+' '+(r.race_no??'—')+'R';
-      const reasons=q.reasons.length?q.reasons.slice(0,4):['評価材料が不足しています'];
-      const cautions=q.cautions.slice(0,3);
-      const top=getTopList(r)[0];
-      const pick=top?('予想1位：'+horseNo(top)+'番 '+horseName(top)):'予想1位：未取得';
-      return '<div class="super-card" id="super-card-'+i+'">'+
-        '<div class="super-card-head"><div style="min-width:0">'+
-        '<div class="super-name">'+esc(title)+'</div>'+
-        '<div class="small">'+esc(r.name||'レース名未取得')+' · '+esc(timeText(r.post_time))+'</div>'+
-        '<div class="badges"><span class="badge">'+esc(r.kind||'区分未取得')+'</span>'+
-        '<span class="badge '+(q.verified?'gold':'warn')+'">'+(q.verified?'頭数検証OK':'頭数未検証')+'</span></div>'+
-        '</div><div><div class="super-score">'+q.score+'<small>/ 100 点</small></div>'+
-        '<div class="score-track"><div class="score-fill" style="width:'+q.score+'%"></div></div></div></div>'+
-        '<div class="super-body"><span class="super-label '+q.labelClass+'">'+esc(q.level)+'</span>'+
-        '<div class="super-reasons">'+esc(pick)+'</div>'+
-        '<div class="small">オッズ '+q.oddsCount+'/'+(q.n||'—')+'頭 · 近走 '+q.formCount+'/'+(q.n||'—')+'頭</div>'+
-        '<ul class="super-reasons">'+reasons.map(t=>'<li>✓ '+esc(t)+'</li>').join('')+
-        cautions.map(t=>'<li style="color:var(--orange)">! '+esc(t)+'</li>').join('')+'</ul>'+
-        '<button class="super-link" data-open-race="'+esc(String(r.course||''))+'" data-open-no="'+esc(String(r.race_no??''))+'">このレースの予想を見る ↓</button>'+
-        '</div></div>';
-    }).join('')+'</div>';
-
-  root.querySelectorAll('[data-open-race]').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      DAY='today';
-      KIND='all';
-      document.querySelectorAll('[data-day]').forEach(b=>b.classList.toggle('active',b.dataset.day==='today'));
-      document.querySelectorAll('[data-kind]').forEach(b=>b.classList.toggle('active',b.dataset.kind==='all'));
-      render();
-      const cards=[...document.querySelectorAll('#raceList .race')];
-      const found=cards.find(card=>{
-        const title=card.querySelector('.racetitle')?.textContent||'';
-        return title.includes(btn.dataset.open-race)&&title.includes(String(btn.dataset.open-no)+'R');
-      });
-      if(found){
-        found.scrollIntoView({behavior:'smooth',block:'start'});
-        found.style.outline='2px solid var(--gold)';
-        setTimeout(()=>found.style.outline='',2200);
-      }
-    });
-  });
-}
-
-function renderTop(r){
-  const a=getTopList(r).slice(0,5);
-  if(!a.length)return '<div class="empty">予想順位データがありません。馬番順を順位として代用していません。</div>';
-  return a.map((h,i)=>
-    '<div class="toprow"><div class="rankbadge">'+esc(h.rank??i+1)+'</div><div>'+
-    '<div class="topname">'+esc(horseName(h))+'</div>'+
-    '<div class="topdetail">'+esc(horseNo(h))+'番 · '+esc(h.jockey||'騎手未取得')+
-    ' · スコア '+esc(has(h.score)?h.score:'—')+
-    ' · 推定勝率 '+esc(pct(h.estimated_win_probability_pct))+'</div>'+
-    '<div class="topdetail">'+esc((h.reasons||[]).slice(0,3).join(' / ')||'選定理由データなし')+'</div>'+
-    '</div><div class="topodds">'+esc(fmtOdds(h.odds))+'<small>単勝オッズ</small></div></div>'
+  return a.map((h, i) =>
+    '<div class="toprow">' +
+      '<div class="rankbadge">' + esc(h.rank ?? i + 1) + '</div>' +
+      '<div>' +
+        '<div class="topname">' + esc(horseName(h)) + '</div>' +
+        '<div class="topdetail">' +
+          esc(horseNo(h)) + '番 · ' + esc(h.jockey || '騎手未取得') +
+          ' · スコア ' + esc(has(h.score) ? h.score : '—') +
+          ' · 推定勝率 ' + esc(pct(h.estimated_win_probability_pct)) +
+        '</div>' +
+        '<div class="topdetail">' +
+          esc((h.reasons || []).slice(0, 3).join(' / ') || '選定理由データなし') +
+        '</div>' +
+      '</div>' +
+      '<div class="topodds">' + esc(fmtOdds(h.odds)) + '<small>単勝オッズ</small></div>' +
+    '</div>'
   ).join('');
 }
 
-function renderHorses(r){
-  const a=getHorseList(r);
-  if(!a.length)return '<div class="empty">出走馬データ未取得</div>';
-  return '<div class="horsegrid">'+a.map(h=>
-    '<div class="horse"><div class="num">'+esc(horseNo(h))+'</div><div>'+
-    '<div class="hname">'+esc(horseName(h))+'</div>'+
-    '<div class="hdetail">予想 '+esc(h.rank??'—')+'位 · 騎手 '+esc(h.jockey||'未取得')+
-    ' · 人気 '+esc(h.popularity??'未取得')+' · 総合 '+esc(h.score??'—')+
-    '（市場 '+esc(h.market_score??'—')+' / 競走内容 '+esc(h.form_score??'—')+
-    '） · オッズ抜き '+esc(h.odds_free_rank??'—')+'位</div>'+
-    '<div class="hdetail">近走 '+esc(h.past_form?.available?
-      ((h.past_form.starts||0)+'走・平均'+(h.past_form.avg_finish??'—')+'着'):'未取得')+
-    ' · 馬体重増減 '+esc(has(h.w_diff)?(Number(h.w_diff)>0?'+':'')+h.w_diff+'kg':'未取得')+'</div>'+
-    '</div><div class="odds">'+esc(fmtOdds(h.odds))+'<small>推定勝率 '+esc(pct(h.estimated_win_probability_pct))+'</small></div></div>'
-  ).join('')+'</div>';
+function renderHorses(r) {
+  const a = Array.isArray(r.horses) ? r.horses : [];
+  if (!a.length) return '<div class="empty">出走馬データ未取得</div>';
+
+  return '<div class="horsegrid">' + a.map(h =>
+    '<div class="horse">' +
+      '<div class="num">' + esc(horseNo(h)) + '</div>' +
+      '<div>' +
+        '<div class="hname">' + esc(horseName(h)) + '</div>' +
+        '<div class="hdetail">予想 ' + esc(h.rank ?? '—') + '位 · 騎手 ' +
+          esc(h.jockey || '未取得') + ' · 人気 ' + esc(h.popularity ?? '未取得') +
+          ' · スコア ' + esc(h.score ?? '—') + '</div>' +
+        '<div class="hdetail">近走 ' +
+          esc(h.past_form?.available ? ((h.past_form.starts || 0) + '走・平均' + (h.past_form.avg_finish ?? '—') + '着') : '未取得') +
+          ' · 馬体重増減 ' +
+          esc(has(h.w_diff) ? (Number(h.w_diff) > 0 ? '+' : '') + h.w_diff + 'kg' : '未取得') +
+        '</div>' +
+      '</div>' +
+      '<div class="odds">' + esc(fmtOdds(h.odds)) +
+        '<small>推定勝率 ' + esc(pct(h.estimated_win_probability_pct)) + '</small>' +
+      '</div>' +
+    '</div>'
+  ).join('') + '</div>';
 }
 
-function renderCandidates(title,items,reasonKey,cls){
-  if(!Array.isArray(items)||!items.length){
-    return '<div class="block"><div class="blocktitle">'+title+'</div><div class="small">該当候補なし／データ未取得</div></div>';
+function renderCandidates(title, items, reasonKey, cls) {
+  if (!Array.isArray(items) || !items.length) {
+    return '<div class="block"><div class="blocktitle">' + title +
+      '</div><div class="small">該当候補なし／データ未取得</div></div>';
   }
-  return '<div class="block"><div class="blocktitle">'+title+'</div>'+items.map(h=>
-    '<div class="candidate"><div class="rowbetween"><strong>'+
-    esc(horseNo(h))+'番 '+esc(horseName(h))+'</strong><span class="badge '+cls+'">'+
-    esc(fmtOdds(h.odds))+'</span></div><div class="tagrow"><span class="tag">予想 '+esc(h.rank??'—')+
-    '位</span><span class="tag">人気 '+esc(h.popularity??'未取得')+
-    '</span><span class="tag">スコア '+esc(h.score??'—')+'</span></div><p>'+
-    esc(h[reasonKey]||((h.reasons||[]).slice(0,3).join('、'))||'選定理由未取得')+
-    '</p></div>'
-  ).join('')+'</div>';
+
+  return '<div class="block"><div class="blocktitle">' + title + '</div>' +
+    items.map(h =>
+      '<div class="candidate">' +
+        '<div class="rowbetween"><strong>' + esc(horseNo(h)) + '番 ' +
+          esc(horseName(h)) + '</strong><span class="badge ' + cls + '">' +
+          esc(fmtOdds(h.odds)) + '</span></div>' +
+        '<div class="tagrow">' +
+          '<span class="tag">予想 ' + esc(h.rank ?? '—') + '位</span>' +
+          '<span class="tag">人気 ' + esc(h.popularity ?? '未取得') + '</span>' +
+          '<span class="tag">スコア ' + esc(h.score ?? '—') + '</span>' +
+        '</div>' +
+        '<p>' + esc(h[reasonKey] || ((h.reasons || []).slice(0, 3).join('、')) || '選定理由未取得') + '</p>' +
+      '</div>'
+    ).join('') + '</div>';
 }
 
-function renderTickets(r){
-  const t=Array.isArray(r.tickets)?r.tickets:[];
-  if(!t.length){
-    return '<div class="block"><div class="blocktitle">🧾 紙上買い目</div>'+
+function renderTickets(r) {
+  const t = Array.isArray(r.tickets) ? r.tickets : [];
+
+  if (!t.length) {
+    return '<div class="block"><div class="blocktitle">🧾 紙上買い目</div>' +
       '<div class="notice">出走頭数検証が未通過、または対象データ不足のため買い目を作成していません。</div></div>';
   }
-  return '<div class="block"><div class="blocktitle">🧾 紙上買い目（実購入なし）</div>'+
-    t.map(x=>
-      '<div class="candidate"><div class="rowbetween"><strong>'+
-      esc(x.pattern||x.pattern_type||'紙上買い目')+'</strong><span class="badge gold">予算 '+
-      esc(yen(x.cost_yen))+'</span></div><p>'+esc(x.note||'紙上シミュレーション')+
-      '</p><div class="tablewrap"><table><thead><tr><th>券種・組合せ</th><th>金額</th></tr></thead><tbody>'+
-      ((x.line_items||[]).map(l=>
-        '<tr><td>'+esc(l.label||((l.type||'')+' '+(l.horses||[]).join('-')))+'</td><td>'+
-        esc(yen(l.stake_yen))+'</td></tr>'
-      ).join(''))+'</tbody></table></div></div>'
-    ).join('')+'</div>';
+
+  return '<div class="block"><div class="blocktitle">🧾 紙上買い目（実購入なし）</div>' +
+    t.map(x =>
+      '<div class="candidate">' +
+        '<div class="rowbetween"><strong>' + esc(x.pattern || x.pattern_type || '紙上買い目') +
+          '</strong><span class="badge gold">予算 ' + esc(yen(x.cost_yen)) + '</span></div>' +
+        '<p>' + esc(x.note || '紙上シミュレーション') + '</p>' +
+        '<div class="tablewrap"><table><thead><tr><th>券種・組合せ</th><th>金額</th></tr></thead><tbody>' +
+          ((x.line_items || []).map(l =>
+            '<tr><td>' + esc(l.label || ((l.type || '') + ' ' + (l.horses || []).join('-'))) +
+            '</td><td>' + esc(yen(l.stake_yen)) + '</td></tr>'
+          ).join('')) +
+        '</tbody></table></div>' +
+      '</div>'
+    ).join('') + '</div>';
 }
 
-function renderSettlement(r){
-  if(!r.is_finished)return '';
-  const fin=Array.isArray(r.result_finishes)?r.result_finishes:[];
-  return '<div class="block"><div class="blocktitle">🏁 レース結果・精算</div>'+
-    '<div class="meta"><span>上位着順: '+esc(fin.length?
-      fin.slice(0,3).map((n,i)=>(i+1)+'着 '+n+'番').join(' / '):'未取得')+
-    '</span><span>状態: '+esc(r.settlement_status||'精算待ち')+'</span></div>'+
-    '<div class="qualitygrid"><div class="qitem"><b>'+
-    esc(r.settlement_complete?'確定':(r.win_hit===true?'単勝的中':'未確定'))+
-    '</b><span>精算状態</span></div><div class="qitem"><b>'+
-    esc(has(r.all_bet_return)?yen(r.all_bet_return):'未確定')+
-    '</b><span>全券種払戻</span></div><div class="qitem"><b>'+
-    esc(has(r.race_profit)?yen(r.race_profit):'未確定')+
-    '</b><span>紙上損益</span></div><div class="qitem"><b>'+
-    esc(has(r.win_return)?yen(r.win_return):'—')+
-    '</b><span>単勝払戻</span></div></div></div>';
+function renderSettlement(r) {
+  if (!r.is_finished) return '';
+
+  const fin = Array.isArray(r.result_finishes) ? r.result_finishes : [];
+
+  return '<div class="block"><div class="blocktitle">🏁 レース結果・精算</div>' +
+    '<div class="meta"><span>上位着順: ' +
+      esc(fin.length ? fin.slice(0, 3).map((n, i) => (i + 1) + '着 ' + n + '番').join(' / ') : '未取得') +
+      '</span><span>状態: ' + esc(r.settlement_status || '精算待ち') + '</span></div>' +
+    '<div class="qualitygrid">' +
+      '<div class="qitem"><b>' + esc(r.settlement_complete ? '確定' : (r.win_hit === true ? '単勝的中' : '未確定')) + '</b><span>精算状態</span></div>' +
+      '<div class="qitem"><b>' + esc(has(r.all_bet_return) ? yen(r.all_bet_return) : '未確定') + '</b><span>全券種払戻</span></div>' +
+      '<div class="qitem"><b>' + esc(has(r.race_profit) ? yen(r.race_profit) : '未確定') + '</b><span>紙上損益</span></div>' +
+      '<div class="qitem"><b>' + esc(has(r.win_return) ? yen(r.win_return) : '—') + '</b><span>単勝払戻</span></div>' +
+    '</div></div>';
 }
 
-function diagnosticRows(r){
-  const d=r.runner_diagnostic||{};
-  const items=[
-    ['出馬表テーブル',d.table_found?'検出':'未検出'],
-    ['行数 / 有効馬',num(d.rows_found)+' / '+num(d.valid_rows)],
-    ['馬番重複',Array.isArray(d.duplicate_numbers)&&d.duplicate_numbers.length?d.duplicate_numbers.join(', '):'なし'],
-    ['単勝オッズ',num(d.odds_count)+'頭取得 / '+num(d.odds_missing_count)+'頭未取得'],
-    ['オッズ専用ページ',d.odds_page_status||'未診断'],
-    ['人気順位',num(d.popularity_count)+'頭取得 · '+(d.popularity_status||'状態不明')],
-    ['騎手',num(d.jockey_count)+'頭取得'],
-    ['過去走',num(d.past_form_count)+'頭取得 / '+num(d.past_form_missing_count)+'頭未取得'],
-    ['血統評価','血統欄未取得なら加点なし'],
-    ['騎手評価','過去走内の同騎手履歴のみ参考評価']
+function diagnosticRows(r) {
+  const d = r.runner_diagnostic || {};
+  const items = [
+    ['出馬表テーブル', d.table_found ? '検出' : '未検出'],
+    ['行数 / 有効馬', num(d.rows_found) + ' / ' + num(d.valid_rows)],
+    ['馬番重複', Array.isArray(d.duplicate_numbers) && d.duplicate_numbers.length ? d.duplicate_numbers.join(', ') : 'なし'],
+    ['単勝オッズ', num(d.odds_count) + '頭取得 / ' + num(d.odds_missing_count) + '頭未取得'],
+    ['オッズ専用ページ', d.odds_page_status || '未診断'],
+    ['人気順位', num(d.popularity_count) + '頭取得 · ' + (d.popularity_status || '状態不明')],
+    ['騎手', num(d.jockey_count) + '頭取得'],
+    ['過去走', num(d.past_form_count) + '頭取得 / ' + num(d.past_form_missing_count) + '頭未取得']
   ];
-  return '<div class="qualitygrid">'+items.map(x=>
-    '<div class="qitem"><b>'+esc(x[1])+'</b><span>'+esc(x[0])+'</span></div>'
-  ).join('')+'</div><details><summary>詳細JSON（上級者向け）</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;color:#a2b1c6">'+
-    esc(JSON.stringify(d,null,2))+'</pre></details>';
+
+  return '<div class="qualitygrid">' +
+    items.map(x => '<div class="qitem"><b>' + esc(x[1]) + '</b><span>' + esc(x[0]) + '</span></div>').join('') +
+    '</div><details><summary>詳細JSON（上級者向け）</summary>' +
+    '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:10px;color:#a2b1c6">' +
+    esc(JSON.stringify(d, null, 2)) + '</pre></details>';
 }
 
-function renderRace(r){
-  const verified=r.runner_count_verified===true;
-  return '<article class="race"><div class="racehead"><div style="min-width:0">'+
-    '<div class="racetitle">'+esc(r.course||'競馬場未取得')+' '+esc(r.race_no??'—')+
-    'R · '+esc(r.name||'レース名未取得')+'</div><div class="badges">'+
-    '<span class="badge '+(r.kind==='地方'?'':'gold')+'">'+esc(r.kind||'区分未取得')+'</span>'+
-    '<span class="badge">'+esc(timeText(r.post_time))+'</span>'+
-    '<span class="badge '+(verified?'':'warn')+'">'+(verified?'出走頭数検証OK':'出走頭数未検証')+'</span>'+
-    (r.is_recommended?'<span class="badge gold">おすすめ</span>':'')+
-    (r.is_finished?'<span class="badge">結果確認対象</span>':'')+
-    '</div></div><div class="topodds">'+esc(r.runner_count??'—')+'頭<small>取得頭数</small></div></div>'+
-    '<div class="racebody"><div class="meta"><span>'+esc(r.surface||'馬場未取得')+
-    '</span><span>'+esc(has(r.distance_m)?r.distance_m+'m':'距離未取得')+
-    '</span><span>天候 '+esc(r.weather||'未取得')+'</span><span>馬場 '+esc(r.going||'未取得')+'</span></div>'+
-    '<div class="block"><div class="blocktitle">🏆 予想順位 TOP 5</div>'+renderTop(r)+'</div>'+
-    renderCandidates('🎯 穴候補',r.outsiders,'outsider_reason','good')+
-    renderCandidates('💎 大穴候補',r.longshots,'longshot_reason','bad')+
-    renderTickets(r)+renderSettlement(r)+
-    '<details><summary>出走馬一覧・過去走データ</summary>'+renderHorses(r)+
-    '<div class="small" style="margin-top:8px">'+esc(r.past_form_status||'過去走の取得状況は馬ごとの表示を確認してください。')+
-    '</div></details><details><summary>取得品質・診断情報</summary><div class="meta">'+
-    esc(r.prediction_status||'')+' · '+esc(r.candidate_notice||'')+'</div>'+
-    diagnosticRows(r)+'</details></div></article>';
+/* 修正点：レースIDを配列番号ではなく、レース情報から安定して生成する */
+function raceAnchorId(r, i) {
+  const raw = String(r.race_id || r.id || (r.kind || '') + '-' + (r.course || '') + '-' + (r.race_no || '') + '-' + i);
+  return 'prediction-' + raw.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
-function render(){
-  if(!DATA)return;
-  const a=getRaces();
-  $('raceCount').textContent=a.length+'レース';
-  if(!a.length){
-    $('raceList').innerHTML='<div class="empty">表示できるレースがありません。サイト側の公開状況・取得ログ・選択中のタブを確認してください。</div>';
-  }else{
-    $('raceList').innerHTML=a.map(renderRace).join('');
+function renderRace(r, i) {
+  const verified = r.runner_count_verified === true;
+  const anchor = raceAnchorId(r, i);
+
+  return '<article class="race">' +
+    '<div class="racehead">' +
+      '<div style="min-width:0">' +
+        '<div class="racetitle">' + esc(r.course || '競馬場未取得') + ' ' +
+          esc(r.race_no ?? '—') + 'R · ' + esc(r.name || 'レース名未取得') + '</div>' +
+        '<div class="badges">' +
+          '<span class="badge ' + (r.kind === '地方' ? '' : 'gold') + '">' + esc(r.kind || '区分未取得') + '</span>' +
+          '<span class="badge">' + esc(timeText(r.post_time)) + '</span>' +
+          '<span class="badge ' + (verified ? '' : 'warn') + '">' + (verified ? '出走頭数検証OK' : '出走頭数未検証') + '</span>' +
+          (r.is_recommended ? '<span class="badge gold">おすすめ</span>' : '') +
+          (r.is_finished ? '<span class="badge">結果確認対象</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="topodds">' + esc(r.runner_count ?? '—') + '頭<small>取得頭数</small></div>' +
+    '</div>' +
+    '<div class="racebody">' +
+      /* hrefを正しいIDに直接結びつけ、JS依存のクリック処理を使わない */
+      '<a class="btn primary jumpbtn" href="#' + esc(anchor) + '" aria-label="' +
+        esc((r.course || '') + ' ' + (r.race_no || '') + 'Rの予想を見る') + '">このレースの予想を見る ↓</a>' +
+      '<div class="meta"><span>' + esc(r.surface || '馬場未取得') + '</span>' +
+        '<span>' + esc(has(r.distance_m) ? r.distance_m + 'm' : '距離未取得') + '</span>' +
+        '<span>天候 ' + esc(r.weather || '未取得') + '</span>' +
+        '<span>馬場 ' + esc(r.going || '未取得') + '</span></div>' +
+      '<div class="block prediction-target" id="' + esc(anchor) + '">' +
+        '<div class="blocktitle">🏆 予想順位 TOP 5</div>' + renderTop(r) +
+      '</div>' +
+      renderCandidates('🎯 穴候補', r.outsiders, 'outsider_reason', 'good') +
+      renderCandidates('💎 大穴候補', r.longshots, 'longshot_reason', 'bad') +
+      renderTickets(r) +
+      renderSettlement(r) +
+      '<details><summary>出走馬一覧・過去走データ</summary>' + renderHorses(r) +
+        '<div class="small" style="margin-top:8px">' +
+          esc(r.past_form_status || '過去走の取得状況は馬ごとの表示を確認してください。') +
+        '</div></details>' +
+      '<details><summary>取得品質・診断情報</summary>' +
+        '<div class="meta">' + esc(r.prediction_status || '') + ' · ' + esc(r.candidate_notice || '') + '</div>' +
+        diagnosticRows(r) +
+      '</details>' +
+    '</div></article>';
+}
+
+function render() {
+  if (!DATA) return;
+
+  const a = getRaces();
+  $('raceCount').textContent = a.length + 'レース';
+
+  if (!a.length) {
+    $('raceList').innerHTML = '<div class="empty">表示できるレースがありません。サイト側の公開状況・取得ログ・選択中のタブを確認してください。</div>';
+  } else {
+    $('raceList').innerHTML = a.map(renderRace).join('');
   }
 }
 
-function updateQuality(){
-  const q=DATA?.data_quality_summary||{};
-  const v=DATA?.runner_validation||{};
-  $('buildLabel').textContent=(DATA?.engine_version||'バージョン未取得')+
-    ' · '+(DATA?.generated_at||'更新時刻未取得');
-  $('qRaces').textContent=num(v.today_races??DATA?.races?.length??0);
-  $('qVerified').textContent=num(v.verified_races??(DATA?.races||[]).filter(r=>r.runner_count_verified).length);
-  $('qOdds').textContent=num(q.odds_available_runners)+'頭（未取得 '+num(q.odds_missing_runners)+'頭）';
-  $('qForm').textContent=num(q.new_horse_form_fetches)+'件（累計取得 '+num(q.past_form_available_runners)+'頭）';
-  const warnings=Array.isArray(DATA?.warnings)?DATA.warnings:[];
-  const rd=Array.isArray(q.race_diagnostics)?q.race_diagnostics:[];
-  const oddsFail=rd.filter(r=>Number(r.odds_count||0)===0).length;
-  const formFail=rd.filter(r=>Number(r.past_form_count||0)===0).length;
-  const summary='診断対象 '+rd.length+'レース · オッズ0頭取得 '+oddsFail+
-    'レース · 過去走0頭取得 '+formFail+'レース';
-  $('warnings').innerHTML='<div>'+esc(summary)+'</div>'+
-    (warnings.length?'<br><span class="warntext">⚠ '+warnings.length+
-    '件の警告</span><br>'+warnings.slice(0,8).map(esc).join('<br>'):
-    '<br>警告なし（取得完全を意味するものではありません）。');
+function updateQuality() {
+  const q = DATA?.data_quality_summary || {};
+  const v = DATA?.runner_validation || {};
+
+  $('buildLabel').textContent = (DATA?.engine_version || 'バージョン未取得') + ' · ' + (DATA?.generated_at || '更新時刻未取得');
+  $('qRaces').textContent = num(v.today_races ?? DATA?.races?.length ?? 0);
+  $('qVerified').textContent = num(v.verified_races ?? (DATA?.races || []).filter(r => r.runner_count_verified).length);
+  $('qOdds').textContent = num(q.odds_available_runners) + '頭（未取得 ' + num(q.odds_missing_runners) + '頭）';
+  $('qForm').textContent = num(q.new_horse_form_fetches) + '件（累計取得 ' + num(q.past_form_available_runners) + '頭）';
+
+  const warnings = Array.isArray(DATA?.warnings) ? DATA.warnings : [];
+  const rd = Array.isArray(q.race_diagnostics) ? q.race_diagnostics : [];
+  const oddsFail = rd.filter(r => Number(r.odds_count || 0) === 0).length;
+  const formFail = rd.filter(r => Number(r.past_form_count || 0) === 0).length;
+  const summary = '診断対象 ' + rd.length + 'レース · オッズ0頭取得 ' + oddsFail + 'レース · 過去走0頭取得 ' + formFail + 'レース';
+
+  $('warnings').innerHTML = '<div>' + esc(summary) + '</div>' +
+    (warnings.length
+      ? '<br><span class="warntext">⚠ ' + warnings.length + '件の警告</span><br>' + warnings.slice(0, 8).map(esc).join('<br>')
+      : '<br>警告なし（取得完全を意味するものではありません）。');
 }
 
-async function loadData(){
-  $('statusText').textContent='データ取得中…';
-  $('raceList').innerHTML='<div class="loading">最新データを読み込んでいます…</div>';
-  $('superRaces').innerHTML='<div class="loading">レースを分析しています…</div>';
-  let last='';
-  let loaded=null;
-  const paths=['./data.json','./docs/data.json'];
+async function loadData() {
+  $('statusText').textContent = 'データ取得中…';
+  $('raceList').innerHTML = '<div class="loading">最新データを読み込んでいます…</div>';
+  DATA = null;
 
-  for(const path of paths){
-    try{
-      const res=await fetch(path+'?t='+Date.now(),{cache:'no-store'});
-      if(!res.ok){last=path+' HTTP '+res.status;continue;}
-      const d=await res.json();
-      if(!d||typeof d!=='object')throw new Error('JSON形式不正');
-      loaded=d;
+  const paths = ['./data.json', './docs/data.json'];
+  let last = '';
+
+  for (const path of paths) {
+    try {
+      const res = await fetch(path + '?t=' + Date.now(), {cache:'no-store'});
+      if (!res.ok) {
+        last = path + ' HTTP ' + res.status;
+        continue;
+      }
+
+      const d = await res.json();
+      if (!d || typeof d !== 'object') throw new Error('JSON形式不正');
+
+      DATA = d;
       break;
-    }catch(e){
-      last=String(e);
+    } catch (e) {
+      last = String(e);
     }
   }
 
-  if(!loaded){
-    DATA=null;
-    $('statusText').textContent='データ取得失敗';
-    $('statusDot').style.background='var(--red)';
-    $('raceList').innerHTML='<div class="empty error">data.jsonを読み込めませんでした。<br>'+
-      esc(last)+'<br>GitHub Actionsが成功し、docs/data.jsonが生成されているか確認してください。</div>';
-    $('superRaces').innerHTML='<div class="empty error">データ未取得のため、おすすめレースを判定できません。</div>';
+  if (!DATA) {
+    $('statusText').textContent = 'データ取得失敗';
+    $('statusDot').style.background = 'var(--red)';
+    $('raceList').innerHTML = '<div class="empty error">data.jsonを読み込めませんでした。<br>' +
+      esc(last) + '<br>GitHub Actionsが成功し、docs/data.jsonが生成されているか確認してください。</div>';
     return;
   }
 
-  DATA=loaded;
   metricUpdate();
   updateQuality();
-  renderSuperRaces();
-  $('statusText').textContent=(DATA.status==='OK'?'データ読込済み':'取得データ要確認')+
-    ' · 更新 '+String(DATA.generated_at||'時刻不明');
-  $('statusDot').style.background=DATA.status==='OK'?'var(--green)':'var(--orange)';
+  $('statusText').textContent = (DATA.status === 'OK' ? 'データ読込済み' : '取得データ要確認') +
+    ' · 更新 ' + (DATA.generated_at || '時刻不明');
+  $('statusDot').style.background = DATA.status === 'OK' ? 'var(--green)' : 'var(--orange)';
   render();
 }
 
-document.querySelectorAll('[data-day]').forEach(b=>b.addEventListener('click',()=>{
-  DAY=b.dataset.day;
-  document.querySelectorAll('[data-day]').forEach(x=>x.classList.toggle('active',x===b));
-  render();
-}));
+/* iPhoneでも、画面を描画した後にIDが存在することを確認して移動する */
+document.addEventListener('click', function(event) {
+  const link = event.target.closest('a.jumpbtn');
+  if (!link) return;
 
-document.querySelectorAll('[data-kind]').forEach(b=>b.addEventListener('click',()=>{
-  KIND=b.dataset.kind;
-  document.querySelectorAll('[data-kind]').forEach(x=>x.classList.toggle('active',x===b));
-  render();
-}));
+  const href = link.getAttribute('href') || '';
+  if (!href.startsWith('#')) return;
 
-$('sortSelect').addEventListener('change',render);
-$('reloadBtn').addEventListener('click',()=>{
-  DATA=null;
-  loadData();
+  const targetId = decodeURIComponent(href.slice(1));
+  const target = document.getElementById(targetId);
+
+  if (!target) {
+    event.preventDefault();
+    return;
+  }
+
+  event.preventDefault();
+
+  if (location.hash !== href) {
+    history.replaceState(null, '', href);
+  }
+
+  target.scrollIntoView({behavior:'smooth', block:'start'});
+
+  target.setAttribute('tabindex', '-1');
+  try { target.focus({preventScroll:true}); } catch (_) {}
 });
+
+document.querySelectorAll('[data-day]').forEach(b => {
+  b.addEventListener('click', () => {
+    DAY = b.dataset.day;
+    document.querySelectorAll('[data-day]').forEach(x => x.classList.toggle('active', x === b));
+    render();
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+});
+
+document.querySelectorAll('[data-kind]').forEach(b => {
+  b.addEventListener('click', () => {
+    KIND = b.dataset.kind;
+    document.querySelectorAll('[data-kind]').forEach(x => x.classList.toggle('active', x === b));
+    render();
+  });
+});
+
+$('sortSelect').addEventListener('change', render);
+$('reloadBtn').addEventListener('click', loadData);
 
 loadData();
 </script>
