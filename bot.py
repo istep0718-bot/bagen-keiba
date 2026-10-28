@@ -799,6 +799,35 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
             hh,mm=map(int,post.split(":")); scheduled=NOW.replace(hour=hh,minute=mm,second=0,microsecond=0)
             finished=NOW>=scheduled+timedelta(minutes=10)
         except ValueError: pass
+    # レース単位の「狙い目」評価。的中率を保証する予測ではなく、データ充足度・市場抜き評価・候補の根拠を合算。
+    odds_coverage=(diag["odds_count"]/count) if count else 0.0
+    form_coverage=(diag["past_form_count"]/count) if count else 0.0
+    top3=ranked[:3]
+    odds_free_top3=sum(1 for h in top3 if isinstance(h.get("odds_free_rank"),int) and h["odds_free_rank"]<=3)
+    form_values=[numeric(h.get("form_score")) or 0.0 for h in ranked]
+    form_spread=(max(form_values)-min(form_values)) if form_values else 0.0
+    # 高い総合点だけでは推さず、出走表・オッズ・近走データの取得状況も必須条件にする。
+    race_confidence=0.0
+    race_confidence += 20.0 if verified else 0.0
+    race_confidence += 15.0*odds_coverage
+    race_confidence += 20.0*form_coverage
+    race_confidence += min(15.0, odds_free_top3*5.0)
+    race_confidence += min(10.0, len(outsiders)*3.0 + len(longshots)*2.0)
+    race_confidence += 10.0 if candidate_mode=="odds_based" else 0.0
+    race_confidence += 10.0 if len(ranked)>=8 else (5.0 if len(ranked)>=5 else 0.0)
+    race_confidence=round(min(100.0,race_confidence),1)
+    reasons=[]
+    if verified: reasons.append("出走頭数の検証OK")
+    if odds_coverage>=0.9: reasons.append("単勝オッズの取得率が高い")
+    if form_coverage>=0.6: reasons.append("近走データを複数馬で確認")
+    if odds_free_top3>=2: reasons.append("オッズ抜き評価でも上位候補が一致")
+    if outsiders or longshots: reasons.append("穴候補・大穴候補に根拠あり")
+    if race_confidence>=75 and verified and odds_coverage>=0.8 and form_coverage>=0.5 and odds_free_top3>=2:
+        race_grade="超おすすめ"
+    elif race_confidence>=55 and verified and odds_coverage>=0.5:
+        race_grade="注目レース"
+    else:
+        race_grade="データ不足・様子見"
     recommended=bool(verified and len(ranked)>=5 and (rno==11 or (candidate_mode=="odds_based" and (len(outsiders)>=2 or len(longshots)>=1)) or (candidate_mode=="heuristic_no_odds" and len(outsiders)>=3)))
     return {"id":str(rid),"date":date_iso,"kind":kind,"category":source["category"],"race_no":rno,"name":name,
       "course":venue or "競馬場未取得","post_time":post or "未取得","surface":surface or "未取得",
@@ -810,7 +839,9 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
       "all_bet_return":None,"race_cost":tickets[0]["cost_yen"] if tickets else 0,"race_profit":None,
       "settlement_complete":False,"settled_lines":[],"settlement_status":"結果精算待ち",
       "is_recommended":recommended,"is_tomorrow":is_tomorrow,
-      "prediction_status":"未検証の簡易評価" if verified else "出走頭数未検証・予想注意",
+      "race_confidence_score":race_confidence,"race_grade":race_grade,"race_recommendation_reasons":reasons,
+      "race_data_coverage":{"odds_pct":round(odds_coverage*100,1),"past_form_pct":round(form_coverage*100,1),"odds_free_top3_count":odds_free_top3},
+      "prediction_status":"未検証の簡易評価。レース評価も的中・利益を保証しない" if verified else "出走頭数未検証・予想注意",
       "win_probability_note":"推定勝率は市場スコアと取得できた近走分析を合算して確率化した未校正の参考値。実績による校正は未実施。odds_free_rankはオッズ・人気を除いた参考順位。",
       "past_form_status":"過去走は馬ページから最大5走を解析。サイト構造によって取得不能な場合があり、未取得を0評価として扱わない。"}
 
