@@ -344,7 +344,7 @@ function renderSettlement(r) {
       esc(fin.length ? fin.slice(0, 3).map((n, i) => (i + 1) + '着 ' + n + '番').join(' / ') : '未取得') +
       '</span><span>状態: ' + esc(r.settlement_status || '精算待ち') + '</span></div>' +
     '<div class="qualitygrid">' +
-      '<div class="qitem"><b>' + esc(r.settlement_complete ? '確定' : (r.win_hit === true ? '単勝的中' : '未確定')) + '</b><span>精算状態</span></div>' +
+      '<div class="qitem"><b>' + esc(r.settlement_complete && r.payout_confirmed !== false ? '確定' : (r.win_hit === true ? '単勝的中・払戻未確認の可能性' : '未確定')) + '</b><span>精算状態</span></div>' +
       '<div class="qitem"><b>' + esc(has(r.all_bet_return) ? yen(r.all_bet_return) : '未確定') + '</b><span>全券種払戻</span></div>' +
       '<div class="qitem"><b>' + esc(has(r.race_profit) ? yen(r.race_profit) : '未確定') + '</b><span>紙上損益</span></div>' +
       '<div class="qitem"><b>' + esc(has(r.win_return) ? yen(r.win_return) : '—') + '</b><span>単勝払戻</span></div>' +
@@ -397,18 +397,21 @@ function renderRace(r, i) {
       '<div class="topodds">' + esc(r.runner_count ?? '—') + '頭<small>取得頭数</small></div>' +
     '</div>' +
     '<div class="racebody">' +
-      /* hrefを正しいIDに直接結びつけ、JS依存のクリック処理を使わない */
       '<a class="btn primary jumpbtn" href="#' + esc(anchor) + '" aria-label="' +
         esc((r.course || '') + ' ' + (r.race_no || '') + 'Rの予想を見る') + '">このレースの予想を見る ↓</a>' +
-      '<div class="meta"><span>' + esc(r.surface || '馬場未取得') + '</span>' +
+      '<div class="meta"><span>' + esc(r.surface || '馬場未取得') +
+        (r.surface_status === '未取得' ? ' <span class="badge warn">未取得</span>' : '') + '</span>' +
         '<span>' + esc(has(r.distance_m) ? r.distance_m + 'm' : '距離未取得') + '</span>' +
-        '<span>天候 ' + esc(r.weather || '未取得') + '</span>' +
-        '<span>馬場 ' + esc(r.going || '未取得') + '</span></div>' +
+        '<span>天候 ' + esc(r.weather || '未取得') +
+        (r.weather_status === '未取得' ? ' <span class="badge warn">未取得</span>' : '') + '</span>' +
+        '<span>馬場状態 ' + esc(r.going || '未取得') +
+        (r.going_status === '未取得' ? ' <span class="badge warn">未取得</span>' : '') + '</span></div>' +
       '<div class="block prediction-target" id="' + esc(anchor) + '">' +
         '<div class="blocktitle">🏆 予想順位 TOP 5</div>' + renderTop(r) +
       '</div>' +
-      renderCandidates('🎯 穴候補', r.outsiders, 'outsider_reason', 'good') +
-      renderCandidates('💎 大穴候補', r.longshots, 'longshot_reason', 'bad') +
+      renderCandidates('🎯 穴候補（実オッズ）', r.outsiders, 'outsider_reason', 'good') +
+      renderCandidates('💎 大穴候補（実オッズ）', r.longshots, 'longshot_reason', 'bad') +
+      renderCandidates('📋 近走参考穴', r.form_outsiders || [], 'form_outsider_reason', '') +
       renderTickets(r) +
       renderSettlement(r) +
       '<details><summary>出走馬一覧・過去走データ</summary>' + renderHorses(r) +
