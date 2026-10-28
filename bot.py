@@ -989,6 +989,10 @@ def combo_key(horses, ordered=False):
 
 
 def parse_result_page(page, race_id):
+    """結果ページから着順・払戻を抽出。
+    netkeiba地方はヘッダーが「着 順」「馬 番」とスペース入り、
+    払戻ラベルが th ではなく td 先頭になるため、両方に対応する。
+    """
     soup = soup_of(page)
     finishes = []
     payouts = {
@@ -996,12 +1000,30 @@ def parse_result_page(page, race_id):
         "trio": {}, "trifecta": {}, "exacta": {},
     }
     tables = list(soup.find_all("table"))
+
+    def norm_head(s):
+        return re.sub(r"\s+", "", s or "")
+
     result_table = None
-    for table in tables:
-        heads = " ".join(text_of(x) for x in table.select("th,thead td,tr:first-child td"))
-        if "着順" in heads and ("馬番" in heads or "馬名" in heads):
-            result_table = table
+    # 優先: 明示クラス
+    for sel in ["#All_Result_Table", "table.ResultMain", "table.RaceTable01",
+                "table.Result_Table", "table.RaceCommon_Table"]:
+        for table in soup.select(sel):
+            heads_raw = " ".join(text_of(x) for x in table.select("th,thead td,tr:first-child td,tr:first-child th"))
+            heads = norm_head(heads_raw)
+            if "着順" in heads and ("馬番" in heads or "馬名" in heads):
+                result_table = table
+                break
+        if result_table:
             break
+    if result_table is None:
+        for table in tables:
+            heads_raw = " ".join(text_of(x) for x in table.select("th,thead td,tr:first-child td,tr:first-child th"))
+            heads = norm_head(heads_raw)
+            if "着順" in heads and ("馬番" in heads or "馬名" in heads):
+                result_table = table
+                break
+
     if result_table:
         for tr in result_table.select("tr"):
             cells = tr.find_all(["td", "th"], recursive=False)
@@ -1015,6 +1037,7 @@ def parse_result_page(page, race_id):
             if not horse_link:
                 continue
             no = None
+            # 1) class に Umaban / Horse_No
             for c in cells:
                 cl = " ".join(c.get("class", [])).lower()
                 if "umaban" in cl or "horse_no" in cl:
@@ -1022,12 +1045,29 @@ def parse_result_page(page, race_id):
                     if v is not None and 1 <= v <= 18:
                         no = int(v)
                         break
+            # 2) 地方結果表: 枠=Num WakuN, 馬番=Num Waku（数字クラスのみ）
             if no is None:
-                for txt in vals[1:4]:
+                for c in cells:
+                    classes = c.get("class") or []
+                    cl = " ".join(classes)
+                    # 馬番セルは class=["Num","Waku"]。枠は class=["Num","Waku7"] 等
+                    if "Num" in classes and any(x == "Waku" for x in classes):
+                        v = numeric(text_of(c))
+                        if v is not None and 1 <= v <= 18:
+                            no = int(v)
+                            break
+            # 3) フォールバック: 着順の次の数値列（枠を飛ばして馬番）
+            if no is None:
+                nums_found = []
+                for txt in vals[1:5]:
                     v = numeric(txt)
-                    if v is not None and 1 <= v <= 18 and int(v) != int(rank):
-                        no = int(v)
-                        break
+                    if v is not None and 1 <= v <= 18 and int(v) == v:
+                        nums_found.append(int(v))
+                # 典型: [枠, 馬番, ...] → 2番目を馬番とする
+                if len(nums_found) >= 2:
+                    no = nums_found[1]
+                elif len(nums_found) == 1 and nums_found[0] != int(rank):
+                    no = nums_found[0]
             if no is not None:
                 while len(finishes) < int(rank):
                     finishes.append(None)
@@ -1037,49 +1077,60 @@ def parse_result_page(page, race_id):
     if finishes and len(finishes) != len(set(finishes)):
         warn(f"{race_id}: 着順馬番重複のため結果を無効扱い")
         finishes = []
+
+    # 払戻: th でも td 先頭でもラベルを取る（地方は td 先頭）
+    payout_labels = ("単勝", "複勝", "枠連", "馬連", "ワイド", "馬単", "3連複", "三連複", "3連単", "三連単")
     for table in tables:
+        classes = " ".join(table.get("class") or [])
+        # 払戻テーブル優先だが、見つからなくても全 tr を見る
         for tr in table.select("tr"):
-            th = tr.select_one("th")
-            if not th:
+            cells = tr.find_all(["td", "th"], recursive=False)
+            if len(cells) < 2:
                 continue
-            label = text_of(th)
-            tds = tr.find_all("td", recursive=False)
-            if len(tds) < 2:
+            label = text_of(cells[0])
+            if not any(k in label for k in payout_labels):
                 continue
-            combo_text = text_of(tds[0])
-            payout_text = text_of(tds[1])
+            # ラベルが単独セルの場合、残りが combo / payout
+            rest = cells[1:]
+            combo_text = text_of(rest[0]) if rest else ""
+            payout_text = text_of(rest[1]) if len(rest) >= 2 else text_of(rest[0])
+            # 複勝・ワイドは同一セルに複数金額
             amounts = [safe_int(x.replace(",", "")) for x in re.findall(r"([\d,]+)\s*円", payout_text)]
             if not amounts:
+                # payout が combo と同じセルに混在している場合
+                amounts = [safe_int(x.replace(",", "")) for x in re.findall(r"([\d,]+)\s*円", combo_text)]
+            if not amounts:
                 continue
-            groups = re.findall(
-                r"(?<!\d)(\d{1,2})(?:\s*[-－ー]\s*(\d{1,2}))?(?:\s*[-－ー]\s*(\d{1,2}))?",
-                combo_text)
-            combos = []
-            for g in groups:
-                nums = [safe_int(x) for x in g if x]
-                if nums and all(1 <= x <= 18 for x in nums):
-                    combos.append(nums)
-            if not combos:
+            # 馬番の並び: "7" / "5 7" / "5 7 7 8 5 8" / "7-5-8"
+            raw_combo = combo_text
+            # 金額部分を除去して番号だけ残す
+            raw_combo = re.sub(r"[\d,]+\s*円", " ", raw_combo)
+            nums = [safe_int(x) for x in re.findall(r"(?<!\d)(\d{1,2})(?!\d)", raw_combo)]
+            nums = [n for n in nums if 1 <= n <= 18]
+            if not nums:
                 continue
             if "単勝" in label:
-                payouts["win"][str(combos[0][0])] = amounts[0]
+                payouts["win"][str(nums[0])] = amounts[0]
             elif "複勝" in label:
-                for c, a in zip(combos, amounts):
-                    payouts["place"][str(c[0])] = a
-            elif "馬連" in label and len(combos[0]) >= 2:
-                payouts["quinella"][combo_key(combos[0][:2])] = amounts[0]
+                # 馬番と金額を順番に対応
+                for n, a in zip(nums, amounts):
+                    payouts["place"][str(n)] = a
+            elif "馬連" in label and len(nums) >= 2:
+                payouts["quinella"][combo_key(nums[:2])] = amounts[0]
             elif "ワイド" in label:
-                for c, a in zip(combos, amounts):
-                    if len(c) >= 2:
-                        payouts["wide"][combo_key(c[:2])] = a
-            elif "3連複" in label or "三連複" in label:
-                if len(combos[0]) >= 3:
-                    payouts["trio"][combo_key(combos[0][:3])] = amounts[0]
-            elif "3連単" in label or "三連単" in label:
-                if len(combos[0]) >= 3:
-                    payouts["trifecta"][combo_key(combos[0][:3], True)] = amounts[0]
-            elif "馬単" in label and len(combos[0]) >= 2:
-                payouts["exacta"][combo_key(combos[0][:2], True)] = amounts[0]
+                # 3組×2頭 = 最大6番号
+                pairs = []
+                for i in range(0, len(nums) - 1, 2):
+                    pairs.append(nums[i:i + 2])
+                for p, a in zip(pairs, amounts):
+                    if len(p) >= 2:
+                        payouts["wide"][combo_key(p[:2])] = a
+            elif ("3連複" in label or "三連複" in label) and len(nums) >= 3:
+                payouts["trio"][combo_key(nums[:3])] = amounts[0]
+            elif ("3連単" in label or "三連単" in label) and len(nums) >= 3:
+                payouts["trifecta"][combo_key(nums[:3], True)] = amounts[0]
+            elif "馬単" in label and len(nums) >= 2:
+                payouts["exacta"][combo_key(nums[:2], True)] = amounts[0]
     return finishes, payouts
 
 
