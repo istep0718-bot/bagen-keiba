@@ -20,7 +20,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_31.0"
+ENGINE_VERSION = "BAGEN_32.0_FORM_AUDIT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -340,69 +340,84 @@ def horse_id_from_row(row):
     return (m.group(1) if m else "", href if href.startswith("http") else "https://db.netkeiba.com"+href)
 
 def parse_horse_form_page(page):
-    """馬成績表をヘッダー列に基づいて解析。列位置を推測して着順と誤認しない。"""
+    """公開馬ページの成績表をヘッダー名で解析。未取得項目は推測で補完しない。"""
     soup = soup_of(page)
     table = None
+    headers = []
     for t in soup.select("table"):
-        heads = [text_of(x) for x in t.select("thead th")]
-        if not heads:
-            first = t.select_one("tr")
-            heads = [text_of(x) for x in first.find_all(["th", "td"], recursive=False)] if first else []
-        joined = " ".join(heads)
-        if any("着順" in h or "確定着順" in h for h in heads) and any(("距離" in h or "開催" in h or "コース" in h) for h in heads):
-            table = t
+        hr = t.select_one("thead tr") or t.select_one("tr")
+        hs = [text_of(x) for x in hr.find_all(["th", "td"], recursive=False)] if hr else []
+        joined = " ".join(hs)
+        if any(re.search(r"着順|確定着順", h) for h in hs) and any(re.search(r"距離|開催|コース", h) for h in hs):
+            table, headers = t, hs
             break
+    empty = {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
+             "source": "公開馬ページ・成績表未検出"}
     if table is None:
-        return {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
-                "source": "公開馬ページ・成績表未検出"}
-
-    header_row = table.select_one("thead tr") or table.select_one("tr")
-    headers = [text_of(x) for x in header_row.find_all(["th", "td"], recursive=False)] if header_row else []
+        return empty
     def col_index(patterns):
         for i, h in enumerate(headers):
-            if any(re.search(p, h) for p in patterns):
-                return i
+            if any(re.search(p, h) for p in patterns): return i
         return None
-    rank_i = col_index([r"確定着順", r"着順"])
-    dist_i = col_index([r"距離", r"コース"])
-    date_i = col_index([r"日付", r"開催日"])
-    if rank_i is None:
-        return {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
-                "source": "着順列を特定できず安全のため未解析"}
-
+    indexes = {
+        "finish": col_index([r"確定着順", r"着順"]),
+        "distance": col_index([r"距離", r"コース"]),
+        "date": col_index([r"日付", r"開催日"]),
+        "margin": col_index([r"着差"]),
+        "corners": col_index([r"通過"]),
+        "jockey": col_index([r"騎手"]),
+        "time": col_index([r"タイム", r"走破時計"]),
+        "course": col_index([r"競馬場", r"開催"]),
+        "surface": col_index([r"コース"]),
+        "going": col_index([r"馬場"]),
+    }
+    if indexes["finish"] is None:
+        empty["source"] = "着順列を特定できず安全のため未解析"
+        return empty
     results = []
     for tr in table.select("tr"):
         cells = tr.find_all("td", recursive=False)
-        if not cells or len(cells) <= rank_i:
-            continue
+        if not cells: continue
         vals = [text_of(c) for c in cells]
-        rank_text = vals[rank_i]
-        # 中止・除外・失格・取消などは順位として数えない。
-        if re.search(r"中止|除外|失格|取消|取止|未出走", rank_text):
-            continue
+        ri = indexes["finish"]
+        if ri >= len(vals): continue
+        rank_text = vals[ri]
+        if re.search(r"中止|除外|失格|取消|取止|未出走", rank_text): continue
         m = re.fullmatch(r"\s*(\d{1,2})\s*", rank_text)
-        if not m:
-            continue
-        rank = int(m.group(1))
-        if not 1 <= rank <= 18:
-            continue
-        dist = None
-        if dist_i is not None and dist_i < len(vals):
-            dm = re.search(r"(\d{3,4})", vals[dist_i])
-            if dm and 800 <= int(dm.group(1)) <= 5000:
-                dist = int(dm.group(1))
-        date_text = vals[date_i] if date_i is not None and date_i < len(vals) else ""
-        results.append({"finish": rank, "distance_m": dist, "date": date_text, "row": " ".join(vals)[:220]})
-        if len(results) >= 5:
-            break
+        if not m: continue
+        finish = int(m.group(1))
+        if not 1 <= finish <= 18: continue
+        def val(key):
+            i = indexes.get(key)
+            return vals[i] if i is not None and i < len(vals) else ""
+        dist_match = re.search(r"(\d{3,4})", val("distance"))
+        distance = int(dist_match.group(1)) if dist_match and 800 <= int(dist_match.group(1)) <= 5000 else None
+        margin_text = val("margin")
+        margin_num = numeric(margin_text)
+        # 勝ち馬の着差は「-」などの場合があるため、数値として明示できる場合だけ採用。
+        corners_text = val("corners")
+        corner_nums = [int(x) for x in re.findall(r"(?<!\d)(\d{1,2})(?!\d)", corners_text)]
+        results.append({
+            "finish": finish, "distance_m": distance, "date": val("date"),
+            "margin_text": margin_text or None, "margin": margin_num,
+            "corners_text": corners_text or None, "last_corner_position": corner_nums[-1] if corner_nums else None,
+            "jockey": val("jockey") or None, "time_text": val("time") or None,
+            "course_text": val("course") or None, "surface_text": val("surface") or None,
+            "going_text": val("going") or None, "row": " ".join(vals)[:220]
+        })
+        if len(results) >= 5: break
     if not results:
-        return {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
-                "source": "着順列は検出したが有効な近走順位を抽出できず"}
+        empty["source"] = "着順列は検出したが有効な近走順位を抽出できず"
+        return empty
+    finishes = [x["finish"] for x in results]
+    current_jockey = None
     return {"available": True, "starts": len(results), "recent_results": results,
-            "wins": sum(1 for x in results if x["finish"] == 1),
-            "win_rate_recent": round(sum(1 for x in results if x["finish"] == 1) / len(results), 4),
-            "avg_finish": round(sum(x["finish"] for x in results) / len(results), 2),
-            "source": "公開馬ページの着順ヘッダー列から抽出。直近最大5走"}
+            "wins": sum(1 for x in finishes if x == 1),
+            "top3": sum(1 for x in finishes if x <= 3),
+            "win_rate_recent": round(sum(1 for x in finishes if x == 1) / len(finishes), 4),
+            "top3_rate_recent": round(sum(1 for x in finishes if x <= 3) / len(finishes), 4),
+            "avg_finish": round(sum(finishes) / len(finishes), 2),
+            "source": "公開馬ページの着順ヘッダー列から抽出。直近最大5走。列が確認できた項目のみ使用"}
 
 def get_horse_form(row):
     global FORM_FETCHED_THIS_RUN
@@ -455,13 +470,21 @@ def parse_runners(soup,surface):
         wd=parse_weight_change(row); rowtext=text_of(row)
         dirt=any(x in rowtext for x in DIRT_SIRES); power=any(x in rowtext for x in POWER_SIRES)
         apprentice=any(x in jockey for x in ["▲","△","☆","◇","★"])
-        topj=any(x in jockey for x in TOP_JOCKEYS)
+        # 騎手名の知名度だけで実績加点しない。過去走表に同騎手の騎乗履歴がある場合だけ後段で評価。
+        topj=False
         positive=any(x in rowtext for x in POSITIVE_WORDS); negative=any(x in rowtext for x in NEGATIVE_WORDS)
+        past_rows=past_form.get("recent_results",[]) if past_form.get("available") else []
+        jockey_rows=[x for x in past_rows if x.get("jockey") and jockey and clean(x.get("jockey")).replace(" ","")==clean(jockey).replace(" ","")]
+        past_form["same_jockey_starts"]=len(jockey_rows)
+        past_form["same_jockey_wins"]=sum(1 for x in jockey_rows if x.get("finish")==1)
+        past_form["same_jockey_top3"]=sum(1 for x in jockey_rows if x.get("finish",99)<=3)
+        past_form["same_jockey_avg_finish"]=round(sum(x["finish"] for x in jockey_rows)/len(jockey_rows),2) if jockey_rows else None
         reasons=[]
-        if topj: reasons.append("登録騎手リストに該当（実績保証ではない）")
         if apprentice: reasons.append("騎手欄に減量記号あり")
-        if surface=="ダート" and dirt: reasons.append("掲載テキストにダート血統候補")
-        if surface=="芝" and power: reasons.append("掲載テキストに芝・持続力型血統候補")
+        # 出馬表行に父・母父が実際に含まれる場合のみ血統候補を検出。通常の行に血統が無ければ未取得扱い。
+        bloodline_available=any(k in rowtext for k in ["父:","母父:","父：","母父："])
+        if bloodline_available and surface=="ダート" and dirt: reasons.append("取得できた血統テキストにダート血統候補")
+        if bloodline_available and surface=="芝" and power: reasons.append("取得できた血統テキストに芝・持続力型血統候補")
         if wd is not None and abs(wd)>=6: reasons.append(f"馬体重増減 {wd:+d}kg")
         if positive: reasons.append("掲載テキストに好材料ワード")
         if negative: reasons.append("掲載テキストに注意ワード")
@@ -469,10 +492,12 @@ def parse_runners(soup,surface):
           "jockey":jockey or "未取得","odds":odds,"popularity":pop,"score":0.0,"rank":None,
           "reasons":reasons,"past_form":past_form,"caution":"簡易評価。勝率は未校正の参考値",
           "is_apprentice":apprentice,"is_top_jockey":topj,"is_inner":frame in (1,2) if frame else False,
-          "is_outer":frame in (7,8) if frame else False,"is_dirt_blood":dirt,"is_power_blood":power,
+          "is_outer":frame in (7,8) if frame else False,"is_dirt_blood":dirt if bloodline_available else False,"is_power_blood":power if bloodline_available else False,
+          "bloodline_status":"出馬表テキストで血統欄を確認" if bloodline_available else "未取得・血統加点なし",
           "is_positive_memo":positive,"is_negative_memo":negative,"w_diff":wd,
           "data_quality":{"odds":odds is not None,"popularity":pop is not None,"jockey":bool(jockey),
-                          "frame":frame is not None,"weight_change":wd is not None,"past_form":bool(past_form.get("available"))}}
+                          "frame":frame is not None,"weight_change":wd is not None,"past_form":bool(past_form.get("available")),
+                          "bloodline":bloodline_available,"jockey_history":bool(past_form.get("same_jockey_starts",0))}}
     result=sorted(runners.values(),key=lambda x:x["horse_no"])
     diagnostic={"table_found":True,"rows_found":len(rows),"valid_rows":valid,"unique_horses":len(result),"duplicate_numbers":sorted(set(duplicates))}
     if duplicates: warn(f"馬番重複を除外: {sorted(set(duplicates))}")
@@ -493,32 +518,84 @@ def parse_runners(soup,surface):
     return result,diagnostic
 
 def score_runners(runners,surface,venue):
+    """市場評価と競走内容を分離。取得できない血統・騎手実績を想像で加点しない。"""
     for h in runners:
-        score=0.0; odds=h["odds"]; pop=h["popularity"]
-        if odds is not None and odds>0: score+=max(0.0,42.0-8.0*math.log(max(1.0,odds)))
-        if pop is not None: score+=max(0.0,16.0-(pop-1)*1.1)
-        if h["is_top_jockey"]: score+=3
-        if h["is_apprentice"]: score+=1.5
-        if surface=="ダート" and h["is_dirt_blood"]: score+=2
-        elif surface=="芝" and h["is_power_blood"]: score+=1.5
-        if venue in ("東京","新潟") and h["is_outer"]: score+=1; h["reasons"].append("外枠の簡易補正（未検証）")
-        elif venue in ("中山","小倉","福島","札幌") and h["is_inner"]: score+=1; h["reasons"].append("内枠の簡易補正（未検証）")
-        wd=h["w_diff"]
-        if wd is not None and 8<=wd<=16: score+=1
-        if h["is_positive_memo"]: score+=1
-        form=h.get("past_form",{})
+        odds=h.get("odds"); pop=h.get("popularity"); form=h.get("past_form",{})
+        market_score=0.0
+        if odds is not None and odds>0: market_score += max(0.0, 18.0-4.0*math.log(max(1.0,float(odds))))
+        if pop is not None: market_score += max(0.0, 5.0-(int(pop)-1)*0.35)
+        form_score=0.0
+        reasons=h.setdefault("reasons",[])
         if form.get("available"):
-            avg=form.get("avg_finish")
-            if avg is not None: score += max(-2.0, min(2.0, (6.0-float(avg))*0.35)); h["reasons"].append(f"取得できた近走{form.get('starts',0)}走の平均着順 {avg}位（参考）")
-        if h["is_negative_memo"]: score-=2; h["reasons"].append("注意ワード検出による簡易減点")
-        if pop==1 and odds is not None and odds<1.8: score-=1; h["reasons"].append("低オッズのため妙味を控えめ評価")
-        h["score"]=round(score,2)
-        if not h["reasons"]: h["reasons"].append("取得できた情報に基づく簡易評価")
-        q=h["data_quality"]; h["score_confidence"]=round(sum(bool(v) for v in q.values())/len(q)*100) if q else 0
-        if odds is None: h["reasons"].append("単勝オッズ未取得")
-        if h["score_confidence"]<60: h["reasons"].append("取得項目が少なく評価の不確実性が高い")
+            rows=form.get("recent_results",[])
+            finishes=[x.get("finish") for x in rows if isinstance(x.get("finish"),int)]
+            if finishes:
+                # 直近ほど重くする。5走が取れなくても取れた実績だけで計算。
+                weights=[1.0/(i+1) for i in range(len(finishes))]
+                weighted_finish=sum(f*w for f,w in zip(finishes,weights))/sum(weights)
+                finish_points=max(-4.0,min(4.0,(6.0-weighted_finish)*0.8))
+                form_score += finish_points
+                reasons.append(f"近走{len(finishes)}走の加重平均着順 {weighted_finish:.1f}位（最大±4点）")
+                top3_rate=sum(1 for f in finishes if f<=3)/len(finishes)
+                form_score += (top3_rate-0.3)*3.0
+                if any(f==1 for f in finishes): reasons.append("近走に1着実績あり")
+            # 距離実績: 同距離の履歴が明確な時だけ評価
+            distances=[x.get("distance_m") for x in rows if x.get("distance_m")]
+            current_distance=h.get("distance_m")
+            if current_distance and distances:
+                same=sum(1 for d in distances if abs(d-current_distance)<=100)
+                if same:
+                    same_rows=[x for x in rows if x.get("distance_m") and abs(x["distance_m"]-current_distance)<=100 and isinstance(x.get("finish"),int)]
+                    if same_rows:
+                        same_avg=sum(x["finish"] for x in same_rows)/len(same_rows)
+                        dist_points=max(-2.0,min(2.0,(5.0-same_avg)*0.45))
+                        form_score+=dist_points
+                        reasons.append(f"今回距離±100mの過去{len(same_rows)}走平均{same_avg:.1f}着（±2点）")
+            # 着差は実際に数値で取れた値だけ使用。文字列の曖昧な表現は使わない。
+            margins=[x.get("margin") for x in rows if isinstance(x.get("margin"),(int,float)) and x.get("margin")>=0]
+            if margins:
+                avg_margin=sum(margins)/len(margins)
+                margin_points=max(-1.5,min(1.5,(1.5-avg_margin)*0.5))
+                form_score+=margin_points
+                reasons.append(f"数値取得できた近走着差平均{avg_margin:.2f}（±1.5点）")
+            same_starts=form.get("same_jockey_starts",0)
+            if same_starts:
+                same_wins=form.get("same_jockey_wins",0); same_top3=form.get("same_jockey_top3",0)
+                combo_points=min(1.5, same_wins*0.75 + max(0,same_top3-same_wins)*0.25)
+                form_score+=combo_points
+                reasons.append(f"今回騎手との過去騎乗{same_starts}走・勝利{same_wins}回・3着内{same_top3}回（最大+1.5点）")
+        if h.get("is_apprentice"):
+            # 減量は有利と断定せず、微小な補助情報として扱う。
+            form_score += 0.5
+            reasons.append("減量騎手記号あり（参考+0.5点）")
+        if surface=="ダート" and h.get("is_dirt_blood"):
+            form_score+=1.0; reasons.append("血統欄でダート向け候補を検出（参考+1点）")
+        elif surface=="芝" and h.get("is_power_blood"):
+            form_score+=0.75; reasons.append("血統欄で芝向け候補を検出（参考+0.75点）")
+        wd=h.get("w_diff")
+        if wd is not None and 8<=wd<=16:
+            form_score+=0.5; reasons.append("馬体重+8〜+16kg（単独では好材料と断定しない、参考+0.5点）")
+        if h.get("is_positive_memo"):
+            form_score+=0.5; reasons.append("好材料ワード検出（参考+0.5点）")
+        if h.get("is_negative_memo"):
+            form_score-=1.0; reasons.append("注意ワード検出（参考-1点）")
+        # コース枠補正は未検証の一般化を避け、加点しない。
+        h["market_score"]=round(market_score,2)
+        h["form_score"]=round(form_score,2)
+        h["odds_free_score"]=round(form_score,2)
+        h["score"]=round(market_score+form_score,2)
+        if not reasons: reasons.append("取得できた情報に基づく簡易評価。騎手実績・血統は未取得なら加点なし")
+        q=h.get("data_quality",{})
+        h["score_confidence"]=round(sum(bool(v) for v in q.values())/len(q)*100) if q else 0
+        if odds is None: reasons.append("単勝オッズ未取得")
+        if not form.get("available"): reasons.append("過去走未取得のため競走内容の評価が限定的")
+        if not h.get("data_quality",{}).get("bloodline"): reasons.append("血統未取得・血統評価なし")
+        if h["score_confidence"]<60: reasons.append("取得項目が少なく評価の不確実性が高い")
     ranked=sorted(runners,key=lambda x:(-x["score"],x["horse_no"]))
     for rank,h in enumerate(ranked,1): h["rank"]=rank
+    # 市場オッズ・人気を除いた独立順位も併記し、人気順との混同を可視化。
+    odds_free=sorted(runners,key=lambda x:(-x.get("odds_free_score",0),x["horse_no"]))
+    for rank,h in enumerate(odds_free,1): h["odds_free_rank"]=rank
     attach_probability_and_value(ranked)
     return ranked
 
@@ -710,6 +787,7 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
     diag["past_form_count"]=sum(1 for h in runners if h.get("past_form",{}).get("available"))
     diag["past_form_missing_count"]=len(runners)-diag["past_form_count"]
     diag["past_form_status"]="OK" if runners and diag["past_form_missing_count"]==0 else ("一部取得" if diag["past_form_count"] else "未取得")
+    for h in runners: h["distance_m"]=distance
     ranked=score_runners(runners,surface,venue)
     outsiders,longshots,candidate_mode=select_outsiders(ranked)
     count=len(runners); verified=count>=5 and diag["table_found"] and len({h["horse_no"] for h in runners})==count and not diag["duplicate_numbers"] and diag.get("valid_rows", 0)==count
@@ -733,7 +811,7 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
       "settlement_complete":False,"settled_lines":[],"settlement_status":"結果精算待ち",
       "is_recommended":recommended,"is_tomorrow":is_tomorrow,
       "prediction_status":"未検証の簡易評価" if verified else "出走頭数未検証・予想注意",
-      "win_probability_note":"推定勝率はスコアを確率化した未校正の参考値。実績による校正は未実施。期待回収率は単勝オッズが取得できた場合のみ参考計算。",
+      "win_probability_note":"推定勝率は市場スコアと取得できた近走分析を合算して確率化した未校正の参考値。実績による校正は未実施。odds_free_rankはオッズ・人気を除いた参考順位。",
       "past_form_status":"過去走は馬ページから最大5走を解析。サイト構造によって取得不能な場合があり、未取得を0評価として扱わない。"}
 
 def fetch_races_for_date(date_str,is_tomorrow):
@@ -844,7 +922,7 @@ def main():
         "past_form_available_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("past_form",{}).get("available")),
         "past_form_missing_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if not h.get("past_form",{}).get("available")),
         "race_diagnostics":[{"id":r.get("id"),"name":r.get("name"),"kind":r.get("kind"),"course":r.get("course"),"runner_count":r.get("runner_count"),"runner_count_verified":r.get("runner_count_verified"),"odds_count":r.get("runner_diagnostic",{}).get("odds_count",0),"odds_missing_count":r.get("runner_diagnostic",{}).get("odds_missing_count",0),"odds_status":r.get("runner_diagnostic",{}).get("odds_status","未取得"),"odds_page_status":r.get("runner_diagnostic",{}).get("odds_page_status","未試行"),"popularity_count":r.get("runner_diagnostic",{}).get("popularity_count",0),"past_form_count":r.get("runner_diagnostic",{}).get("past_form_count",0),"past_form_missing_count":r.get("runner_diagnostic",{}).get("past_form_missing_count",0)} for r in today_races+tomorrow_races],
-        "probability_method":"score_softmax_uncalibrated","expected_return_method":"estimated_win_probability_x_actual_win_odds_only"},
+        "probability_method":"market_plus_form_softmax_uncalibrated","expected_return_method":"estimated_win_probability_x_actual_win_odds_only","scoring_note":"market_scoreはオッズ・人気、form_scoreは取得済み近走・同騎手履歴など。血統欄が確認できない場合は血統加点なし。odds_free_rankは市場情報なしの比較順位。"},
       "paper_betting":{"mode":"paper_only","real_betting_enabled":False,"stats":stats,
         "history":sorted(snapshots.values(),key=lambda x:(x.get("date",""),x.get("race_id","")),reverse=True)[:100]}}
     save_json(OUT,data)
@@ -854,3 +932,4 @@ def main():
     print("=== FINISHED ===")
 
 if __name__=="__main__": main()
+
