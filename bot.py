@@ -20,7 +20,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_30.1"
+ENGINE_VERSION = "BAGEN_31.0"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -236,27 +236,35 @@ def parse_jockey(row):
     return text_of(get_cell(row,["td.Jockey a","td.Jockey","td[class*='Jockey']",".Jockey"]))
 
 def parse_odds_popularity(row):
+    """出馬表行から単勝オッズ・人気を厳密に抽出。人気欄の数値をオッズと誤認しない。"""
     odds = pop = None
-    # Explicit attributes and known odds cells first. Do not scan the whole row's arbitrary numeric text.
+    odds_selectors = [
+        "[data-odds-win]", "[data-odds]", "td.Odds span.Odds", "td.Odds span",
+        "td.Odds", "td[class~='Odds']", "td[class*='Odds']",
+        "td.Popular:not(.Popular_Ninki) span.Odds", "td.Popular:not(.Popular_Ninki)"
+    ]
     odds_nodes = []
-    for sel in ["[data-odds-win]", "[data-odds]", "td.Odds span", "td.Odds", "td[class~='Odds']", "td[class*='Odds']"]:
+    for sel in odds_selectors:
         for node in row.select(sel):
             if node not in odds_nodes:
                 odds_nodes.append(node)
     for node in odds_nodes:
+        classes = " ".join(node.get("class", []))
+        if "Popular_Ninki" in classes or "Ninki" in classes:
+            continue
         raw = node.get("data-odds-win") or node.get("data-odds") or text_of(node)
         raw = clean(raw).replace(",", ".")
-        if not raw or re.search(r"---|取消|除外|発売前|未発売", raw):
+        if not raw or re.search(r"---|取消|除外|発売前|未発売|未確定", raw):
             continue
-        m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*", raw)
+        m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(?:倍)?\s*", raw)
         if m:
             val = float(m.group(1))
             if 0 < val <= 9999:
                 odds = val
                 break
-    for sel in ["td.Popular_Ninki", "td.Popular", "td[class*='Ninki']", "td[class*='Popular']"]:
+    for sel in ["td.Popular_Ninki", "td.Ninki", "td[class*='Ninki']", "[data-popularity]", "td.Popular", "td[class*='Popular']"]:
         for node in row.select(sel):
-            raw = text_of(node)
+            raw = node.get("data-popularity") or text_of(node)
             m = re.fullmatch(r"\s*(\d{1,2})\s*(?:人気)?\s*", raw)
             if m:
                 val = int(m.group(1))
@@ -266,6 +274,58 @@ def parse_odds_popularity(row):
         if pop is not None:
             break
     return odds, pop
+
+def parse_odds_page(page):
+    """オッズ専用ページから馬番→単勝オッズを抽出。JS未描画の---.-は未取得のままにする。"""
+    soup = soup_of(page)
+    found = {}
+    for row in soup.select("tr"):
+        no = parse_horse_no(row)
+        if no is None:
+            # odds-1_01 等のIDから馬番を拾う
+            node = row.select_one("[id*='odds-1_'], [id*='odds-1-']")
+            if node:
+                m = re.search(r"odds-1[_-](\d{1,2})", node.get("id", ""))
+                if m: no = int(m.group(1))
+        if no is None:
+            continue
+        value = None
+        for node in row.select("[id*='odds-1_'], [id*='odds-1-'], .Odds, [class*='Odds'], [data-odds-win], [data-odds]"):
+            raw = node.get("data-odds-win") or node.get("data-odds") or text_of(node)
+            m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(?:倍)?\s*", clean(raw).replace(",", "."))
+            if m:
+                val = float(m.group(1))
+                if 0 < val <= 9999: break
+                val = None
+        if value is None: value = val
+        if value is not None: found[no] = value
+    # JS描画されないHTMLは空辞書で返し、推測値を生成しない。
+    return found
+
+def enrich_odds_from_odds_page(runners, rid, source):
+    missing = [h for h in runners if h.get("odds") is None]
+    if not missing:
+        return {"attempted": False, "status": "出馬表から取得済み", "fetched": 0}
+    url = f"{source['base']}/odds/index.html?race_id={rid}&type=b1"
+    page = get_html(url)
+    if not page:
+        return {"attempted": True, "status": "オッズ専用ページ取得失敗", "fetched": 0}
+    odds_map = parse_odds_page(page)
+    updated = 0
+    for h in missing:
+        val = odds_map.get(int(h["horse_no"]))
+        if val is not None and val > 0:
+            h["odds"] = val
+            h.setdefault("data_quality", {})["odds"] = True
+            h["odds_source"] = "オッズ専用ページ"
+            updated += 1
+    if updated:
+        status = "オッズ専用ページから一部/全部取得"
+    elif re.search(r"---\.?-?", page) or "Odds" in page or "odds-1_" in page:
+        status = "ページ応答あり・値未描画の可能性（JavaScript/発売前）"
+    else:
+        status = "オッズ欄を解析できず"
+    return {"attempted": True, "status": status, "fetched": updated}
 
 def parse_weight_change(row):
     n=get_cell(row,["td.Horse_Weight","td.Weight","td[class*='HorseWeight']","td[class*='Weight']"])
@@ -422,6 +482,14 @@ def parse_runners(soup,surface):
     diagnostic["popularity_count"]=len(pops)
     diagnostic["popularity_duplicates"]=sorted({p for p in pops if pops.count(p)>1})
     diagnostic["popularity_status"]="OK" if len(pops)==len(set(pops)) else ("重複あり" if pops else "未取得")
+    odds_values=[x.get("odds") for x in result if x.get("odds") is not None]
+    diagnostic["odds_count"]=len(odds_values)
+    diagnostic["odds_missing_count"]=len(result)-len(odds_values)
+    diagnostic["odds_status"]="OK" if result and len(odds_values)==len(result) else ("一部取得" if odds_values else "未取得")
+    diagnostic["jockey_count"]=sum(1 for x in result if x.get("jockey") and x.get("jockey")!="未取得")
+    diagnostic["past_form_count"]=sum(1 for x in result if x.get("past_form",{}).get("available"))
+    diagnostic["past_form_missing_count"]=len(result)-diagnostic["past_form_count"]
+    diagnostic["past_form_status"]="OK" if result and diagnostic["past_form_missing_count"]==0 else ("一部取得" if diagnostic["past_form_count"] else "未取得")
     return result,diagnostic
 
 def score_runners(runners,surface,venue):
@@ -628,7 +696,21 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
     if not name:
         title=first_text(soup,["title"]); name=title.split("|")[0].strip() if title else ""
     if not name: name=f"{venue}{rno}R" if venue and rno else "レース名未取得"
-    runners,diag=parse_runners(soup,surface); ranked=score_runners(runners,surface,venue)
+    runners,diag=parse_runners(soup,surface)
+    odds_page_diag=enrich_odds_from_odds_page(runners,rid,source)
+    # odds pageで値が補完された後に診断を再計算
+    odds_count=sum(1 for h in runners if h.get("odds") is not None)
+    diag["odds_count"]=odds_count
+    diag["odds_missing_count"]=len(runners)-odds_count
+    diag["odds_status"]="OK" if runners and odds_count==len(runners) else ("一部取得" if odds_count else "未取得")
+    diag["odds_page_attempted"]=odds_page_diag["attempted"]
+    diag["odds_page_status"]=odds_page_diag["status"]
+    diag["odds_page_fetched_count"]=odds_page_diag["fetched"]
+    diag["popularity_count"]=sum(1 for h in runners if h.get("popularity") is not None)
+    diag["past_form_count"]=sum(1 for h in runners if h.get("past_form",{}).get("available"))
+    diag["past_form_missing_count"]=len(runners)-diag["past_form_count"]
+    diag["past_form_status"]="OK" if runners and diag["past_form_missing_count"]==0 else ("一部取得" if diag["past_form_count"] else "未取得")
+    ranked=score_runners(runners,surface,venue)
     outsiders,longshots,candidate_mode=select_outsiders(ranked)
     count=len(runners); verified=count>=5 and diag["table_found"] and len({h["horse_no"] for h in runners})==count and not diag["duplicate_numbers"] and diag.get("valid_rows", 0)==count
     if not verified: warn(f"{rid}: 出走頭数検証未通過 ({count}頭)")
@@ -755,7 +837,14 @@ def main():
         "unverified_races":len(today_races)-verified,"settled_races":settled,
         "note":"出走頭数未検証のレースは買い目を作成しません。実際の人気とAI予想順位は別項目です。"},
       "prediction_notice":"簡易スコアであり、校正済み勝率・的中・利益を保証しません。オッズ未取得時の穴・大穴候補は参考候補であり配当妙味未確認です。",
-      "data_quality_summary":{"new_horse_form_fetches":FORM_FETCHED_THIS_RUN,"horse_form_cache_entries":len(HORSE_FORM_CACHE),"odds_available_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("odds") is not None),"probability_method":"score_softmax_uncalibrated","expected_return_method":"estimated_win_probability_x_actual_win_odds_only"},
+      "data_quality_summary":{"new_horse_form_fetches":FORM_FETCHED_THIS_RUN,"horse_form_cache_entries":len(HORSE_FORM_CACHE),
+        "odds_available_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("odds") is not None),
+        "odds_missing_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("odds") is None),
+        "popularity_available_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("popularity") is not None),
+        "past_form_available_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("past_form",{}).get("available")),
+        "past_form_missing_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if not h.get("past_form",{}).get("available")),
+        "race_diagnostics":[{"id":r.get("id"),"name":r.get("name"),"kind":r.get("kind"),"course":r.get("course"),"runner_count":r.get("runner_count"),"runner_count_verified":r.get("runner_count_verified"),"odds_count":r.get("runner_diagnostic",{}).get("odds_count",0),"odds_missing_count":r.get("runner_diagnostic",{}).get("odds_missing_count",0),"odds_status":r.get("runner_diagnostic",{}).get("odds_status","未取得"),"odds_page_status":r.get("runner_diagnostic",{}).get("odds_page_status","未試行"),"popularity_count":r.get("runner_diagnostic",{}).get("popularity_count",0),"past_form_count":r.get("runner_diagnostic",{}).get("past_form_count",0),"past_form_missing_count":r.get("runner_diagnostic",{}).get("past_form_missing_count",0)} for r in today_races+tomorrow_races],
+        "probability_method":"score_softmax_uncalibrated","expected_return_method":"estimated_win_probability_x_actual_win_odds_only"},
       "paper_betting":{"mode":"paper_only","real_betting_enabled":False,"stats":stats,
         "history":sorted(snapshots.values(),key=lambda x:(x.get("date",""),x.get("race_id","")),reverse=True)[:100]}}
     save_json(OUT,data)
