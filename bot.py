@@ -20,7 +20,10 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_29.0"
+ENGINE_VERSION = "BAGEN_30.0"
+MAX_NEW_FORM_FETCHES = 24
+FORM_FETCHED_THIS_RUN = 0
+HORSE_FORM_CACHE = {}
 TIMEOUT = (10, 25)
 DELAY = 0.35
 MAX_WARNINGS = 150
@@ -234,11 +237,12 @@ def parse_jockey(row):
 
 def parse_odds_popularity(row):
     odds=pop=None
-    for sel in ["td.Odds span","td.Odds","td[class*='Odds']",".Odds"]:
+    for sel in ["td.Odds span", "td.Odds", "td[class*='Odds']", ".Odds", "[class*='Odds']", "[data-odds]", "[data-odds-win]"]:
         for n in row.select(sel):
             t=text_of(n)
             if not t or "---" in t or "取消" in t: continue
-            m=re.search(r"(?<!\d)(\d+(?:\.\d+)?)(?!\d)",t)
+            raw=n.get("data-odds") or n.get("data-odds-win") or t
+            m=re.search(r"(?<!\d)(\d+(?:\.\d+)?)(?!\d)",clean(raw).replace(",","."))
             if m and 0<float(m.group(1))<=9999: odds=float(m.group(1)); break
         if odds is not None: break
     for sel in ["td.Popular_Ninki","td.Popular","td[class*='Ninki']","td[class*='Popular']"]:
@@ -253,6 +257,84 @@ def parse_weight_change(row):
     m=re.search(r"\d{3}\s*\(([+-]?\d+)\)",text_of(n))
     return int(m.group(1)) if m else None
 
+def horse_id_from_row(row):
+    a=row.select_one("a[href*='/horse/']")
+    if not a: return "", ""
+    href=a.get("href","")
+    m=re.search(r"/horse/(\d+)",href)
+    return (m.group(1) if m else "", href if href.startswith("http") else "https://db.netkeiba.com"+href)
+
+def parse_horse_form_page(page):
+    soup=soup_of(page); table=None
+    for sel in ["table.db_h_race_results", "table.race_table_01", "table"]:
+        for t in soup.select(sel):
+            headers=" ".join(text_of(x) for x in t.select("th"))
+            if ("着順" in headers or "確定着順" in headers) and ("距離" in headers or "開催" in headers):
+                table=t; break
+        if table: break
+    if not table: return {"available":False,"starts":0,"recent_results":[],"win_rate_recent":None,"source":"公開馬ページ・成績表未検出"}
+    headers=[text_of(x) for x in table.select("tr th")]
+    results=[]
+    for tr in table.select("tr"):
+        cells=tr.find_all(["td","th"],recursive=False)
+        if not cells or cells[0].name=="th": continue
+        vals=[text_of(c) for c in cells]
+        if len(vals)<4: continue
+        rowtext=" ".join(vals)
+        # 近走らしい行のみ。未来の出走表や空行は除外。
+        rank=None
+        for val in vals[:5]:
+            n=numeric(val)
+            if n is not None and 1<=n<=18 and float(n).is_integer(): rank=int(n); break
+        if rank is None: continue
+        dist=None
+        for val in vals:
+            m=re.search(r"(?:芝|ダ|障)?\s*(\d{3,4})",val)
+            if m and 800<=int(m.group(1))<=5000: dist=int(m.group(1)); break
+        results.append({"finish":rank,"distance_m":dist,"row":rowtext[:220]})
+        if len(results)>=5: break
+    if not results: return {"available":False,"starts":0,"recent_results":[],"win_rate_recent":None,"source":"公開馬ページ・近走解析不可"}
+    return {"available":True,"starts":len(results),"recent_results":results,
+            "wins":sum(1 for x in results if x["finish"]==1),
+            "win_rate_recent":round(sum(1 for x in results if x["finish"]==1)/len(results),4),
+            "avg_finish":round(sum(x["finish"] for x in results)/len(results),2),
+            "source":"公開馬ページから抽出。列構造の自動解析のため要検証"}
+
+def get_horse_form(row):
+    global FORM_FETCHED_THIS_RUN
+    hid,url=horse_id_from_row(row)
+    if not hid: return {"available":False,"starts":0,"recent_results":[],"source":"馬ページURL未取得"}
+    cached=HORSE_FORM_CACHE.get(hid)
+    if isinstance(cached,dict) and cached.get("checked_at"):
+        try:
+            checked=datetime.fromisoformat(cached["checked_at"])
+            if NOW-checked < timedelta(days=14): return cached.get("form",{})
+        except Exception: pass
+    if FORM_FETCHED_THIS_RUN>=MAX_NEW_FORM_FETCHES:
+        return {"available":False,"starts":0,"recent_results":[],"source":"無料実行時間保護のため今回の取得上限"}
+    FORM_FETCHED_THIS_RUN+=1
+    page=get_html(url)
+    form=parse_horse_form_page(page) if page else {"available":False,"starts":0,"recent_results":[],"source":"馬ページ取得失敗"}
+    HORSE_FORM_CACHE[hid]={"checked_at":NOW.isoformat(),"form":form}
+    return form
+
+def attach_probability_and_value(ranked):
+    if not ranked: return
+    # softmax風の参考確率。過去実績で校正された勝率ではない。
+    vals=[float(h.get("score",0)) for h in ranked]
+    mx=max(vals); weights=[math.exp(max(-30.0,min(0.0,(v-mx)/8.0))) for v in vals]
+    total=sum(weights) or 1.0
+    for h,w in zip(ranked,weights):
+        prob=w/total
+        h["estimated_win_probability_pct"]=round(prob*100,2)
+        odds=h.get("odds")
+        h["estimated_win_return_pct"] = round(prob*float(odds)*100,1) if odds is not None and odds>0 else None
+        h["expected_value_status"] = "参考計算・未校正" if odds is not None and odds>0 else "オッズ未取得のため算出不可"
+        form=h.get("past_form",{})
+        if form.get("available"):
+            h["past_form_win_rate_recent_pct"]=round(form.get("win_rate_recent",0)*100,1)
+        else: h["past_form_win_rate_recent_pct"]=None
+
 def parse_runners(soup,surface):
     table,rows=choose_shutuba_table(soup)
     if table is None:
@@ -265,6 +347,7 @@ def parse_runners(soup,surface):
         valid+=1
         if no in runners: duplicates.append(no); continue
         frame=parse_frame_no(row); jockey=parse_jockey(row); odds,pop=parse_odds_popularity(row)
+        past_form=get_horse_form(row)
         wd=parse_weight_change(row); rowtext=text_of(row)
         dirt=any(x in rowtext for x in DIRT_SIRES); power=any(x in rowtext for x in POWER_SIRES)
         apprentice=any(x in jockey for x in ["▲","△","☆","◇","★"])
@@ -280,12 +363,12 @@ def parse_runners(soup,surface):
         if negative: reasons.append("掲載テキストに注意ワード")
         runners[no]={"horse_no":no,"number":no,"frame_no":frame,"horse":name,"name":name,
           "jockey":jockey or "未取得","odds":odds,"popularity":pop,"score":0.0,"rank":None,
-          "reasons":reasons,"caution":"簡易評価。過去走・調教・展開の検証は限定的",
+          "reasons":reasons,"past_form":past_form,"caution":"簡易評価。勝率は未校正の参考値",
           "is_apprentice":apprentice,"is_top_jockey":topj,"is_inner":frame in (1,2) if frame else False,
           "is_outer":frame in (7,8) if frame else False,"is_dirt_blood":dirt,"is_power_blood":power,
           "is_positive_memo":positive,"is_negative_memo":negative,"w_diff":wd,
           "data_quality":{"odds":odds is not None,"popularity":pop is not None,"jockey":bool(jockey),
-                          "frame":frame is not None,"weight_change":wd is not None}}
+                          "frame":frame is not None,"weight_change":wd is not None,"past_form":bool(past_form.get("available"))}}
     result=sorted(runners.values(),key=lambda x:x["horse_no"])
     diagnostic={"table_found":True,"rows_found":len(rows),"valid_rows":valid,"unique_horses":len(result),"duplicate_numbers":sorted(set(duplicates))}
     if duplicates: warn(f"馬番重複を除外: {sorted(set(duplicates))}")
@@ -311,6 +394,10 @@ def score_runners(runners,surface,venue):
         wd=h["w_diff"]
         if wd is not None and 8<=wd<=16: score+=1
         if h["is_positive_memo"]: score+=1
+        form=h.get("past_form",{})
+        if form.get("available"):
+            avg=form.get("avg_finish")
+            if avg is not None: score += max(-2.0, min(2.0, (6.0-float(avg))*0.35)); h["reasons"].append(f"取得できた近走{form.get('starts',0)}走の平均着順 {avg}位（参考）")
         if h["is_negative_memo"]: score-=2; h["reasons"].append("注意ワード検出による簡易減点")
         if pop==1 and odds is not None and odds<1.8: score-=1; h["reasons"].append("低オッズのため妙味を控えめ評価")
         h["score"]=round(score,2)
@@ -320,6 +407,7 @@ def score_runners(runners,surface,venue):
         if h["score_confidence"]<60: h["reasons"].append("取得項目が少なく評価の不確実性が高い")
     ranked=sorted(runners,key=lambda x:(-x["score"],x["horse_no"]))
     for rank,h in enumerate(ranked,1): h["rank"]=rank
+    attach_probability_and_value(ranked)
     return ranked
 
 def select_outsiders(ranked):
@@ -332,11 +420,13 @@ def select_outsiders(ranked):
         for h in longshots: h["longshot_reason"]="単勝30倍以上の実オッズ条件。好走保証ではない。"
         return outsiders[:5],longshots[:5],("odds_based" if odds_known else "unavailable")
     # オッズなしの場合、スコアだけで市場妙味を判断せず、順位帯と補助材料で参考候補を作る。
-    eligible=[h for h in ranked if h["rank"]>=4 and (h["is_top_jockey"] or h["is_dirt_blood"] or h["is_power_blood"] or h["is_positive_memo"] or h.get("w_diff") is not None)]
+    eligible=[h for h in ranked if h["rank"]>=4]
+    eligible.sort(key=lambda h:(-sum([bool(h.get("past_form",{}).get("available")),h.get("is_top_jockey",False),h.get("is_dirt_blood",False),h.get("is_power_blood",False),h.get("is_positive_memo",False),h.get("w_diff") is not None]), h["rank"]))
     for h in eligible:
         h["outsider_reason"]="オッズ未取得の参考穴候補。市場人気・配当妙味は未確認。根拠: "+"、".join(h["reasons"][:3])
     outsiders=eligible[:5]
-    long_eligible=[h for h in ranked if h["rank"]>=max(6,math.ceil(len(ranked)*0.45)) and (h["is_top_jockey"] or h["is_dirt_blood"] or h["is_power_blood"] or h["is_positive_memo"] or (h.get("w_diff") is not None and abs(h["w_diff"])>=6))]
+    long_eligible=[h for h in ranked if h["rank"]>=max(6,math.ceil(len(ranked)*0.45))]
+    long_eligible.sort(key=lambda h:(-sum([bool(h.get("past_form",{}).get("available")),h.get("is_top_jockey",False),h.get("is_dirt_blood",False),h.get("is_power_blood",False),h.get("is_positive_memo",False),h.get("w_diff") is not None and abs(h["w_diff"])>=6]), h["rank"]))
     for h in long_eligible:
         h["longshot_reason"]="オッズ未取得の参考大穴候補。実際の人気・単勝30倍以上は確認できていない。根拠: "+"、".join(h["reasons"][:3])
     return outsiders[:5],long_eligible[:5],"heuristic_no_odds"
@@ -517,7 +607,8 @@ def parse_race(page,rid,source,date_iso,is_tomorrow):
       "settlement_complete":False,"settled_lines":[],"settlement_status":"結果精算待ち",
       "is_recommended":recommended,"is_tomorrow":is_tomorrow,
       "prediction_status":"未検証の簡易評価" if verified else "出走頭数未検証・予想注意",
-      "probability_note":"順位・スコアは校正済み勝率ではありません。オッズ未取得時は配当妙味を評価できません。"}
+      "win_probability_note":"推定勝率はスコアを確率化した未校正の参考値。実績による校正は未実施。期待回収率は単勝オッズが取得できた場合のみ参考計算。",
+      "past_form_status":"過去走は馬ページから最大5走を解析。サイト構造によって取得不能な場合があり、未取得を0評価として扱わない。"}
 
 def fetch_races_for_date(date_str,is_tomorrow):
     all_races=[]; date_iso=(NOW+timedelta(days=1)).strftime("%Y-%m-%d") if is_tomorrow else NOW.strftime("%Y-%m-%d")
@@ -596,6 +687,8 @@ def calculate_stats(snapshots):
 def main():
     print(f"=== {ENGINE_VERSION} START ==="); print(f"[INFO] JST now: {NOW.isoformat()}")
     history=load_history(); snapshots=history["snapshots"]
+    global HORSE_FORM_CACHE
+    HORSE_FORM_CACHE=history.get("horse_form_cache",{}) if isinstance(history.get("horse_form_cache",{}),dict) else {}
     today_races=fetch_races_for_date(TODAY,False)
     tomorrow_races=fetch_races_for_date(TOMORROW,True)
     for race in today_races: update_snapshot(snapshots,race)
@@ -605,7 +698,7 @@ def main():
             if datetime.strptime(item.get("date",""),"%Y-%m-%d").date()<cutoff: del snapshots[rid]
         except (ValueError,TypeError): pass
     stats=calculate_stats(snapshots)
-    history.update({"schema_version":29,"updated_at":NOW.isoformat(),"stats":stats,"snapshots":snapshots})
+    history.update({"schema_version":30,"updated_at":NOW.isoformat(),"stats":stats,"snapshots":snapshots,"horse_form_cache":HORSE_FORM_CACHE})
     save_json(HISTORY,history)
     verified=sum(1 for r in today_races if r.get("runner_count_verified"))
     settled=sum(1 for r in today_races if r.get("settlement_complete"))
@@ -618,6 +711,7 @@ def main():
         "unverified_races":len(today_races)-verified,"settled_races":settled,
         "note":"出走頭数未検証のレースは買い目を作成しません。実際の人気とAI予想順位は別項目です。"},
       "prediction_notice":"簡易スコアであり、校正済み勝率・的中・利益を保証しません。オッズ未取得時の穴・大穴候補は参考候補であり配当妙味未確認です。",
+      "data_quality_summary":{"new_horse_form_fetches":FORM_FETCHED_THIS_RUN,"horse_form_cache_entries":len(HORSE_FORM_CACHE),"odds_available_runners":sum(1 for r in today_races+tomorrow_races for h in r.get("horses",[]) if h.get("odds") is not None),"probability_method":"score_softmax_uncalibrated","expected_return_method":"estimated_win_probability_x_actual_win_odds_only"},
       "paper_betting":{"mode":"paper_only","real_betting_enabled":False,"stats":stats,
         "history":sorted(snapshots.values(),key=lambda x:(x.get("date",""),x.get("race_id","")),reverse=True)[:100]}}
     save_json(OUT,data)
