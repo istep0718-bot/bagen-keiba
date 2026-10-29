@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v33.0_STRICT
+BAGEN KEIBA v34.0_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache を維持する。
+
+改善点 (v34):
+- 馬ページから上がり・人気・斤量・頭数・日付(ISO)を取得し、間隔/脚質/馬場・コース別成績/人気乖離を集計
+- 脚質分類と展開（単騎逃げ・ペース）評価、斤量増減、父名での血統照合を追加（上限付き・理由文つき）
+- 本命の推定EVと展開の明確さを race_confidence / 超おすすめ条件に反映
+- 未確定レースのオッズ推移スナップショットを蓄積
 
 改善点 (v33):
 - レースIDの開催日判定を中央・地方で統一的に検証
@@ -27,7 +33,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_33.1_PATTERN"
+ENGINE_VERSION = "BAGEN_34.0_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -63,10 +69,14 @@ NAR_CODES = {
     "50": "園田", "51": "姫路", "52": "園田", "53": "園田", "54": "姫路",
     "55": "高知", "56": "佐賀",
 }
+# v34: 種牡馬リストを実在確認できる範囲で拡充（ダート系/芝パワー系）
 DIRT_SIRES = ["ヘニーヒューズ", "シニスターミニスター", "パイロ", "マジェスティックウォリアー",
-              "ホッコータルマエ", "アジアエクスプレス", "スマートファルコン", "ゴールドアリュール", "コパノリッキー"]
+              "ホッコータルマエ", "アジアエクスプレス", "スマートファルコン", "ゴールドアリュール", "コパノリッキー",
+              "サウスヴィグラス", "クロフネ", "キングカメハメハ", "ルヴァンスレーヴ",
+              "エスポワールシチー", "ダノンレジェンド", "モーニン"]
 POWER_SIRES = ["ロードカナロア", "エピファネイア", "キズナ", "オルフェーヴル", "モーリス",
-               "ドゥラメンテ", "ハーツクライ", "ルーラーシップ", "ジャスタウェイ", "サトノダイヤモンド"]
+               "ドゥラメンテ", "ハーツクライ", "ルーラーシップ", "ジャスタウェイ", "サトノダイヤモンド",
+               "キングカメハメハ", "ディープインパクト", "ゴールドシップ", "キタサンブラック"]
 TOP_JOCKEYS = ["ルメール", "川田", "武豊", "戸崎", "横山武", "坂井", "松山", "デムーロ",
                "岩田望", "浜中", "菅原明", "横山和", "吉村智", "笹川翼", "森泰斗", "矢野貴"]
 POSITIVE_WORDS = ["好気配", "一変", "立て直し", "上向き", "絶好", "シャープ"]
@@ -455,6 +465,40 @@ def enrich_odds_from_odds_page(runners, rid, source):
     return {"attempted": True, "status": status, "fetched": updated}
 
 
+def parse_carried_weight(row):
+    """v34: 出馬表行から斤量(kg)を取得。馬体重(増減)形式のセルは誤認しないよう除外する。
+    地方出馬表では斤量セルに専用クラスが無い（Weightクラスは馬体重側）ため、
+    騎手セルの直前セルからも探す。"""
+
+    def as_weight(text):
+        t = clean(text)
+        if "(" in t or "（" in t:
+            return None
+        m = re.fullmatch(r"(\d{2}(?:\.\d)?)\s*(?:kg)?", t)
+        if not m:
+            return None
+        v = float(m.group(1))
+        return v if 40.0 <= v <= 70.0 else None
+
+    n = get_cell(row, ["td[class*='Kinryo']", "td[class*='JockeyWeight']"])
+    if n is not None:
+        v = as_weight(text_of(n))
+        if v is not None:
+            return v
+    cells = row.find_all("td", recursive=False)
+    jockey_cell = get_cell(row, ["td.Jockey", "td[class*='Jockey']"])
+    try:
+        idx = cells.index(jockey_cell)
+    except (ValueError, TypeError):
+        idx = -1
+    if idx > 0:
+        for c in reversed(cells[max(0, idx - 2):idx]):
+            v = as_weight(text_of(c))
+            if v is not None:
+                return v
+    return None
+
+
 def parse_weight_change(row):
     n = get_cell(row, ["td.Horse_Weight", "td.Weight", "td[class*='HorseWeight']",
                        "td[class*='Weight']"])
@@ -472,6 +516,30 @@ def horse_id_from_row(row):
             href if href.startswith("http") else "https://db.netkeiba.com" + href)
 
 
+def parse_date_to_iso(text):
+    """v34: '2026.10.25' '2026/10/25' '2026年10月25日' 等を YYYY-MM-DD に変換。不能なら None。"""
+    t = clean(text)
+    m = re.search(r"(\d{4})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})", t)
+    if not m:
+        m = re.search(r"(\d{4})(\d{2})(\d{2})", t)
+    if not m:
+        return None
+    try:
+        return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def is_heavy_going_text(text):
+    """v34: 馬場テキストが重・不良相当か判定する（稍重は含めない）。"""
+    t = clean(text)
+    if not t:
+        return False
+    if "不良" in t:
+        return True
+    return "重" in t and "稍" not in t
+
+
 def parse_horse_form_page(page):
     """公開馬ページの成績表をヘッダー名で解析。未取得項目は推測で補完しない。"""
     soup = soup_of(page)
@@ -479,13 +547,21 @@ def parse_horse_form_page(page):
     headers = []
     for t in soup.select("table"):
         hr = t.select_one("thead tr") or t.select_one("tr")
-        hs = [text_of(x) for x in hr.find_all(["th", "td"], recursive=False)] if hr else []
+        # v34: '着 順' のような空白入りの見出しでも照合できるよう、空白を除去して比較する
+        hs = [re.sub(r"\s+", "", text_of(x))
+              for x in hr.find_all(["th", "td"], recursive=False)] if hr else []
         if any(re.search(r"着順|確定着順", h) for h in hs) and any(
                 re.search(r"距離|開催|コース", h) for h in hs):
             table, headers = t, hs
             break
     empty = {"available": False, "starts": 0, "recent_results": [], "win_rate_recent": None,
-             "source": "公開馬ページ・成績表未検出"}
+             "source": "公開馬ページ・成績表未検出",
+             # v34: 新特徴量は未取得として正直に空で返す
+             "interval": None, "style": None,
+             "going_splits": {"starts": 0, "top3": 0, "top3_rate": None},
+             "course_splits": {},
+             "popularity_beats": {"starts": 0, "beats": 0, "rate": None},
+             "sire": None, "damsire": None}
     if table is None:
         return empty
 
@@ -506,7 +582,20 @@ def parse_horse_form_page(page):
         "course": col_index([r"競馬場", r"開催"]),
         "surface": col_index([r"コース"]),
         "going": col_index([r"馬場"]),
+        # v34: 上がり・人気・斤量・頭数もヘッダー名で特定する
+        "popularity": col_index([r"人気"]),
+        "carried_weight": col_index([r"斤量"]),
+        "field_size": col_index([r"頭数"]),
     }
+    # v34: 上がり（末脚タイム）列は「上がり指数」と誤認しないよう完全一致を優先する
+    last3f_idx = None
+    for i, htxt in enumerate(headers):
+        if htxt in ("上り", "上がり"):
+            last3f_idx = i
+            break
+    if last3f_idx is None:
+        last3f_idx = col_index([r"上がり", r"上り"])
+    indexes["last3f"] = last3f_idx
     if indexes["finish"] is None:
         empty["source"] = "着順列を特定できず安全のため未解析"
         return empty
@@ -540,14 +629,28 @@ def parse_horse_form_page(page):
         margin_num = numeric(margin_text)
         corners_text = val("corners")
         corner_nums = [int(x) for x in re.findall(r"(?<!\d)(\d{1,2})(?!\d)", corners_text)]
+        # v34: 新項目は値域チェックを通ったものだけ採用し、取れなければ None のままにする
+        last3f_num = numeric(val("last3f"))
+        last3f = last3f_num if last3f_num is not None and 25.0 <= last3f_num <= 60.0 else None
+        pop_num = numeric(val("popularity"))
+        popularity = int(pop_num) if pop_num is not None and 1 <= pop_num <= 18 else None
+        cw_num = numeric(val("carried_weight"))
+        carried = cw_num if cw_num is not None and 40.0 <= cw_num <= 70.0 else None
+        fs_num = numeric(val("field_size"))
+        field_size = int(fs_num) if fs_num is not None and 2 <= fs_num <= 18 else None
         results.append({
             "finish": finish, "distance_m": distance, "date": val("date"),
+            "date_iso": parse_date_to_iso(val("date")),
             "margin_text": margin_text or None, "margin": margin_num,
             "corners_text": corners_text or None,
+            "first_corner_position": corner_nums[0] if corner_nums else None,
             "last_corner_position": corner_nums[-1] if corner_nums else None,
             "jockey": val("jockey") or None, "time_text": val("time") or None,
             "course_text": val("course") or None, "surface_text": val("surface") or None,
             "going_text": val("going") or None, "row": " ".join(vals)[:220],
+            # v34: 追加取得項目
+            "last3f": last3f, "popularity": popularity,
+            "carried_weight": carried, "field_size": field_size,
         })
         if len(results) >= 5:
             break
@@ -555,6 +658,96 @@ def parse_horse_form_page(page):
         empty["source"] = "着順列は検出したが有効な近走順位を抽出できず"
         return empty
     finishes = [x["finish"] for x in results]
+    # v34: 新特徴量の集計。サンプル不足・変換不能の項目は None / 0試行で正直に返す
+    date_objs = []
+    for x in results:
+        d = None
+        if x.get("date_iso"):
+            try:
+                d = datetime.strptime(x["date_iso"], "%Y-%m-%d").date()
+            except ValueError:
+                d = None
+        date_objs.append(d)
+    gaps = []
+    for i in range(len(results) - 1):
+        if date_objs[i] and date_objs[i + 1]:
+            gaps.append((date_objs[i] - date_objs[i + 1]).days)
+        else:
+            gaps.append(None)
+    last_days = None
+    if date_objs and date_objs[0]:
+        delta = (NOW.date() - date_objs[0]).days
+        last_days = delta if delta >= 0 else None
+    prev_interval = gaps[0] if gaps else None
+    layoff_finishes = [results[i]["finish"] for i, g in enumerate(gaps)
+                       if g is not None and g >= 70]
+    interval = {
+        "last_race_days_ago": last_days,
+        "prev_interval_days": prev_interval,
+        "second_off_layoff": bool(prev_interval is not None and prev_interval >= 70),
+        "layoff_return_form": {
+            "starts": len(layoff_finishes),
+            "wins": sum(1 for f in layoff_finishes if f == 1),
+            "top3": sum(1 for f in layoff_finishes if f <= 3),
+            "win_rate": (round(sum(1 for f in layoff_finishes if f == 1)
+                               / len(layoff_finishes), 4) if layoff_finishes else None),
+            "top3_rate": (round(sum(1 for f in layoff_finishes if f <= 3)
+                                / len(layoff_finishes), 4) if layoff_finishes else None),
+        },
+    }
+    ratios, first_positions, gains = [], [], []
+    for x in results:
+        nums = [int(v) for v in re.findall(r"(?<!\d)(\d{1,2})(?!\d)",
+                                           x.get("corners_text") or "")]
+        if not nums:
+            continue
+        first_positions.append(nums[0])
+        gains.append(nums[0] - nums[-1])
+        if x.get("field_size"):
+            ratios.append(nums[0] / x["field_size"])
+    style = {
+        "first_corner_ratio_avg": (round(sum(ratios) / len(ratios), 3) if ratios else None),
+        "first_position_avg": (round(sum(first_positions) / len(first_positions), 2)
+                               if first_positions else None),
+        "position_gain_avg": (round(sum(gains) / len(gains), 2) if gains else None),
+        "samples": len(first_positions),
+    }
+    heavy_rows = [x for x in results if is_heavy_going_text(x.get("going_text"))]
+    going_splits = {
+        "starts": len(heavy_rows),
+        "top3": sum(1 for x in heavy_rows if x["finish"] <= 3),
+        "top3_rate": (round(sum(1 for x in heavy_rows if x["finish"] <= 3)
+                            / len(heavy_rows), 4) if heavy_rows else None),
+    }
+    course_map = {}
+    for x in results:
+        key = x.get("course_text")
+        if not key:
+            continue
+        entry = course_map.setdefault(key, {"starts": 0, "top3": 0})
+        entry["starts"] += 1
+        if x["finish"] <= 3:
+            entry["top3"] += 1
+    course_splits = {
+        k: {"starts": v["starts"], "top3": v["top3"],
+            "top3_rate": round(v["top3"] / v["starts"], 4)}
+        for k, v in course_map.items()
+    }
+    pop_rows = [x for x in results if isinstance(x.get("popularity"), int)]
+    beats = sum(1 for x in pop_rows if x["popularity"] > x["finish"])
+    popularity_beats = {
+        "starts": len(pop_rows), "beats": beats,
+        "rate": round(beats / len(pop_rows), 4) if pop_rows else None,
+    }
+    # v34: 血統（父・母父）はページ内「父:」「母父:」表記から抽出を試みる。取れなければ None
+    page_text = soup.get_text(" ", strip=True)
+    sire = damsire = None
+    m_dam = re.search(r"母父\s*[:：]\s*([^\s:：/、,，(（]+)", page_text)
+    if m_dam:
+        damsire = clean(m_dam.group(1))[:30] or None
+    m_sire = re.search(r"(?<!母)父\s*[:：]\s*([^\s:：/、,，(（]+)", page_text)
+    if m_sire:
+        sire = clean(m_sire.group(1))[:30] or None
     return {
         "available": True, "starts": len(results), "recent_results": results,
         "wins": sum(1 for x in finishes if x == 1),
@@ -563,6 +756,11 @@ def parse_horse_form_page(page):
         "top3_rate_recent": round(sum(1 for x in finishes if x <= 3) / len(finishes), 4),
         "avg_finish": round(sum(finishes) / len(finishes), 2),
         "source": "公開馬ページの着順ヘッダー列から抽出。直近最大5走。列が確認できた項目のみ使用",
+        # v34: 集計済み新特徴量
+        "interval": interval, "style": style,
+        "going_splits": going_splits, "course_splits": course_splits,
+        "popularity_beats": popularity_beats,
+        "sire": sire, "damsire": damsire,
     }
 
 
@@ -586,6 +784,15 @@ def get_horse_form(row):
     page = get_html(url)
     form = parse_horse_form_page(page) if page else {
         "available": False, "starts": 0, "recent_results": [], "source": "馬ページ取得失敗"}
+    if not form.get("available"):
+        # v34: トップページに成績表が無い場合は成績専用ページも試す
+        result_url = f"https://db.netkeiba.com/horse/result/{hid}"
+        if result_url != url:
+            page2 = get_html(result_url)
+            if page2:
+                form2 = parse_horse_form_page(page2)
+                if form2.get("available"):
+                    form = form2
     HORSE_FORM_CACHE[hid] = {"checked_at": NOW.isoformat(), "form": form}
     return form
 
@@ -635,9 +842,16 @@ def parse_runners(soup, surface):
         odds, pop = parse_odds_popularity(row)
         past_form = get_horse_form(row)
         wd = parse_weight_change(row)
+        cw = parse_carried_weight(row)
         rowtext = text_of(row)
         dirt = any(x in rowtext for x in DIRT_SIRES)
         power = any(x in rowtext for x in POWER_SIRES)
+        # v34: 馬ページで父名が取れた場合は父名でも種牡馬リストと照合する
+        # （行テキスト照合との重複加点は score 側で従来通り一方のみ）
+        sire_name = past_form.get("sire") if past_form.get("available") else None
+        if sire_name:
+            dirt = dirt or any(x in sire_name for x in DIRT_SIRES)
+            power = power or any(x in sire_name for x in POWER_SIRES)
         apprentice = any(x in jockey for x in ["▲", "△", "☆", "◇", "★"])
         topj = False
         positive = any(x in rowtext for x in POSITIVE_WORDS)
@@ -657,7 +871,9 @@ def parse_runners(soup, surface):
         reasons = []
         if apprentice:
             reasons.append("騎手欄に減量記号あり")
-        bloodline_available = any(k in rowtext for k in ["父:", "母父:", "父：", "母父："])
+        bloodline_in_row = any(k in rowtext for k in ["父:", "母父:", "父：", "母父："])
+        # v34: 馬ページの父名が取れた場合も血統情報ありとして扱う
+        bloodline_available = bloodline_in_row or bool(sire_name)
         if bloodline_available and surface == "ダート" and dirt:
             reasons.append("取得できた血統テキストにダート血統候補")
         if bloodline_available and surface == "芝" and power:
@@ -678,8 +894,11 @@ def parse_runners(soup, surface):
             "is_outer": frame in (7, 8) if frame else False,
             "is_dirt_blood": dirt if bloodline_available else False,
             "is_power_blood": power if bloodline_available else False,
-            "bloodline_status": ("出馬表テキストで血統欄を確認" if bloodline_available
-                                 else "未取得・血統加点なし"),
+            "bloodline_status": ("出馬表テキストで血統欄を確認" if bloodline_in_row
+                                 else ("馬ページで父名を確認" if sire_name
+                                       else "未取得・血統加点なし")),
+            # v34: 今回の斤量（取れなければ None のまま）
+            "carried_weight": cw,
             "is_positive_memo": positive, "is_negative_memo": negative, "w_diff": wd,
             "data_quality": {
                 "odds": odds is not None, "popularity": pop is not None,
@@ -721,8 +940,33 @@ def parse_runners(soup, surface):
     return result, diagnostic
 
 
-def score_runners(runners, surface, venue):
+def score_runners(runners, surface, venue, going=None):
     """市場評価と競走内容を分離。取得できない血統・騎手実績を想像で加点しない。"""
+    # v34: 脚質分類と展開（ペース）判定は全馬分を先にそろえる
+    field_count = len(runners)
+
+    def classify_style(h):
+        form = h.get("past_form", {})
+        if not form.get("available"):
+            return None
+        st = form.get("style") or {}
+        ratio = st.get("first_corner_ratio_avg")
+        if ratio is None and st.get("first_position_avg") is not None and field_count:
+            # 頭数が取れなかった馬は今回の出走頭数で位置平均を割り近似する
+            ratio = st["first_position_avg"] / field_count
+        if ratio is None:
+            return None
+        if ratio <= 0.15:
+            return "逃げ"
+        if ratio <= 0.40:
+            return "先行"
+        if ratio <= 0.70:
+            return "差し"
+        return "追込"
+
+    for h in runners:
+        h["running_style"] = classify_style(h)
+    front_nos = [h["horse_no"] for h in runners if h.get("running_style") == "逃げ"]
     for h in runners:
         odds = h.get("odds")
         pop = h.get("popularity")
@@ -734,6 +978,7 @@ def score_runners(runners, surface, venue):
             market_score += max(0.0, 5.0 - (int(pop) - 1) * 0.35)
         form_score = 0.0
         reasons = h.setdefault("reasons", [])
+        h["last3f_latest"] = None
         if form.get("available"):
             rows = form.get("recent_results", [])
             finishes = [x.get("finish") for x in rows if isinstance(x.get("finish"), int)]
@@ -741,6 +986,18 @@ def score_runners(runners, surface, venue):
                 weights = [1.0 / (i + 1) for i in range(len(finishes))]
                 weighted_finish = sum(f * w for f, w in zip(finishes, weights)) / sum(weights)
                 finish_points = max(-4.0, min(4.0, (6.0 - weighted_finish) * 0.8))
+                # v34: 頭数が分かる走は 着順/頭数 の百分位でも評価し、着順ポイントと平均する
+                pct_pairs = [
+                    (rows[i]["finish"] / rows[i]["field_size"], 1.0 / (i + 1))
+                    for i in range(len(rows))
+                    if rows[i].get("field_size") and isinstance(rows[i].get("finish"), int)
+                ]
+                if pct_pairs:
+                    avg_pct = (sum(p * w for p, w in pct_pairs)
+                               / sum(w for _, w in pct_pairs))
+                    pct_points = max(-4.0, min(4.0, (0.35 - avg_pct) * 8.0))
+                    finish_points = (finish_points + pct_points) / 2.0
+                    reasons.append(f"頭数比着順の平均{avg_pct:.2f}（頭数正規化を併用）")
                 form_score += finish_points
                 reasons.append(
                     f"近走{len(finishes)}走の加重平均着順 {weighted_finish:.1f}位（最大±4点）")
@@ -780,6 +1037,79 @@ def score_runners(runners, surface, venue):
                 reasons.append(
                     f"今回騎手との過去騎乗{same_starts}走・勝利{same_wins}回・3着内{same_top3}回"
                     f"（最大+1.5点）")
+            # v34: 間隔（休み明け実績・叩き2戦目・連闘）。実績が取れた場合のみ加点し、減点はしない
+            iv = form.get("interval") or {}
+            last_days = iv.get("last_race_days_ago")
+            if last_days is not None and last_days >= 70:
+                lf = iv.get("layoff_return_form") or {}
+                if lf.get("starts", 0) >= 2 and (lf.get("top3_rate") or 0) >= 0.5:
+                    form_score += 1.0
+                    reasons.append(
+                        f"休み明け{last_days}日だが鉄砲実績{lf['starts']}走で3着内率"
+                        f"{lf['top3_rate'] * 100:.0f}%（+1点）")
+            if iv.get("second_off_layoff") and last_days is not None and last_days <= 28:
+                form_score += 0.75
+                reasons.append("休み明けを叩いて2戦目（+0.75点）")
+            if (last_days is not None and last_days <= 7
+                    and rows and rows[0].get("finish", 99) <= 3):
+                form_score += 0.5
+                reasons.append(f"連闘（間隔{last_days}日）で前走3着内（+0.5点）")
+            # v34: 末脚（通過順位からの伸び）。上がり3Fは参考値として保持のみとし二重加点しない
+            st = form.get("style") or {}
+            gain = st.get("position_gain_avg")
+            if gain is not None:
+                if gain >= 3.5:
+                    form_score += 1.25
+                    reasons.append(f"近走は位置取りから平均{gain:.1f}つ伸びる末脚（+1.25点）")
+                elif gain >= 2.0:
+                    form_score += 0.75
+                    reasons.append(f"近走は位置取りから平均{gain:.1f}つ伸びる末脚（+0.75点）")
+            h["last3f_latest"] = rows[0].get("last3f") if rows else None
+            # v34: 馬場適性（今回が重・不良で、重・不良実績の試行2以上かつ3着内率5割以上のみ）
+            if going in ("重", "不良"):
+                gs = form.get("going_splits") or {}
+                if gs.get("starts", 0) >= 2 and (gs.get("top3_rate") or 0) >= 0.5:
+                    form_score += 0.75
+                    reasons.append(
+                        f"重・不良馬場で{gs['starts']}走・3着内率"
+                        f"{gs['top3_rate'] * 100:.0f}%（+0.75点）")
+            # v34: コース適性（同コース実績の試行2以上かつ3着内率5割以上のみ）
+            if venue:
+                cs = form.get("course_splits") or {}
+                c_starts = sum(v.get("starts", 0) for k, v in cs.items() if venue in k)
+                c_top3 = sum(v.get("top3", 0) for k, v in cs.items() if venue in k)
+                if c_starts >= 2 and c_top3 / c_starts >= 0.5:
+                    form_score += 0.75
+                    reasons.append(f"{venue}コースで{c_starts}走中3着内{c_top3}回（+0.75点）")
+            # v34: 人気以上の好走傾向（試行3以上かつ該当率6割以上のみ）
+            pb = form.get("popularity_beats") or {}
+            if pb.get("starts", 0) >= 3 and (pb.get("rate") or 0) >= 0.6:
+                form_score += 0.5
+                reasons.append(
+                    f"人気以上の着順が{pb['starts']}走中{pb['beats']}回（+0.5点）")
+            # v34: 斤量増減（前走・今回の両方が取れた場合のみ）
+            prev_cw = rows[0].get("carried_weight") if rows else None
+            cur_cw = h.get("carried_weight")
+            if prev_cw is not None and cur_cw is not None:
+                cw_diff = round(float(cur_cw) - float(prev_cw), 1)
+                if cw_diff >= 2.0:
+                    form_score -= 0.5
+                    reasons.append(f"斤量が前走比{cw_diff:+.1f}kg（-0.5点）")
+                elif cw_diff <= -2.0:
+                    form_score += 0.5
+                    reasons.append(f"斤量が前走比{cw_diff:+.1f}kg（+0.5点）")
+        # v34: 展開（ペース）。脚質分類の全馬集計に基づく
+        style_name = h.get("running_style")
+        if len(front_nos) == 1 and h.get("horse_no") == front_nos[0]:
+            form_score += 1.0
+            reasons.append("逃げ型が自分だけで単騎逃げ濃厚（+1点）")
+        elif len(front_nos) >= 3:
+            if style_name in ("差し", "追込"):
+                form_score += 0.75
+                reasons.append("逃げ型3頭以上でペースが流れ差し・追込に有利（+0.75点）")
+            elif style_name == "逃げ":
+                form_score -= 0.5
+                reasons.append("逃げ型3頭以上で競り合いの懸念（-0.5点）")
         if h.get("is_apprentice"):
             form_score += 0.5
             reasons.append("減量騎手記号あり（参考+0.5点）")
@@ -1301,7 +1631,7 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     surface_status = "取得" if surface else "未取得"
     for h in runners:
         h["distance_m"] = distance
-    ranked = score_runners(runners, surface, venue)
+    ranked = score_runners(runners, surface, venue, going or None)
     outsiders, longshots, form_outsiders, candidate_mode = select_outsiders(ranked)
     count = len(runners)
     verified = (
@@ -1336,6 +1666,19 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     race_confidence += min(10.0, len(outsiders) * 3.0 + len(longshots) * 2.0)
     race_confidence += 10.0 if candidate_mode == "odds_based" else 0.0
     race_confidence += 10.0 if len(ranked) >= 8 else (5.0 if len(ranked) >= 5 else 0.0)
+    # v34: 本命の推定EVと展開の明確さを信頼度へ反映する
+    top1_ev_pct = ranked[0].get("estimated_win_return_pct") if ranked else None
+    ev_bonus = 0.0
+    if top1_ev_pct is not None:
+        if top1_ev_pct >= 110:
+            ev_bonus = 5.0
+        elif top1_ev_pct >= 100:
+            ev_bonus = 2.0
+    race_confidence += ev_bonus
+    front_count = sum(1 for h in ranked if h.get("running_style") == "逃げ")
+    pace_clear = front_count == 1 or front_count >= 3
+    if pace_clear:
+        race_confidence += 3.0
     race_confidence = round(min(100.0, race_confidence), 1)
     reasons = []
     if verified:
@@ -1348,8 +1691,13 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         reasons.append("オッズ抜き評価でも上位候補が一致")
     if outsiders or longshots:
         reasons.append("穴候補・大穴候補に根拠あり")
+    if ev_bonus:
+        reasons.append("本命の推定期待値が高い")
+    if pace_clear:
+        reasons.append("展開の読みが立つ（単騎逃げまたは逃げ型多数）")
     if (race_confidence >= 75 and verified and odds_coverage >= 0.8
-            and form_coverage >= 0.5 and odds_free_top3 >= 2):
+            and form_coverage >= 0.5 and odds_free_top3 >= 2
+            and (top1_ev_pct is None or top1_ev_pct >= 90)):
         race_grade = "超おすすめ"
     elif race_confidence >= 55 and verified and odds_coverage >= 0.5:
         race_grade = "注目レース"
@@ -1480,6 +1828,21 @@ def update_snapshot(snapshots, race):
         return
     tickets = race.get("tickets", [])
     ticket = tickets[0] if tickets else {}
+    # v34: 未確定レースはオッズ推移を蓄積する（同日内のみ・最大12件・同時刻は重複追加しない）
+    odds_snaps = list(old.get("odds_snapshots", []) or [])
+    if not race.get("settlement_complete"):
+        today_str = NOW.strftime("%Y-%m-%d")
+        odds_snaps = [s for s in odds_snaps
+                      if isinstance(s, dict)
+                      and str(s.get("at", "")).startswith(today_str)]
+        now_iso = NOW.isoformat()
+        if not any(s.get("at") == now_iso for s in odds_snaps):
+            odds_snaps.append({
+                "at": now_iso,
+                "odds": {str(h.get("horse_no")): h.get("odds")
+                         for h in race.get("horses", [])},
+            })
+        odds_snaps = odds_snaps[-12:]
     snapshot = {
         "race_id": rid, "date": race.get("date"), "kind": race.get("kind"),
         "course": race.get("course"), "race_no": race.get("race_no"),
@@ -1512,7 +1875,7 @@ def update_snapshot(snapshots, race):
         "last_odds": {str(h.get("horse_no")): h.get("odds") for h in race.get("horses", [])},
         "runner_count": race.get("runner_count"),
         "runner_count_verified": race.get("runner_count_verified"),
-        "odds_snapshots": old.get("odds_snapshots", []),
+        "odds_snapshots": odds_snaps,
         "prediction_created_at": old.get("prediction_created_at") or NOW.isoformat(),
     }
     snapshots[rid] = snapshot
