@@ -33,7 +33,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.0_EXPERT"
+ENGINE_VERSION = "BAGEN_34.1_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -293,11 +293,40 @@ def parse_surface_distance(meta):
     return surface, d
 
 
+def normalize_going(text):
+    """v34.1: 馬場表記を完全表記に正規化する。
+    netkeiba（特に地方 nar）は馬場を1文字に略記する（稍→稍重、不→不良）。
+    テキスト中に馬場表記が見つからなければ空文字を返す。"""
+    t = clean(text)
+    if not t:
+        return ""
+    m = re.search(r"(稍重|不良|稍|不|良|重)", t)
+    if not m:
+        return ""
+    return {"稍": "稍重", "不": "不良"}.get(m.group(1), m.group(1))
+
+
+def going_group(going):
+    """v34.1: 馬場状態をグループ分類する。良=firm、稍重=yielding、重・不良=soft。
+    略記・完全表記のどちらでも分類できる。判定不能なら None。"""
+    g = normalize_going(going)
+    if g == "良":
+        return "firm"
+    if g == "稍重":
+        return "yielding"
+    if g in ("重", "不良"):
+        return "soft"
+    return None
+
+
 def parse_weather_going(meta):
     m = re.search(r"天候\s*[:：]?\s*(小雨|小雪|晴|曇|雨|雪)", meta)
     weather = m.group(1) if m else ""
-    m = re.search(r"馬場\s*[:：]?\s*(稍重|不良|良|重)", meta)
+    # v34.1: 略記（稍/不）も受け付けて完全表記へ正規化する。
+    # alternation は完全表記（稍重・不良）を略記より先に置くこと
+    m = re.search(r"馬場\s*[:：]?\s*(稍重|不良|稍|不|良|重)", meta)
     going = m.group(1) if m else ""
+    going = {"稍": "稍重", "不": "不良"}.get(going, going)
     return weather, going
 
 
@@ -559,6 +588,10 @@ def parse_horse_form_page(page):
              # v34: 新特徴量は未取得として正直に空で返す
              "interval": None, "style": None,
              "going_splits": {"starts": 0, "top3": 0, "top3_rate": None},
+             # v34.1: 馬場グループ別集計の未取得デフォルト
+             "going_group_splits": {
+                 g: {"starts": 0, "top3": 0, "top3_rate": None, "avg_finish": None}
+                 for g in ("firm", "yielding", "soft")},
              "course_splits": {},
              "popularity_beats": {"starts": 0, "beats": 0, "rate": None},
              "sire": None, "damsire": None}
@@ -719,6 +752,25 @@ def parse_horse_form_page(page):
         "top3_rate": (round(sum(1 for x in heavy_rows if x["finish"] <= 3)
                             / len(heavy_rows), 4) if heavy_rows else None),
     }
+    # v34.1: 馬場グループ別（良=firm/稍重=yielding/重・不良=soft）の集計。
+    # 過去走の going_text は完全表記想定だが、略記が来ても going_group が分類する
+    _group_rows = {"firm": [], "yielding": [], "soft": []}
+    for x in results:
+        _grp = going_group(x.get("going_text"))
+        if _grp:
+            _group_rows[_grp].append(x)
+
+    def _going_split(rows_):
+        n = len(rows_)
+        t3 = sum(1 for x in rows_ if x["finish"] <= 3)
+        return {
+            "starts": n, "top3": t3,
+            "top3_rate": round(t3 / n, 4) if n else None,
+            "avg_finish": (round(sum(x["finish"] for x in rows_) / n, 2)
+                           if n else None),
+        }
+
+    going_group_splits = {k: _going_split(v) for k, v in _group_rows.items()}
     course_map = {}
     for x in results:
         key = x.get("course_text")
@@ -758,7 +810,8 @@ def parse_horse_form_page(page):
         "source": "公開馬ページの着順ヘッダー列から抽出。直近最大5走。列が確認できた項目のみ使用",
         # v34: 集計済み新特徴量
         "interval": interval, "style": style,
-        "going_splits": going_splits, "course_splits": course_splits,
+        "going_splits": going_splits, "going_group_splits": going_group_splits,
+        "course_splits": course_splits,
         "popularity_beats": popularity_beats,
         "sire": sire, "damsire": damsire,
     }
@@ -940,7 +993,7 @@ def parse_runners(soup, surface):
     return result, diagnostic
 
 
-def score_runners(runners, surface, venue, going=None):
+def score_runners(runners, surface, venue, going=None, weather=None):
     """市場評価と競走内容を分離。取得できない血統・騎手実績を想像で加点しない。"""
     # v34: 脚質分類と展開（ペース）判定は全馬分を先にそろえる
     field_count = len(runners)
@@ -1065,14 +1118,40 @@ def score_runners(runners, surface, venue, going=None):
                     form_score += 0.75
                     reasons.append(f"近走は位置取りから平均{gain:.1f}つ伸びる末脚（+0.75点）")
             h["last3f_latest"] = rows[0].get("last3f") if rows else None
-            # v34: 馬場適性（今回が重・不良で、重・不良実績の試行2以上かつ3着内率5割以上のみ）
-            if going in ("重", "不良"):
-                gs = form.get("going_splits") or {}
-                if gs.get("starts", 0) >= 2 and (gs.get("top3_rate") or 0) >= 0.5:
-                    form_score += 0.75
+            # v34.1: 馬場適性（馬場グループ別: 良=firm/稍重=yielding/重・不良=soft）
+            # 得意な馬場は加点、不得意な馬場は減点する。データ不足時は加減点しない
+            grp = going_group(going)
+            assumed_soft = False
+            if grp is None and weather in ("雨", "小雨", "雪"):
+                # going未取得でも悪天候なら道悪（soft）想定で抑制評価する。
+                # 晴/曇で未取得なら推測で埋めず評価しない
+                grp = "soft"
+                assumed_soft = True
+            if grp:
+                ggs = (form.get("going_group_splits") or {}).get(grp) or {}
+                g_starts = ggs.get("starts", 0)
+                g_top3 = ggs.get("top3", 0)
+                g_rate = ggs.get("top3_rate")
+                g_label = normalize_going(going) or {
+                    "firm": "良", "yielding": "稍重", "soft": "重・不良"}[grp]
+                cap = 0.5 if assumed_soft else 0.75
+                assumed_note = "（雨天のため道悪想定で評価）" if assumed_soft else ""
+                if g_starts >= 2 and g_rate is not None and g_rate >= 0.5:
+                    form_score += cap
                     reasons.append(
-                        f"重・不良馬場で{gs['starts']}走・3着内率"
-                        f"{gs['top3_rate'] * 100:.0f}%（+0.75点）")
+                        f"{g_label}馬場で{g_starts}走・3着内率"
+                        f"{g_rate * 100:.0f}%（+{cap}点）{assumed_note}")
+                elif g_starts >= 3 and (g_rate is None or g_rate <= 0.15):
+                    form_score -= cap
+                    if g_top3 == 0:
+                        reasons.append(
+                            f"{g_label}馬場で{g_starts}走・3着内なし"
+                            f"（-{cap}点）{assumed_note}")
+                    else:
+                        reasons.append(
+                            f"{g_label}馬場で{g_starts}走・3着内率"
+                            f"{g_rate * 100:.0f}%と低く不得意"
+                            f"（-{cap}点）{assumed_note}")
             # v34: コース適性（同コース実績の試行2以上かつ3着内率5割以上のみ）
             if venue:
                 cs = form.get("course_splits") or {}
@@ -1631,7 +1710,7 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     surface_status = "取得" if surface else "未取得"
     for h in runners:
         h["distance_m"] = distance
-    ranked = score_runners(runners, surface, venue, going or None)
+    ranked = score_runners(runners, surface, venue, going or None, weather or None)
     outsiders, longshots, form_outsiders, candidate_mode = select_outsiders(ranked)
     count = len(runners)
     verified = (
