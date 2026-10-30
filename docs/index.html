@@ -109,6 +109,10 @@ h3{font-size:14px;margin:0}
 table{width:100%;border-collapse:collapse;font-size:11.5px;min-width:360px;font-variant-numeric:tabular-nums}
 th,td{padding:8px 7px;border-bottom:1px solid var(--line-soft);text-align:left;vertical-align:top}
 th{color:#d9bd72;font-weight:700;letter-spacing:.8px;font-size:10.5px}
+.resnum{text-align:right;white-space:nowrap}
+.respager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px}
+.respager .pinfo{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:center}
+.btn:disabled{opacity:.35;cursor:default}
 details{border-top:1px solid var(--line-soft);padding-top:10px;margin-top:11px}
 summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spacing:.6px}
 .empty{border:1px dashed rgba(233,199,103,.35);padding:20px;text-align:center;color:var(--muted);border-radius:14px;font-size:12px;background:rgba(10,15,26,.45)}
@@ -172,6 +176,7 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 <button class="ptab active" type="button" data-tab="top">トップ</button>
 <button class="ptab" type="button" data-tab="super">超おすすめ<span class="tabbadge" id="superTabBadge" style="display:none">0</span></button>
 <button class="ptab" type="button" data-tab="races">レース</button>
+<button class="ptab" type="button" data-tab="results">結果一覧</button>
 <button class="ptab" type="button" data-tab="quality">データ状況</button>
 </nav>
 </header>
@@ -275,6 +280,28 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 <div id="raceList" class="loading">データを読み込んでいます…</div>
 </section>
 
+<section data-panel="results" style="display:none">
+<div class="sectionhead"><h2>結果一覧</h2><span class="small" id="resCount">—</span></div>
+<div class="metrics">
+<div class="metric"><label>精算済みレース</label><strong id="resRaces">—</strong></div>
+<div class="metric"><label>投資合計</label><strong id="resStake">—</strong></div>
+<div class="metric"><label>回収合計</label><strong id="resReturn">—</strong></div>
+<div class="metric"><label>損益</label><strong id="resProfit">—</strong></div>
+</div>
+<div class="panel">
+<div class="tablewrap"><table style="min-width:0">
+<thead><tr><th>日付</th><th>レース</th><th style="text-align:right">投資</th><th style="text-align:right">回収</th><th style="text-align:right">損益</th></tr></thead>
+<tbody id="resBody"></tbody>
+</table></div>
+<div class="respager">
+<button class="btn" id="resPrev" type="button">← 前へ</button>
+<span class="pinfo" id="resPageInfo">—</span>
+<button class="btn" id="resNext" type="button">次へ →</button>
+</div>
+<p class="small" style="margin-top:8px">精算完了レースのみ・新しい順・1ページ50件</p>
+</div>
+</section>
+
 <section data-panel="quality" style="display:none">
 <div class="sectionhead"><h2>データ取得状況</h2><span class="small" id="buildLabel">—</span></div>
 <div class="panel">
@@ -332,6 +359,52 @@ function historyItems() {
     x.race_profit != null &&
     (x.payout_confirmed === undefined || x.payout_confirmed === null || x.payout_confirmed === true)
   );
+}
+
+/* ===== 結果一覧（投資・回収・損益のみ） ===== */
+let RES_PAGE = 1;
+const RES_PER_PAGE = 50;
+
+function renderResults() {
+  const body = $('resBody');
+  if (!body) return;
+  const items = historyItems().slice().sort((a, b) => {
+    const ka = String(a.updated_at || a.date || '');
+    const kb = String(b.updated_at || b.date || '');
+    if (ka !== kb) return ka < kb ? 1 : -1;
+    return String(b.race_id || '').localeCompare(String(a.race_id || ''));
+  });
+  const total = items.length;
+  let stake = 0, ret = 0, profit = 0;
+  for (const x of items) {
+    const c = Number(x.cost) || 0;
+    const r = Number(x.all_bet_return) || 0;
+    stake += c; ret += r;
+    profit += x.race_profit != null ? Number(x.race_profit) : (r - c);
+  }
+  $('resRaces').textContent = total.toLocaleString('ja-JP') + '件';
+  $('resStake').textContent = yen(stake);
+  $('resReturn').textContent = yen(ret);
+  const pe = $('resProfit');
+  pe.textContent = (profit > 0 ? '+' : '') + yen(profit);
+  pe.className = profit > 0 ? 'green' : (profit < 0 ? 'red' : '');
+  $('resCount').textContent = total ? '精算済み ' + total + 'レース' : '精算済みデータなし';
+  const pages = Math.max(1, Math.ceil(total / RES_PER_PAGE));
+  if (RES_PAGE > pages) RES_PAGE = pages;
+  if (RES_PAGE < 1) RES_PAGE = 1;
+  const slice = items.slice((RES_PAGE - 1) * RES_PER_PAGE, RES_PAGE * RES_PER_PAGE);
+  body.innerHTML = slice.length ? slice.map(x => {
+    const p = x.race_profit != null ? Number(x.race_profit) : (Number(x.all_bet_return) || 0) - (Number(x.cost) || 0);
+    const d = String(x.date || '').slice(5).replace('-', '/');
+    return '<tr><td>' + esc(d) + '</td><td>' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R</td>' +
+      '<td class="resnum">' + yen(x.cost) + '</td><td class="resnum">' + yen(x.all_bet_return) + '</td>' +
+      '<td class="resnum ' + (p > 0 ? 'green' : (p < 0 ? 'red' : '')) + '">' + (p > 0 ? '+' : '') + yen(p) + '</td></tr>';
+  }).join('') : '<tr><td colspan="5">精算済みデータがありません</td></tr>';
+  const from = slice.length ? (RES_PAGE - 1) * RES_PER_PAGE + 1 : 0;
+  const to = (RES_PAGE - 1) * RES_PER_PAGE + slice.length;
+  $('resPageInfo').textContent = RES_PAGE + ' / ' + pages + ' ページ（' + from + '–' + to + '件 / 全' + total + '件）';
+  $('resPrev').disabled = RES_PAGE <= 1;
+  $('resNext').disabled = RES_PAGE >= pages;
 }
 
 function filterHist(items) {
@@ -465,6 +538,7 @@ function switchTab(tab) {
   ACTIVE_TAB = tab;
   applyTab();
   if (tab === 'top') maybeRenderCharts();
+  if (tab === 'results') renderResults();
 }
 
 /* Chart.js は非表示コンテナ内で初期化するとサイズが崩れるための保険:
@@ -880,6 +954,7 @@ async function loadData() {
     ' · 更新 ' + (DATA.generated_at || '時刻不明');
   $('statusDot').style.background = DATA.status === 'OK' ? 'var(--green)' : 'var(--orange)';
   render();
+  renderResults();
   maybeRenderCharts();
 }
 
@@ -972,6 +1047,11 @@ if (searchClearEl && searchInputEl) {
     searchInputEl.focus();
   });
 }
+const resPrevEl = $('resPrev');
+if (resPrevEl) resPrevEl.addEventListener('click', () => { RES_PAGE -= 1; renderResults(); });
+const resNextEl = $('resNext');
+if (resNextEl) resNextEl.addEventListener('click', () => { RES_PAGE += 1; renderResults(); });
+
 applyTab();
 
 $('reloadBtn').addEventListener('click', loadData);
