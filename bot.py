@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.0_EXPERT
+BAGEN KEIBA v34.2_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
-history.json の snapshots / stats / horse_form_cache を維持する。
+history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.2):
+- 調教師（厩舎）: 出馬表の調教師名・IDを取得し、db.netkeiba の近走一覧（最大30走）から
+  厩舎の直近3着内率を集計。好調な厩舎のみ加点・不振は減点（実績が取れた場合のみ）
+- 枠順: 自身の精算済みスナップショットから競馬場別の内枠/外枠 3着内率を算出
+  （枠番は頭数と馬番から標準枠組表で復元）。サンプル25レース以上かつ内/外の差が
+  8ポイント以上の場だけ ±0.5点 を適用する
+- 騎手適性: 騎手の近走一覧から直近3着内率と当該コース別成績を集計し、
+  合計最大+0.75点まで加点・不振は減点。従来の is_top_jockey（常に False の死にフラグ）は
+  取得した実績から算出するよう置換
+- 調教師・騎手の取得は馬ページと同じ 14日キャッシュ＋実行あたり上限
+  (MAX_NEW_PEOPLE_FETCHES) で保護する
 
 改善点 (v34):
 - 馬ページから上がり・人気・斤量・頭数・日付(ISO)を取得し、間隔/脚質/馬場・コース別成績/人気乖離を集計
@@ -33,10 +45,16 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.1_EXPERT"
+ENGINE_VERSION = "BAGEN_34.2_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
+# v34.2: 調教師・騎手の人物データ（馬と同一方式: 14日キャッシュ＋実行あたり上限）
+MAX_NEW_PEOPLE_FETCHES = 24
+PEOPLE_FETCHED_THIS_RUN = 0
+PEOPLE_CACHE = {}
+# v34.2: 競馬場別 枠順バイアス（main でスナップショットから算出して保持）
+VENUE_FRAME_BIAS = {}
 TIMEOUT = (10, 25)
 DELAY = 0.35
 MAX_WARNINGS = 150
@@ -850,6 +868,237 @@ def get_horse_form(row):
     return form
 
 
+def frame_no_from_field(field_size, horse_no):
+    """v34.2: 頭数と馬番から枠番を復元する（標準の枠組表）。
+    8頭以下は馬番=枠番。9頭以上は外枠から順に複数頭を割り当てる。"""
+    if not field_size or not horse_no:
+        return None
+    try:
+        field_size = int(field_size)
+        horse_no = int(horse_no)
+    except (ValueError, TypeError):
+        return None
+    if field_size < 1 or horse_no < 1 or horse_no > field_size:
+        return None
+    if field_size <= 8:
+        return horse_no
+    counts = [1] * 8
+    remaining = field_size - 8
+    idx = 7
+    while remaining > 0:
+        counts[idx] += 1
+        remaining -= 1
+        idx = idx - 1 if idx > 0 else 7
+    no = 1
+    for frame, cnt in enumerate(counts, 1):
+        for _ in range(cnt):
+            if no == horse_no:
+                return frame
+            no += 1
+    return None
+
+
+def compute_frame_bias(snapshots):
+    """v34.2: 精算済みスナップショットから競馬場別の枠順バイアスを算出する。
+    内枠（1・2枠）と外枠（7・8枠）の 3着内率（着内数/出走数）を比較し、
+    サンプル25レース以上かつ差が8ポイント以上の場にだけ direction を立てる。"""
+    venues = {}
+    for snap in (snapshots or {}).values():
+        if not isinstance(snap, dict) or snap.get("settlement_complete") is not True:
+            continue
+        venue = snap.get("course")
+        field = snap.get("runner_count")
+        finishes = snap.get("result_finishes") or []
+        if not venue or not field or len(finishes) < 3:
+            continue
+        try:
+            field = int(field)
+        except (ValueError, TypeError):
+            continue
+        if field < 5:
+            continue
+        entry = venues.setdefault(venue, {
+            "races": 0, "inner_starters": 0, "inner_top3": 0,
+            "outer_starters": 0, "outer_top3": 0})
+        entry["races"] += 1
+        # 出走頭数は枠組表から内/外の定員を数える
+        for no in range(1, field + 1):
+            fr = frame_no_from_field(field, no)
+            if fr in (1, 2):
+                entry["inner_starters"] += 1
+            elif fr in (7, 8):
+                entry["outer_starters"] += 1
+        for no in finishes[:3]:
+            fr = frame_no_from_field(field, no)
+            if fr in (1, 2):
+                entry["inner_top3"] += 1
+            elif fr in (7, 8):
+                entry["outer_top3"] += 1
+    result = {}
+    for venue, e in venues.items():
+        inner_rate = (e["inner_top3"] / e["inner_starters"]
+                      if e["inner_starters"] else None)
+        outer_rate = (e["outer_top3"] / e["outer_starters"]
+                      if e["outer_starters"] else None)
+        direction = None
+        if (e["races"] >= 25 and inner_rate is not None and outer_rate is not None):
+            diff = inner_rate - outer_rate
+            if diff >= 0.08:
+                direction = "inner"
+            elif diff <= -0.08:
+                direction = "outer"
+        result[venue] = {
+            "races": e["races"],
+            "inner_starters": e["inner_starters"], "inner_top3": e["inner_top3"],
+            "outer_starters": e["outer_starters"], "outer_top3": e["outer_top3"],
+            "inner_top3_rate": round(inner_rate, 4) if inner_rate is not None else None,
+            "outer_top3_rate": round(outer_rate, 4) if outer_rate is not None else None,
+            "direction": direction,
+        }
+    return result
+
+
+def person_id_from_link(row, kind):
+    """出馬表行の人物リンクから netkeiba 人物IDを抽出する。取れなければ ''。"""
+    a = row.select_one(f"a[href*='/{kind}/']")
+    if not a:
+        return ""
+    href = a.get("href", "")
+    m = re.search(rf"/{kind}/(?:result/recent/)?([0-9A-Za-z]+)", href)
+    return m.group(1) if m else ""
+
+
+def parse_trainer(row):
+    """v34.2: 出馬表行から調教師名とIDを抽出する。
+    JRA・地方とも td.Trainer に「所属 名前」形式で入り、リンク文が名前そのもの。
+    取れない場合は ('', '') を返し、推測で埋めない。"""
+    pid = person_id_from_link(row, "trainer")
+    link = row.select_one("td.Trainer a") or row.select_one("a[href*='/trainer/']")
+    if link is not None:
+        name = text_of(link)
+        if name:
+            return clean(name)[:30], pid
+    node = get_cell(row, ["td.Trainer", "td[class*='Trainer']", ".Trainer"])
+    name = text_of(node)
+    if not name:
+        return "", pid
+    # セル全文が「愛知 服部功」のように所属+名前の場合は名前側（末尾）を残す
+    parts = name.split()
+    if len(parts) >= 2:
+        name = parts[-1]
+    return clean(name)[:30], pid
+
+
+_VENUE_NAMES = sorted(set(JRA_CODES.values()) | set(NAR_CODES.values()),
+                      key=len, reverse=True)
+
+
+def venue_from_holding_text(text):
+    """人物近走ページの開催表記（例 '4東京9' / '名古屋'）から競馬場名を取り出す。"""
+    t = clean(text)
+    for name in _VENUE_NAMES:
+        if name in t:
+            return name
+    return None
+
+
+def parse_person_recent_page(page):
+    """v34.2: db.netkeiba の人物・近走一覧ページ（/trainer|jockey/result/recent/）を解析。
+    着順と開催だけをヘッダー名で拾い、最大で表の全行を返す。"""
+    soup = soup_of(page)
+    for t in soup.select("table"):
+        hr = t.select_one("thead tr") or t.select_one("tr")
+        if not hr:
+            continue
+        hs = [re.sub(r"\s+", "", text_of(x))
+              for x in hr.find_all(["th", "td"], recursive=False)]
+        if not any(re.search(r"着順", h) for h in hs):
+            continue
+        fi = next((i for i, h in enumerate(hs) if re.search(r"着順", h)), None)
+        ki = next((i for i, h in enumerate(hs) if re.search(r"開催", h)), None)
+        if fi is None:
+            continue
+        rows = []
+        for tr in t.select("tr"):
+            cells = tr.find_all("td", recursive=False)
+            if not cells or fi >= len(cells):
+                continue
+            rank_text = text_of(cells[fi])
+            if re.search(r"中止|除外|失格|取消|取止|未出走|競走除外", rank_text):
+                continue
+            m = re.fullmatch(r"\s*(\d{1,2})\s*", rank_text)
+            if not m:
+                continue
+            finish = int(m.group(1))
+            if not 1 <= finish <= 18:
+                continue
+            venue = venue_from_holding_text(text_of(cells[ki])) if ki is not None and ki < len(cells) else None
+            rows.append({"finish": finish, "venue": venue})
+        return rows
+    return []
+
+
+def get_person_data(kind, pid):
+    """v34.2: 調教師/騎手の近走データを取得する（14日キャッシュ＋実行あたり上限）。
+    kind は 'trainer' または 'jockey'。直近最大30走の 3着内率とコース別成績を集計。
+    取れない場合は available=False で正直に返す。"""
+    global PEOPLE_FETCHED_THIS_RUN
+    empty = {"available": False, "starts": 0, "wins": 0, "top3": 0,
+             "top3_rate": None, "course_splits": {},
+             "source": "人物ID未取得"}
+    if not pid:
+        return empty
+    key = f"{kind}:{pid}"
+    cached = PEOPLE_CACHE.get(key)
+    if isinstance(cached, dict) and cached.get("checked_at"):
+        try:
+            checked = datetime.fromisoformat(cached["checked_at"])
+            if NOW - checked < timedelta(days=14):
+                return cached.get("data", empty)
+        except Exception:
+            pass
+    if PEOPLE_FETCHED_THIS_RUN >= MAX_NEW_PEOPLE_FETCHES:
+        return {"available": False, "starts": 0, "wins": 0, "top3": 0,
+                "top3_rate": None, "course_splits": {},
+                "source": "無料実行時間保護のため今回の取得上限"}
+    PEOPLE_FETCHED_THIS_RUN += 1
+    base = f"https://db.netkeiba.com/{kind}/result/recent/{pid}"
+    rows = parse_person_recent_page(get_html(base))
+    if len(rows) >= 20:
+        # 1ページ20行のため、30走サンプルに届くよう2ページ目も取る
+        rows += parse_person_recent_page(get_html(base + "?page=2"))
+    rows = rows[:30]
+    if not rows:
+        data = {"available": False, "starts": 0, "wins": 0, "top3": 0,
+                "top3_rate": None, "course_splits": {},
+                "source": "人物近走ページを解析できず"}
+    else:
+        course_map = {}
+        for x in rows:
+            if not x.get("venue"):
+                continue
+            e = course_map.setdefault(x["venue"], {"starts": 0, "top3": 0})
+            e["starts"] += 1
+            if x["finish"] <= 3:
+                e["top3"] += 1
+        course_splits = {
+            k: {"starts": v["starts"], "top3": v["top3"],
+                "top3_rate": round(v["top3"] / v["starts"], 4) if v["starts"] else None}
+            for k, v in course_map.items()
+        }
+        data = {
+            "available": True,
+            "starts": len(rows),
+            "wins": sum(1 for x in rows if x["finish"] == 1),
+            "top3": sum(1 for x in rows if x["finish"] <= 3),
+            "top3_rate": round(sum(1 for x in rows if x["finish"] <= 3) / len(rows), 4),
+            "course_splits": course_splits,
+            "source": "db.netkeiba 人物・近走一覧（最大30走）",
+        }
+    PEOPLE_CACHE[key] = {"checked_at": NOW.isoformat(), "data": data}
+    return data
+
+
 def attach_probability_and_value(ranked):
     if not ranked:
         return
@@ -894,6 +1143,11 @@ def parse_runners(soup, surface):
         jockey = parse_jockey(row)
         odds, pop = parse_odds_popularity(row)
         past_form = get_horse_form(row)
+        # v34.2: 調教師・騎手の人物データ（IDが取れた場合のみ取得を試みる）
+        trainer_name, trainer_id = parse_trainer(row)
+        jockey_id = person_id_from_link(row, "jockey")
+        trainer_form = get_person_data("trainer", trainer_id)
+        jockey_form = get_person_data("jockey", jockey_id)
         wd = parse_weight_change(row)
         cw = parse_carried_weight(row)
         rowtext = text_of(row)
@@ -906,7 +1160,10 @@ def parse_runners(soup, surface):
             dirt = dirt or any(x in sire_name for x in DIRT_SIRES)
             power = power or any(x in sire_name for x in POWER_SIRES)
         apprentice = any(x in jockey for x in ["▲", "△", "☆", "◇", "★"])
-        topj = False
+        # v34.2: is_top_jockey は固定リストではなく取得した騎手近走実績から判定する
+        topj = bool(jockey_form.get("available")
+                    and jockey_form.get("starts", 0) >= 10
+                    and (jockey_form.get("top3_rate") or 0) >= 0.40)
         positive = any(x in rowtext for x in POSITIVE_WORDS)
         negative = any(x in rowtext for x in NEGATIVE_WORDS)
         past_rows = past_form.get("recent_results", []) if past_form.get("available") else []
@@ -940,6 +1197,10 @@ def parse_runners(soup, surface):
         runners[no] = {
             "horse_no": no, "number": no, "frame_no": frame, "horse": name, "name": name,
             "jockey": jockey or "未取得", "odds": odds, "popularity": pop, "score": 0.0,
+            # v34.2: 調教師と人物データ
+            "trainer": trainer_name or "未取得", "trainer_id": trainer_id or None,
+            "jockey_id": jockey_id or None,
+            "trainer_form": trainer_form, "jockey_form": jockey_form,
             "rank": None, "reasons": reasons, "past_form": past_form,
             "caution": "簡易評価。勝率は未校正の参考値",
             "is_apprentice": apprentice, "is_top_jockey": topj,
@@ -960,6 +1221,10 @@ def parse_runners(soup, surface):
                 "past_form": bool(past_form.get("available")),
                 "bloodline": bloodline_available,
                 "jockey_history": bool(past_form.get("same_jockey_starts", 0)),
+                # v34.2: 調教師・人物データの取得状況
+                "trainer": bool(trainer_name),
+                "trainer_form": bool(trainer_form.get("available")),
+                "jockey_form": bool(jockey_form.get("available")),
             },
         }
     result = sorted(runners.values(), key=lambda x: x["horse_no"])
@@ -984,6 +1249,13 @@ def parse_runners(soup, surface):
         else ("一部取得" if odds_values else "未取得"))
     diagnostic["jockey_count"] = sum(
         1 for x in result if x.get("jockey") and x.get("jockey") != "未取得")
+    # v34.2: 調教師・人物データの取得状況
+    diagnostic["trainer_count"] = sum(
+        1 for x in result if x.get("trainer") and x.get("trainer") != "未取得")
+    diagnostic["trainer_form_count"] = sum(
+        1 for x in result if x.get("trainer_form", {}).get("available"))
+    diagnostic["jockey_form_count"] = sum(
+        1 for x in result if x.get("jockey_form", {}).get("available"))
     diagnostic["past_form_count"] = sum(
         1 for x in result if x.get("past_form", {}).get("available"))
     diagnostic["past_form_missing_count"] = len(result) - diagnostic["past_form_count"]
@@ -1189,6 +1461,80 @@ def score_runners(runners, surface, venue, going=None, weather=None):
             elif style_name == "逃げ":
                 form_score -= 0.5
                 reasons.append("逃げ型3頭以上で競り合いの懸念（-0.5点）")
+        # v34.2: 調教師（厩舎）の近況。実績が取れた場合のみ加減点する
+        tf = h.get("trainer_form") or {}
+        if tf.get("available"):
+            t_starts = tf.get("starts", 0)
+            t_rate = tf.get("top3_rate")
+            if t_rate is not None and t_starts >= 10:
+                if t_rate >= 0.45:
+                    form_score += 0.75
+                    reasons.append(
+                        f"厩舎（{h.get('trainer', '')}）の直近{t_starts}走で3着内率"
+                        f"{t_rate * 100:.0f}%と好調（+0.75点）")
+                elif t_rate >= 0.35:
+                    form_score += 0.5
+                    reasons.append(
+                        f"厩舎（{h.get('trainer', '')}）の直近{t_starts}走で3着内率"
+                        f"{t_rate * 100:.0f}%（+0.5点）")
+                elif t_starts >= 15 and t_rate <= 0.10:
+                    form_score -= 0.5
+                    reasons.append(
+                        f"厩舎（{h.get('trainer', '')}）の直近{t_starts}走で3着内率"
+                        f"{t_rate * 100:.0f}%と不振（-0.5点）")
+        # v34.2: 騎手適性（近況＋当該コース実績）。加点は合計+0.75点まで
+        jf = h.get("jockey_form") or {}
+        if jf.get("available"):
+            j_points = 0.0
+            j_starts = jf.get("starts", 0)
+            j_rate = jf.get("top3_rate")
+            if j_rate is not None and j_starts >= 10 and j_rate >= 0.40:
+                j_points += 0.5
+                reasons.append(
+                    f"騎手の直近{j_starts}走で3着内率{j_rate * 100:.0f}%と好調（+0.5点）")
+            if venue:
+                js = (jf.get("course_splits") or {}).get(venue) or {}
+                if js.get("starts", 0) >= 5 and (js.get("top3_rate") or 0) >= 0.50:
+                    j_points += 0.5
+                    reasons.append(
+                        f"騎手の{venue}コース実績{js['starts']}走で3着内率"
+                        f"{js['top3_rate'] * 100:.0f}%（+0.5点）")
+            if j_points > 0.75:
+                j_points = 0.75
+                reasons.append("騎手適性の加点は上限+0.75点に制限")
+            form_score += j_points
+            if (j_points == 0 and j_rate is not None
+                    and j_starts >= 15 and j_rate <= 0.10):
+                form_score -= 0.5
+                reasons.append(
+                    f"騎手の直近{j_starts}走で3着内率{j_rate * 100:.0f}%と不振（-0.5点）")
+        # v34.2: 枠順バイアス（競馬場別の履歴集計で有意な差がある場のみ）
+        fb = VENUE_FRAME_BIAS.get(venue) if venue else None
+        if fb and fb.get("direction"):
+            inner_rate = fb.get("inner_top3_rate") or 0
+            outer_rate = fb.get("outer_top3_rate") or 0
+            if fb["direction"] == "inner":
+                if h.get("is_inner"):
+                    form_score += 0.5
+                    reasons.append(
+                        f"{venue}は内枠有利（内枠3着内率{inner_rate * 100:.0f}% vs "
+                        f"外枠{outer_rate * 100:.0f}%・{fb['races']}レース集計）で内枠（+0.5点）")
+                elif h.get("is_outer"):
+                    form_score -= 0.5
+                    reasons.append(
+                        f"{venue}は内枠有利（内枠3着内率{inner_rate * 100:.0f}% vs "
+                        f"外枠{outer_rate * 100:.0f}%・{fb['races']}レース集計）だが外枠（-0.5点）")
+            else:
+                if h.get("is_outer"):
+                    form_score += 0.5
+                    reasons.append(
+                        f"{venue}は外枠有利（外枠3着内率{outer_rate * 100:.0f}% vs "
+                        f"内枠{inner_rate * 100:.0f}%・{fb['races']}レース集計）で外枠（+0.5点）")
+                elif h.get("is_inner"):
+                    form_score -= 0.5
+                    reasons.append(
+                        f"{venue}は外枠有利（外枠3着内率{outer_rate * 100:.0f}% vs "
+                        f"内枠{inner_rate * 100:.0f}%・{fb['races']}レース集計）だが内枠（-0.5点）")
         if h.get("is_apprentice"):
             form_score += 0.5
             reasons.append("減量騎手記号あり（参考+0.5点）")
@@ -1878,12 +2224,13 @@ def fetch_races_for_date(date_str, is_tomorrow):
 
 def load_history():
     if not HISTORY.exists():
-        return {"schema_version": 29, "snapshots": {}, "stats": {}, "horse_form_cache": {}}
+        return {"schema_version": 29, "snapshots": {}, "stats": {},
+                "horse_form_cache": {}, "people_cache": {}}
     try:
         v = json.loads(HISTORY.read_text(encoding="utf-8"))
         if not isinstance(v, dict):
             raise ValueError("history root not object")
-        for k in ("snapshots", "stats", "horse_form_cache"):
+        for k in ("snapshots", "stats", "horse_form_cache", "people_cache"):
             if not isinstance(v.get(k), dict):
                 v[k] = {}
         v["schema_version"] = 29
@@ -2052,6 +2399,15 @@ def main():
     HORSE_FORM_CACHE = (
         history.get("horse_form_cache", {})
         if isinstance(history.get("horse_form_cache", {}), dict) else {})
+    # v34.2: 人物キャッシュの読み込みと、履歴からの枠順バイアス算出
+    global PEOPLE_CACHE, VENUE_FRAME_BIAS
+    PEOPLE_CACHE = (
+        history.get("people_cache", {})
+        if isinstance(history.get("people_cache", {}), dict) else {})
+    VENUE_FRAME_BIAS = compute_frame_bias(snapshots)
+    biased = [f"{v}({'内' if b['direction'] == 'inner' else '外'}有利)"
+              for v, b in VENUE_FRAME_BIAS.items() if b.get("direction")]
+    print(f"[INFO] frame_bias venues={len(VENUE_FRAME_BIAS)} biased={biased}")
     today_races = fetch_races_for_date(TODAY, False)
     tomorrow_races = fetch_races_for_date(TOMORROW, True)
     for race in today_races:
@@ -2070,6 +2426,7 @@ def main():
         "stats": stats,
         "snapshots": snapshots,
         "horse_form_cache": HORSE_FORM_CACHE,
+        "people_cache": PEOPLE_CACHE,
     })
     save_json(HISTORY, history)
     verified = sum(1 for r in today_races if r.get("runner_count_verified"))
@@ -2103,6 +2460,10 @@ def main():
         "data_quality_summary": {
             "new_horse_form_fetches": FORM_FETCHED_THIS_RUN,
             "horse_form_cache_entries": len(HORSE_FORM_CACHE),
+            # v34.2: 人物データと枠順バイアスの取得状況
+            "new_people_fetches": PEOPLE_FETCHED_THIS_RUN,
+            "people_cache_entries": len(PEOPLE_CACHE),
+            "frame_bias": VENUE_FRAME_BIAS,
             "odds_available_runners": sum(
                 1 for r in today_races + tomorrow_races
                 for h in r.get("horses", []) if h.get("odds") is not None),
@@ -2149,7 +2510,9 @@ def main():
                 "market_scoreはオッズ・人気、form_scoreは取得済み近走・同騎手履歴など。"
                 "血統欄が確認できない場合は血統加点なし。"
                 "odds_free_rankは市場情報なしの比較順位。"
-                "穴候補は実オッズ帯と近走成績ベースを分離表示。"),
+                "穴候補は実オッズ帯と近走成績ベースを分離表示。"
+                "v34.2: 調教師・騎手は近走実績が取得できた場合のみ加減点。"
+                "枠順は履歴集計で有意な内/外バイアスがある競馬場のみ加減点。"),
         },
         "paper_betting": {
             "mode": "paper_only",
