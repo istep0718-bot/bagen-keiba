@@ -1,9 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.3_EXPERT
+BAGEN KEIBA v34.4_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.4):
+- 券種別成績の集計を追加: calculate_stats が精算済みレースの買い目明細
+  （settled_lines）を券種別（単勝/馬連/3連複/ワイド/3連単）に集計し、
+  stats["bet_types"] として出力する（買い目数・的中数・的中率・投資・回収・
+  回収率・的中時平均配当）。サイトのトップに「券種別成績」として表示する
+- settled_lines を history.json のスナップショットに永続化:
+  従来はその日の data.json の races にしか残らず、翌日以降は券種別集計が
+  できなかった。スナップショット構築時に新しい精算明細があればそれを、
+  なければ旧スナップショットのものを引き継ぐよう変更
+- パターンBに「夢枠」として 3連単 [本命→穴→対抗] ¥100 を復活（34.2以前と
+  同じ並び）。これにより v34.3 の「6点・合計1,400円」は v34.4 で
+  「7点・合計1,500円」に上書きされる。他の6点の配分とパターンAは無変更で、
+  精算ロジックにも変更なし
+- 夢枠の「見える化」: calculate_stats に stats["dream_frame"]（挑戦回数・
+  的中数・的中率・投資/回収/回収率・最大配当・的中レース一覧）を追加し、
+  サイトのトップに夢枠専用カードを表示する
 
 改善点 (v34.3):
 - パターンBの買い目配分を V2（コア集中）に見直し: 精算明細の券種別集計で
@@ -53,7 +70,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.3_EXPERT"
+ENGINE_VERSION = "BAGEN_34.4_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -1712,6 +1729,7 @@ def build_tickets(ranked, outsiders, verified):
             ("trio", sorted([a, b, c]), 300),
             ("trio", sorted([a, b, outsider]), 100),
             ("wide", sorted([a, outsider]), 100),
+            ("trifecta", [a, outsider, b], 100),
         ]
         pattern = "B"
         label = "パターンB（参考穴候補を含む紙上買い目）"
@@ -2292,6 +2310,7 @@ def update_snapshot(snapshots, race):
         "settlement_complete": bool(race.get("settlement_complete")),
         "settlement_status": race.get("settlement_status", ""),
         "payout_confirmed": bool(race.get("payout_confirmed")),
+        "settled_lines": race.get("settled_lines") or old.get("settled_lines") or [],
         "result_finishes": race.get("result_finishes", []),
         "updated_at": NOW.isoformat(),
         "frozen_prediction": old.get("frozen_prediction") or {
@@ -2367,6 +2386,60 @@ def calculate_stats(snapshots):
     by_a = [x for x in settled if pattern_of(x) == "A"]
     by_b = [x for x in settled if pattern_of(x) == "B"]
     by_u = [x for x in settled if pattern_of(x) not in ("A", "B")]
+    # v34.4: 券種別成績。買い目1点単位で集計し、的中率は hits/lines で算出する
+    # （サイト側のランダム目安ベンチマークと比較できるよう買い目ベースに統一）。
+    bet_types = {}
+    for typ in ("win", "quinella", "trio", "wide", "trifecta"):
+        bt_lines = bt_hits = bt_stake = bt_return = 0
+        for x in settled:
+            for ln in x.get("settled_lines") or []:
+                if not isinstance(ln, dict) or ln.get("type") != typ:
+                    continue
+                bt_lines += 1
+                bt_stake += safe_int(ln.get("stake_yen"), 0)
+                bt_return += safe_int(ln.get("return_yen"), 0)
+                if ln.get("hit") is True:
+                    bt_hits += 1
+        bet_types[typ] = {
+            "lines": bt_lines,
+            "hits": bt_hits,
+            "hit_rate_pct": round(bt_hits / bt_lines * 100, 2) if bt_lines else 0.0,
+            "stake_yen": bt_stake,
+            "return_yen": bt_return,
+            "roi_pct": round(bt_return / bt_stake * 100, 1) if bt_stake else 0.0,
+            "avg_payout_per_hit_yen": round(bt_return / bt_hits) if bt_hits else 0,
+        }
+    # v34.4: 夢枠（パターンBの3連単¥100）専用集計。3連単は夢枠でのみ買うため、
+    # trifecta の買い目がそのまま夢枠の全記録になる。基本数値は bet_types と共通。
+    df_base = bet_types["trifecta"]
+    df_best = 0
+    df_hit_races = []
+    for x in settled:
+        for ln in x.get("settled_lines") or []:
+            if not isinstance(ln, dict) or ln.get("type") != "trifecta":
+                continue
+            ln_ret = safe_int(ln.get("return_yen"), 0)
+            if ln_ret > df_best:
+                df_best = ln_ret
+            if ln.get("hit") is True:
+                df_hit_races.append({
+                    "date": x.get("date"),
+                    "course": x.get("course"),
+                    "race_no": x.get("race_no"),
+                    "horses": ln.get("horses") or [],
+                    "return_yen": ln_ret,
+                })
+    df_hit_races.sort(key=lambda r: -safe_int(r.get("return_yen"), 0))
+    dream_frame = {
+        "lines": df_base["lines"],
+        "hits": df_base["hits"],
+        "hit_rate_pct": df_base["hit_rate_pct"],
+        "stake_yen": df_base["stake_yen"],
+        "return_yen": df_base["return_yen"],
+        "roi_pct": df_base["roi_pct"],
+        "best_payout_yen": df_best,
+        "hit_races": df_hit_races[:20],
+    }
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -2386,6 +2459,8 @@ def calculate_stats(snapshots):
         "pattern_a": agg(by_a),
         "pattern_b": agg(by_b),
         "pattern_unknown": agg(by_u),
+        "bet_types": bet_types,
+        "dream_frame": dream_frame,
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
