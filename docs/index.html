@@ -136,6 +136,19 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 .hero-badge-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .hero-shine{display:inline-flex;align-items:center;gap:4px;background:linear-gradient(90deg,#fff3c4,#d9ab3c);color:#1a1408;font-weight:900;font-size:11px;padding:3px 11px;border-radius:999px;box-shadow:0 2px 14px rgba(233,199,103,.55)}
 .badge.super{border-color:rgba(255,243,196,.85);color:#1d1503;background:linear-gradient(90deg,#fff3c4,#d9ab3c);font-weight:900;box-shadow:0 2px 12px rgba(233,199,103,.5);letter-spacing:.6px}
+.badge.g1{border-color:rgba(255,243,196,.9);color:#1d1503;background:linear-gradient(90deg,#fff3c4,#d9ab3c);font-weight:900;box-shadow:0 2px 14px rgba(233,199,103,.6);letter-spacing:.6px}
+.badge.jpn1{border-color:rgba(131,186,255,.65);color:#cfe4ff;background:rgba(24,44,80,.5);font-weight:800}
+.g1card{border-color:rgba(255,222,130,.78);box-shadow:0 16px 44px rgba(0,0,0,.55),0 0 30px rgba(233,199,103,.20),inset 0 1px 0 rgba(255,243,196,.16)}
+.g1card .racehead{background:linear-gradient(100deg,rgba(96,74,22,.82),rgba(27,40,64,.92) 58%,rgba(15,24,40,.94));border-bottom:1px solid rgba(233,199,103,.42)}
+.g1horse{padding:10px 2px;border-bottom:1px solid rgba(160,180,210,.1)}
+.g1horse:last-child{border-bottom:0}
+.g1horse-head{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:10px;align-items:center}
+.g1horse .rankbadge.r1{background:linear-gradient(140deg,#fff3c4,#caa02f);color:#221806;border-color:rgba(255,243,196,.8);box-shadow:0 3px 12px rgba(233,199,103,.45)}
+.g1horse .rankbadge.r2{background:linear-gradient(140deg,#f2f5f9,#9fb0c3);color:#1b2432;border-color:rgba(240,246,255,.7)}
+.g1horse .rankbadge.r3{background:linear-gradient(140deg,#f0c297,#a06a35);color:#26160a;border-color:rgba(240,194,151,.7)}
+ul.reasons{margin:7px 0 2px;padding-left:17px;font-size:11px;color:#c9d6e6;line-height:1.65}
+ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
+.caution{font-size:10.5px;color:var(--orange);margin-top:5px;line-height:1.55;overflow-wrap:anywhere}
 .badge.rec{border-color:rgba(45,212,191,.55);color:#a7f3ea;background:rgba(13,52,48,.55)}
 .charts{display:grid;gap:13px}
 .chart-card{background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,243,196,.06);backdrop-filter:blur(14px);transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease}
@@ -301,6 +314,7 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 <div class="searchbox"><span class="searchicon" aria-hidden="true">🔍</span><input id="raceSearch" type="search" inputmode="search" enterkeyhint="search" placeholder="競馬場・レース名・馬名・騎手で検索（例：園田 3）" aria-label="レース検索" autocomplete="off"><button class="searchclear" id="searchClear" type="button" aria-label="検索をクリア" style="display:none">×</button></div>
 <div class="small" id="searchInfo" role="status"></div>
 </div>
+<div id="g1Area" style="display:none"></div>
 <div id="raceList" class="loading">データを読み込んでいます…</div>
 </section>
 
@@ -371,6 +385,161 @@ function gradeBadge(r) {
   if (r.race_grade === '注目レース') return '<span class="badge rec">注目レース</span>';
   if (r.is_recommended) return '<span class="badge gold">おすすめ</span>';
   return '';
+}
+
+/* ===== G1 / Jpn1 判定（レース名の基底名照合） =====
+   括弧内・空白・中黒を除去した正規化名で、基底名との完全一致または前方一致のみを
+   判定する。「〜賞」を含むだけの無関係なレースには反応しない。最長一致を優先し、
+   「マイルチャンピオンシップ南部杯」(Jpn1) が「マイルチャンピオンシップ」(G1) に
+   誤判定されないようにする。 */
+const G1_BASES = [
+  'フェブラリーステークス', 'フェブラリーS', '高松宮記念', '大阪杯', '桜花賞', '皐月賞',
+  '天皇賞', 'NHKマイルカップ', 'NHKマイルC', 'ヴィクトリアマイル', '優駿牝馬', 'オークス',
+  '東京優駿', '日本ダービー', 'ダービー', '安田記念', '宝塚記念',
+  'スプリンターズステークス', 'スプリンターズS', '秋華賞', '菊花賞', 'エリザベス女王杯',
+  'マイルチャンピオンシップ', 'マイルCS', 'ジャパンカップ', 'ジャパンC',
+  'チャンピオンズカップ', 'チャンピオンズC', '阪神ジュベナイルフィリーズ', '阪神JF',
+  '朝日杯フューチュリティステークス', '朝日杯FS', '有馬記念',
+  'ホープフルステークス', 'ホープフルS'
+];
+const JPN1_BASES = [
+  'マイルチャンピオンシップ南部杯', '南部杯', '帝王賞', '東京大賞典', 'かしわ記念',
+  'JBCレディスクラシック', 'JBCクラシック', 'JBCスプリント', '全日本2歳優駿', '川崎記念'
+];
+const GRADE_BASES = [
+  ...G1_BASES.map(n => [n, 'G1']),
+  ...JPN1_BASES.map(n => [n, 'Jpn1'])
+].sort((a, b) => b[0].length - a[0].length);
+
+function normRaceName(v) {
+  return String(v ?? '')
+    .normalize('NFKC')
+    .replace(/[（(【\[〔].*?[）)】\]〕]/g, '')
+    .replace(/[\s　・]/g, '')
+    .trim();
+}
+
+function gradeClass(r) {
+  const n = normRaceName(r && r.name);
+  if (!n) return '';
+  /* ダービー卿チャレンジトロフィー（G3）は「ダービー」前方一致の誤爆のため除外 */
+  if (n.startsWith('ダービー卿')) return '';
+  for (const [base, g] of GRADE_BASES) {
+    if (n === base || n.startsWith(base)) return g;
+  }
+  return '';
+}
+
+function gradeClassBadge(r) {
+  const g = gradeClass(r);
+  if (g === 'G1') return '<span class="badge g1">🏆 G1</span>';
+  if (g === 'Jpn1') return '<span class="badge jpn1">🏆 Jpn1</span>';
+  return '';
+}
+
+/* ===== G1・Jpn1 特設（今日＋明日） ===== */
+function getGradedRaces() {
+  if (!DATA) return [];
+  const seen = new Set();
+  const out = [];
+  const pools = [[DATA.races || [], '本日'], [DATA.tomorrow_races || [], '明日']];
+  for (const [pool, dayLabel] of pools) {
+    for (const r of pool) {
+      if (!r) continue;
+      const g = gradeClass(r);
+      if (!g) continue;
+      const key = String(r.id || r.race_id || '') + '|' + String(r.date || '') + '|' +
+        String(r.course || '') + '|' + String(r.race_no || '') + '|' + String(r.name || '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ r, g, dayLabel });
+    }
+  }
+  out.sort((a, b) =>
+    String(a.r.post_time || '99:99').localeCompare(String(b.r.post_time || '99:99')) ||
+    String(a.r.course || '').localeCompare(String(b.r.course || '')));
+  return out;
+}
+
+function renderG1Horse(h, i) {
+  const reasons = (Array.isArray(h.reasons) ? h.reasons : []).filter(x => has(x)).slice(0, 4);
+  let reasonHtml;
+  if (reasons.length) {
+    reasonHtml = '<ul class="reasons">' + reasons.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+  } else {
+    const pf = h.past_form || {};
+    if (pf.available && (has(pf.starts) || has(pf.avg_finish))) {
+      reasonHtml = '<ul class="reasons"><li>近走' + esc(pf.starts ?? '—') + '走・平均' +
+        esc(pf.avg_finish ?? '—') + '着（近走データからの補足）</li></ul>';
+    } else {
+      reasonHtml = '<div class="small" style="margin-top:6px">選定理由データなし</div>';
+    }
+  }
+  const rk = Number(h.rank ?? i + 1);
+  return '<div class="g1horse">' +
+    '<div class="g1horse-head">' +
+      '<div class="rankbadge' + (rk >= 1 && rk <= 3 ? ' r' + rk : '') + '">' + esc(h.rank ?? i + 1) + '</div>' +
+      '<div style="min-width:0">' +
+        '<div class="topname">' + esc(horseNo(h)) + '番 ' + esc(horseName(h)) + '</div>' +
+        '<div class="topdetail">騎手 ' + esc(h.jockey || '未取得') +
+          ' · 調教師 ' + esc(h.trainer || '未取得') +
+          ' · スコア ' + esc(has(h.score) ? h.score : '—') +
+          ' · 推定勝率 ' + esc(pct(h.estimated_win_probability_pct)) + '</div>' +
+      '</div>' +
+      '<div class="topodds">' + esc(fmtOdds(h.odds)) + '<small>単勝オッズ</small></div>' +
+    '</div>' +
+    reasonHtml +
+    (has(h.caution) ? '<div class="caution">⚠ ' + esc(h.caution) + '</div>' : '') +
+  '</div>';
+}
+
+function renderG1Card(item) {
+  const r = item.r;
+  const top = (Array.isArray(r.top5) ? [...r.top5] : [])
+    .sort((a, b) => Number(a.rank ?? 99) - Number(b.rank ?? 99)).slice(0, 5);
+  const recReasons = (Array.isArray(r.race_recommendation_reasons) ? r.race_recommendation_reasons : []).filter(has);
+  return '<article class="race g1card">' +
+    '<div class="racehead">' +
+      '<div style="min-width:0">' +
+        '<div class="racetitle">' + esc(r.course || '競馬場未取得') + ' ' +
+          esc(r.race_no ?? '—') + 'R · ' + esc(r.name || 'レース名未取得') + '</div>' +
+        '<div class="badges">' +
+          '<span class="badge ' + (item.g === 'G1' ? 'g1' : 'jpn1') + '">🏆 ' + item.g + '</span>' +
+          '<span class="badge gold">' + esc(item.dayLabel) + '</span>' +
+          '<span class="badge">' + esc(timeText(r.post_time)) + ' 発走</span>' +
+          gradeBadge(r) +
+        '</div>' +
+      '</div>' +
+      '<div class="topodds">' + esc(r.runner_count ?? '—') + '頭<small>取得頭数</small></div>' +
+    '</div>' +
+    '<div class="racebody">' +
+      '<div class="meta"><span>' + esc(r.surface || '馬場未取得') + '</span>' +
+        '<span>' + esc(has(r.distance_m) ? r.distance_m + 'm' : '距離未取得') + '</span>' +
+        '<span>馬場状態 ' + esc(r.going || '未取得') + '</span>' +
+        '<span>天候 ' + esc(r.weather || '未取得') + '</span></div>' +
+      (recReasons.length
+        ? '<div class="block"><div class="blocktitle">📌 このレースの注目理由</div><ul class="reasons">' +
+          recReasons.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>'
+        : '') +
+      '<div class="block"><div class="blocktitle">🏆 なぜこの馬たちを選んだか（予想TOP5）</div>' +
+        (top.length ? top.map(renderG1Horse).join('') : '<div class="empty">予想順位データがありません。</div>') +
+      '</div>' +
+      renderTickets(r) +
+    '</div></article>';
+}
+
+function renderG1Special() {
+  const area = $('g1Area');
+  if (!area) return;
+  const items = DATA ? getGradedRaces() : [];
+  if (!items.length) {
+    area.innerHTML = '';
+    area.style.display = 'none';
+    return;
+  }
+  area.style.display = '';
+  area.innerHTML = '<div class="sectionhead"><h2>🏆 G1・Jpn1 特設</h2><span class="small">' +
+    items.length + 'レース</span></div>' + items.map(renderG1Card).join('');
 }
 
 /* 結果一覧用バッジ（超おすすめ優先） */
@@ -926,6 +1095,7 @@ function renderRace(r, i) {
           '<span class="badge">' + esc(timeText(r.post_time)) + '</span>' +
           '<span class="badge ' + (verified ? '' : 'warn') + '">' + (verified ? '出走頭数検証OK' : '出走頭数未検証') + '</span>' +
           gradeBadge(r) +
+          gradeClassBadge(r) +
           (r.is_finished ? '<span class="badge">結果確認対象</span>' : '') +
         '</div>' +
       '</div>' +
@@ -978,6 +1148,7 @@ function render() {
     $('raceList').innerHTML = a.map(renderRace).join('');
   }
   if (typeof renderSuper === 'function') renderSuper();
+  if (typeof renderG1Special === 'function') renderG1Special();
 }
 
 function updateQuality() {
