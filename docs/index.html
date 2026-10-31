@@ -221,6 +221,30 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 
 
 
+<section data-panel="top" id="betTypeSection" hidden>
+<div class="sectionhead"><h2>券種別成績</h2><span class="small">買い目1点あたり集計・精算済みのみ</span></div>
+<div class="panel">
+<div class="tablewrap"><table style="min-width:0">
+<thead><tr><th>券種</th><th style="text-align:right">買い目数</th><th style="text-align:right">的中率</th><th style="text-align:right">回収率</th><th style="text-align:right">的中時平均配当</th></tr></thead>
+<tbody id="betTypeBody"></tbody>
+</table></div>
+<p class="small" style="margin-top:8px">「目安」は14頭立て換算のランダム値（買い目1点あたり）。回収率100%超えで黒字。</p>
+</div>
+</section>
+
+<section data-panel="top" id="dreamSection" hidden>
+<div class="sectionhead"><h2>🌟 夢枠（パターンB・3連単）</h2><span class="small">一撃大配当枠</span></div>
+<div class="panel" style="border-color:rgba(255,222,130,.68);box-shadow:0 12px 32px rgba(0,0,0,.42),0 0 24px rgba(233,199,103,.16),inset 0 1px 0 rgba(255,243,196,.12)">
+<div class="metrics">
+<div class="metric"><label>挑戦回数</label><strong id="dfLines">—</strong></div>
+<div class="metric"><label>的中</label><strong id="dfHits">—</strong><span class="small" id="dfHitRate" style="display:block;margin-top:4px;color:var(--muted)"></span></div>
+<div class="metric"><label>回収率</label><strong id="dfRoi">—</strong><span class="small" id="dfDetail" style="display:block;margin-top:4px;color:var(--muted)"></span></div>
+<div class="metric"><label>最大配当</label><strong class="gold" id="dfBest">—</strong></div>
+</div>
+<div id="dfRaces" style="margin-top:10px"></div>
+</div>
+</section>
+
 <section data-panel="top">
 <div class="sectionhead"><h2>日別パフォーマンス</h2><span class="small" id="chartScopeNote">精算済み履歴</span></div>
 <div class="seg-filters" id="chartSeg">
@@ -349,6 +373,13 @@ function gradeBadge(r) {
   return '';
 }
 
+/* 結果一覧用バッジ（超おすすめ優先） */
+function resBadge(x) {
+  if (x.race_grade === '超おすすめ') return ' <span class="badge super">✨ 超おすすめ</span>';
+  if (x.is_recommended === true) return ' <span class="badge gold">おすすめ</span>';
+  return '';
+}
+
 function historyItems() {
   const hist = DATA?.paper_betting?.history;
   if (!Array.isArray(hist)) return [];
@@ -396,7 +427,7 @@ function renderResults() {
   body.innerHTML = slice.length ? slice.map(x => {
     const p = x.race_profit != null ? Number(x.race_profit) : (Number(x.all_bet_return) || 0) - (Number(x.cost) || 0);
     const d = String(x.date || '').slice(5).replace('-', '/');
-    return '<tr><td>' + esc(d) + '</td><td>' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R</td>' +
+    return '<tr><td>' + esc(d) + '</td><td>' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R' + resBadge(x) + '</td>' +
       '<td class="resnum">' + yen(x.cost) + '</td><td class="resnum">' + yen(x.all_bet_return) + '</td>' +
       '<td class="resnum ' + (p > 0 ? 'green' : (p < 0 ? 'red' : '')) + '">' + (p > 0 ? '+' : '') + yen(p) + '</td></tr>';
   }).join('') : '<tr><td colspan="5">精算済みデータがありません</td></tr>';
@@ -670,6 +701,63 @@ function metricUpdate() {
   };
   setPat('mPatAHit', 'mPatADetail', 'mPatAProfit', 'mPatARoi', pa);
   setPat('mPatBHit', 'mPatBDetail', 'mPatBProfit', 'mPatBRoi', pb);
+  renderBetTypes(s);
+  renderDream(s);
+}
+
+/* ===== 券種別成績（目安ベンチマークは14頭立て換算のランダム値・静的定数） ===== */
+const BET_BENCH = [
+  ['win', '単勝', 7.1, 80],
+  ['quinella', '馬連', 1.1, 77.5],
+  ['trio', '3連複', 0.27, 75],
+  ['wide', 'ワイド', 3.3, 77.5],
+  ['trifecta', '3連単', 0.046, 72.5],
+];
+
+function renderBetTypes(s) {
+  const sec = $('betTypeSection');
+  if (!sec) return;
+  const bt = s && s.bet_types;
+  if (!bt) { sec.setAttribute('hidden', ''); return; }
+  sec.removeAttribute('hidden');
+  const pct2 = v => has(v) ? (Math.round(Number(v) * 100) / 100) + '%' : '—';
+  $('betTypeBody').innerHTML = BET_BENCH.map(([key, name, bHit, bRoi]) => {
+    const d = bt[key] || {};
+    const lines = Number(d.lines || 0);
+    const hr = Number(d.hit_rate_pct || 0);
+    const roi = Number(d.roi_pct || 0);
+    return '<tr><td><strong>' + name + '</strong></td>' +
+      '<td class="resnum">' + num(lines) + '点<br><span class="small">的中 ' + num(d.hits || 0) + '</span></td>' +
+      '<td class="resnum"><span class="' + (lines && hr > bHit ? 'green' : '') + '">' + pct2(d.hit_rate_pct) + '</span><br><span class="small">目安 ' + bHit + '%</span></td>' +
+      '<td class="resnum"><span class="' + (lines && roi > bRoi ? 'green' : '') + '">' + pct(d.roi_pct) + '</span><br><span class="small">目安 ' + bRoi + '%</span></td>' +
+      '<td class="resnum">' + (Number(d.hits || 0) ? yen(d.avg_payout_per_hit_yen) : '—') + '</td></tr>';
+  }).join('');
+}
+
+/* ===== 夢枠（パターンB・3連単）カード ===== */
+function renderDream(s) {
+  const sec = $('dreamSection');
+  if (!sec) return;
+  const df = s && s.dream_frame;
+  if (!df) { sec.setAttribute('hidden', ''); return; }
+  sec.removeAttribute('hidden');
+  $('dfLines').textContent = num(df.lines) + '回';
+  $('dfHits').textContent = num(df.hits) + '回';
+  $('dfHitRate').textContent = '的中率 ' + (Math.round(Number(df.hit_rate_pct || 0) * 100) / 100) + '%';
+  $('dfRoi').textContent = pct(df.roi_pct);
+  $('dfDetail').textContent = '投資 ' + yen(df.stake_yen) + ' → 回収 ' + yen(df.return_yen);
+  $('dfBest').textContent = Number(df.best_payout_yen || 0) ? yen(df.best_payout_yen) : '—';
+  const races = Array.isArray(df.hit_races) ? df.hit_races : [];
+  $('dfRaces').innerHTML = races.length
+    ? '<div style="font-size:12px;font-weight:800;color:#ecd28e;letter-spacing:1.2px;margin-bottom:6px">🎯 的中レース</div>' +
+      races.map(r => {
+        const d = String(r.date || '').slice(5).replace('-', '/');
+        return '<div class="toprow" style="grid-template-columns:minmax(0,1fr) auto">' +
+          '<div><div class="topname">' + esc(d) + ' ' + esc(r.course || '') + ' ' + esc(r.race_no) + 'R</div>' +
+          '<div class="topdetail">3連単 ' + esc((r.horses || []).join('→')) + '</div></div>' +
+          '<div class="topodds">' + yen(r.return_yen) + '</div></div>';
+      }).join('')
+    : '<p class="small">まだ的中なし。夢枠は当たれば大きい、一撃狙いの枠です。</p>';
 }
 
 function horseNo(h) {
