@@ -2470,11 +2470,58 @@ def calculate_stats(snapshots):
 
 
 
+# v34.4: settled_lines が保存されていなかった期間（2026-10-28〜31）の埋め戻し。
+# 各日の最終版 docs/data.json（GitHub のコミット履歴）から一度だけ補完する。
+# 補完済みの日は取得しない。失敗しても警告のみで処理は継続する。
+BACKFILL_DATES = ("2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31")
+
+
+def backfill_settled_lines(snapshots):
+    missing = sorted({
+        str(x.get("date")) for x in snapshots.values()
+        if isinstance(x, dict) and not x.get("settled_lines")
+        and str(x.get("date")) in BACKFILL_DATES
+    })
+    for date in missing:
+        try:
+            api = ("https://api.github.com/repos/istep0718-bot/bagen-keiba/commits"
+                   f"?path=docs/data.json&since={date}T00:00:00%2B09:00"
+                   f"&until={date}T23:59:59%2B09:00&per_page=1")
+            r = SESSION.get(api, timeout=TIMEOUT)
+            r.raise_for_status()
+            commits = r.json()
+            if not commits:
+                continue
+            sha = commits[0]["sha"]
+            raw = ("https://raw.githubusercontent.com/istep0718-bot/"
+                   f"bagen-keiba/{sha}/docs/data.json")
+            r2 = SESSION.get(raw, timeout=(10, 60))
+            r2.raise_for_status()
+            day = r2.json()
+        except Exception as e:
+            warn(f"settled_lines backfill failed ({date}): {e}")
+            continue
+        by_id = {
+            str(race.get("id")): race.get("settled_lines")
+            for race in day.get("races", [])
+            if race.get("settled_lines")
+        }
+        filled = 0
+        for rid, snap in snapshots.items():
+            if (isinstance(snap, dict) and str(snap.get("date")) == date
+                    and not snap.get("settled_lines")
+                    and str(rid) in by_id):
+                snap["settled_lines"] = by_id[str(rid)]
+                filled += 1
+        print(f"[BACKFILL] {date}: settled_lines filled for {filled} snapshots")
+
+
 def main():
     print(f"=== {ENGINE_VERSION} START ===")
     print(f"[INFO] JST now: {NOW.isoformat()}")
     history = load_history()
     snapshots = history["snapshots"]
+    backfill_settled_lines(snapshots)
     global HORSE_FORM_CACHE
     HORSE_FORM_CACHE = (
         history.get("horse_form_cache", {})
