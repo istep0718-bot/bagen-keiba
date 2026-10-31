@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.2_EXPERT
+BAGEN KEIBA v34.3_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.3):
+- パターンBの買い目配分を V2（コア集中）に見直し: 精算明細の券種別集計で
+  最悪だった馬連[本命-穴]（回収率34.1%）・3連単（43.7%）・ワイド[対抗-穴] を廃止し、
+  単勝400/馬連[本命-対抗]300/馬連[本命-3番手]200/3連複[本命軸]300/
+  3連複[穴絡み]100/ワイド[本命-穴]100 の6点・合計1,400円に再配分。
+  同一90レースのバックテストで回収率 74.7%→83.8%（黒字化ではなく負け幅の圧縮。
+  効果の判定は今後の紙上実績で継続する）
 
 改善点 (v34.2):
 - 調教師（厩舎）: 出馬表の調教師名・IDを取得し、db.netkeiba の近走一覧（最大30走）から
@@ -45,7 +53,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.2_EXPERT"
+ENGINE_VERSION = "BAGEN_34.3_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -1698,15 +1706,12 @@ def build_tickets(ranked, outsiders, verified):
     outsider = next((h["horse_no"] for h in outsiders if h["horse_no"] not in (a, b, c)), None)
     if outsider is not None:
         lines = [
-            ("win", [a], 300),
-            ("quinella", sorted([a, b]), 200),
+            ("win", [a], 400),
+            ("quinella", sorted([a, b]), 300),
             ("quinella", sorted([a, c]), 200),
-            ("quinella", sorted([a, outsider]), 200),
-            ("trio", sorted([a, b, c]), 100),
+            ("trio", sorted([a, b, c]), 300),
             ("trio", sorted([a, b, outsider]), 100),
             ("wide", sorted([a, outsider]), 100),
-            ("wide", sorted([b, outsider]), 100),
-            ("trifecta", [a, outsider, b], 100),
         ]
         pattern = "B"
         label = "パターンB（参考穴候補を含む紙上買い目）"
