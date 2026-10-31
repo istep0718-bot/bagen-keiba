@@ -1733,7 +1733,7 @@ def build_tickets(ranked, outsiders, verified):
             continue
         items.append({
             "type": typ, "horses": hs, "stake_yen": stake,
-            "label": f"{names[typ]} {'→' if typ == 'trifecta' else '-'.join(map(str, hs))} ({stake}円)",
+            "label": f"{names[typ]} {'→'.join(map(str, hs)) if typ == 'trifecta' else '-'.join(map(str, hs))} ({stake}円)",
         })
     while sum(x["stake_yen"] for x in items) > PAPER_BUDGET_YEN:
         items.pop()
