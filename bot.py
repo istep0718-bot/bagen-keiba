@@ -1,9 +1,30 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.9_EXPERT
+BAGEN KEIBA v34.10_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.10):
+- オカルト枠を「3連単狙いのみ」に仕様変更（ユーザー指示）。34.9 の
+  単勝100円仮定の別枠計測は計測実績ゼロの段階で置き換える。
+  オカルトは引き続き選定・スコア・信頼度・配分（夢枠含む）・ゲート・
+  グレードには一切混ぜない別枠計測のまま。
+- オカルト買い目（3連単のみ・2点）: occult_pick があるレースだけを
+  対象に [注目馬→本命→対抗] と [注目馬→対抗→本命] の2点（各100円、
+  合計200円/レース）。注目馬が本命/対抗と重なる場合は、注目馬を除いた
+  予想上位2頭を相手にする（3頭は全て異なる組み合わせ）。
+  レース dict とスナップショットに occult_trifecta として保存する。
+- 精算は夢枠と同じ経路: 結果ページの払戻表から得た payouts["trifecta"]
+  を精算時点（fetch_and_settle_result）で照合し、結果を
+  occult_settlement としてスナップショットに保存する。
+  着順一致でも払戻が確認できない場合は収支集計から除外する
+  （本体の精算と同じ厳密さ）。
+- 集計の作り替え: stats["occult_track"] を3連単仕様にする
+  {races, hits, hit_rate_pct, cost=200×races, return, roi_pct}。
+  34.9 の単勝版フィールド（win_hits/place_hits 等）は削除した。
+  精算は 34.10 生成分から開始し、遡及再構成はしない。
+- occult_pick・occult_numbers・occult_tendency の算出は 34.9 から不変更。
 
 改善点 (v34.9):
 - オカルト項目を追加（ユーザー希望）。ただし二本立て方針どおり、選定・
@@ -182,7 +203,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.9_EXPERT"
+ENGINE_VERSION = "BAGEN_34.10_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -225,7 +246,7 @@ OCCULT_MIN_EXPECTED = 5.0        # 馬番指数サイン: 期待値がこれ未�
 OCCULT_MIN_SIGMA = 2.0           # サイン（馬番指数・場×時間帯 共通）を立てるσの下限（+1.0では9番等でほぼ全レースに付着し看板が薄まるため、親レビューで+2.0に厳格化）
 OCCULT_TENDENCY_MIN_RACES = 15   # 場×時間帯サイン: 区分の精算レース数がこれ以上で有効
 OCCULT_TENDENCY_MIN_EXPECTED = 1.0  # 場×時間帯の代表馬番は期待値がこれ以上の馬番から選ぶ（高馬番の低期待値ノイズ除け）
-OCCULT_STAKE_YEN = 100           # オカルト枠の仮定ベット額（1レース単勝100円）
+OCCULT_STAKE_YEN = 100           # v34.10: オカルト枠3連単の1点あたりの仮定ベット額（2点で200円/レース）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -2366,6 +2387,11 @@ def fetch_and_settle_result(race, source):
         finishes, payouts = parse_result_page(page, rid)
         if len(finishes) >= 3:
             s = settle_tickets(race.get("tickets", []), finishes, payouts)
+            # v34.10: オカルト3連単も夢枠と同じ払戻表で精算する
+            # （結果は occult_settlement としてスナップショットに保存され、
+            # calculate_stats が別枠集計する）
+            race["occult_settlement"] = settle_occult_trifecta(
+                race.get("occult_trifecta") or [], finishes, payouts)
             race.update({
                 "result_finishes": finishes,
                 "payouts": payouts,
@@ -2540,6 +2566,8 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # 場×時間帯傾向（いずれも main でグローバルに保持）だけから決める。
     # 選定・スコア・買い目・ゲート・グレードには一切影響しない。
     occult_pick = pick_occult_horse(ranked, venue or "競馬場未取得", post)
+    # v34.10: オカルト買い目（3連単2点）。注目馬がいるレースだけ生成する。
+    occult_trifecta = build_occult_trifecta(ranked, occult_pick)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -2569,6 +2597,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         "bet_eligible": bet_eligible, "gate_reasons": gate_reasons,
         # v34.9: オカルト注目馬（表示・別枠集計専用。選定には無関係）
         "occult_pick": occult_pick,
+        # v34.10: オカルト買い目（3連単2点・各100円の仮定。別枠集計専用）
+        "occult_trifecta": occult_trifecta,
+        "occult_settlement": None,
         "race_recommendation_reasons": reasons,
         "race_data_coverage": {
             "odds_pct": round(odds_coverage * 100, 1),
@@ -2885,6 +2916,60 @@ def pick_occult_horse(runners, course, post_time):
     return pick
 
 
+def build_occult_trifecta(ranked, occult_pick):
+    """v34.10: オカルト買い目（3連単のみ・2点）を組み立てる。
+    注目馬を1着に固定し、相手は予想上位2頭（本命・対抗）。
+    注目馬が本命/対抗と重なる場合は、注目馬を除いた予想上位2頭を
+    相手に使う（3頭が全て異なる組み合わせにする）。
+    注目馬が無い、または相手が2頭揃わない場合は空リスト。"""
+    if not isinstance(occult_pick, dict) or occult_pick.get("number") is None:
+        return []
+    try:
+        pno = int(occult_pick["number"])
+    except (TypeError, ValueError):
+        return []
+    partners = []
+    for h in ranked or []:
+        try:
+            no = int(h.get("horse_no"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if no == pno:
+            continue
+        partners.append(no)
+        if len(partners) == 2:
+            break
+    if len(partners) < 2:
+        return []
+    a, b = partners
+    return [[pno, a, b], [pno, b, a]]
+
+
+def settle_occult_trifecta(combos, finishes, payouts):
+    """v34.10: オカルト3連単を夢枠と同じ経路（結果ページの払戻表
+    payouts["trifecta"]）で精算する。本体の settle_tickets と同じ厳密さ:
+    着順一致でも払戻金額が確認できない場合は的中扱いにせず、
+    payout_missing=True として収支集計から除外させる。"""
+    result = {"hit": False, "return_yen": 0,
+              "payout_per_100": None, "payout_missing": False}
+    if not combos or not finishes or len(finishes) < 3:
+        return result
+    top3 = [int(f) for f in finishes[:3]]
+    tri_payouts = (payouts or {}).get("trifecta") or {}
+    for combo in combos:
+        combo = [int(c) for c in combo]
+        if combo != top3:
+            continue
+        payout = tri_payouts.get(combo_key(combo, True), 0)
+        if payout:
+            result["hit"] = True
+            result["payout_per_100"] = payout
+            result["return_yen"] += int(OCCULT_STAKE_YEN / 100 * payout)
+        else:
+            result["payout_missing"] = True
+    return result
+
+
 def update_snapshot(snapshots, race):
     rid = str(race["id"])
     old = snapshots.get(rid, {})
@@ -2968,6 +3053,9 @@ def update_snapshot(snapshots, race):
         "post_odds": post_odds_from_race(race),
         # v34.9: オカルト注目馬を保存し、精算後に occult_track へ別集計する
         "occult_pick": race.get("occult_pick"),
+        # v34.10: オカルト買い目（3連単2点）とその精算結果を保存する
+        "occult_trifecta": race.get("occult_trifecta") or old.get("occult_trifecta") or [],
+        "occult_settlement": race.get("occult_settlement") or old.get("occult_settlement"),
         "odds_coverage": snap_odds_coverage,
         "bet_eligible": snap_bet_eligible,
         "gate_reasons": snap_gate_reasons,
@@ -3124,39 +3212,35 @@ def calculate_stats(snapshots):
     # 馬番オカルト指数と場×時間帯傾向は精算済み全履歴（shadow 含む）から算出。
     occult_numbers = compute_occult_numbers(settled_all)
     occult_tendency = compute_occult_tendency(settled_all)
-    # オカルト枠: occult_pick が保存されている精算レース（34.9生成分から）を
-    # 夢枠とは完全に独立に集計する。単勝100円の仮定で、回収は単勝の
-    # 最終オッズ（last_odds）から算出する。オッズ不明のレースは
-    # cost/return に含めず、races / win_hits / place_hits のみ数える。
+    # オカルト枠（v34.10で3連単仕様に作り替え）: occult_trifecta と
+    # occult_settlement が保存されている精算レース（34.10生成分から）を
+    # 夢枠とは完全に独立に集計する。買い目は注目馬1着固定の3連単2点
+    # （各100円＝200円/レース）。払戻は精算時に夢枠と同じ払戻表から
+    # 照合済みの occult_settlement を使う。着順一致でも払戻未確認
+    # （payout_missing）のレースは、本体の精算と同じく収支集計から
+    # 除外する（races にも数えない）。
     occult_track = {
-        "races": 0, "win_hits": 0, "place_hits": 0,
+        "races": 0, "hits": 0, "hit_rate_pct": 0.0,
         "cost": 0, "return": 0, "roi_pct": 0.0,
-        "note": ("オカルト注目馬だけを追う別枠計測（夢枠とは独立）。"
-                 "単勝100円の仮定。オッズ不明のレースは投資・回収に含めない。"
-                 "34.9生成分から計測開始。"),
+        "note": ("オカルト注目馬を1着固定にした3連単2点（各100円）だけを追う"
+                 "別枠計測（夢枠とは独立）。払戻未確認のレースは収支集計から除外。"
+                 "34.10生成分から計測開始。"),
     }
     for x in settled_all:
-        pick = x.get("occult_pick")
-        if not isinstance(pick, dict) or pick.get("number") is None:
+        combos = x.get("occult_trifecta")
+        st = x.get("occult_settlement")
+        if not combos or not isinstance(st, dict):
+            continue
+        if st.get("payout_missing"):
             continue
         occult_track["races"] += 1
-        try:
-            pno = int(pick["number"])
-            fnums = [int(f) for f in (x.get("result_finishes") or [])]
-        except (ValueError, TypeError):
-            continue
-        is_win = bool(fnums) and fnums[0] == pno
-        if is_win:
-            occult_track["win_hits"] += 1
-        if pno in fnums[:3]:
-            occult_track["place_hits"] += 1
-        raw_odds = (x.get("last_odds") or {}).get(str(pno))
-        odds = float(raw_odds) if isinstance(raw_odds, (int, float)) else None
-        if odds is None:
-            continue
-        occult_track["cost"] += OCCULT_STAKE_YEN
-        if is_win:
-            occult_track["return"] += int(OCCULT_STAKE_YEN * odds)
+        occult_track["cost"] += OCCULT_STAKE_YEN * len(combos)
+        if st.get("hit") is True:
+            occult_track["hits"] += 1
+            occult_track["return"] += safe_int(st.get("return_yen"), 0)
+    if occult_track["races"]:
+        occult_track["hit_rate_pct"] = round(
+            occult_track["hits"] / occult_track["races"] * 100, 1)
     if occult_track["cost"]:
         occult_track["roi_pct"] = round(
             occult_track["return"] / occult_track["cost"] * 100, 1)
