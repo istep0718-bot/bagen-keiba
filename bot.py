@@ -1,9 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.5_EXPERT
+BAGEN KEIBA v34.6_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.6):
+- 中央（JRA）レースの単勝オッズを JRA公式サイト（www.jra.go.jp、無料）の
+  オッズページから取得するようにした。従来は netkeiba のオッズ専用ページが
+  JavaScript描画で値を取得できず、中央は全レース odds 未取得（odds_coverage=0）
+  のまま「データ不足・様子見」になっていた構造的欠陥への対処。
+  取得経路: JRADB accessO.html に固定入口 CNAME（pw15oli00/6D）を POST →
+  開催選択ページから対象日の開催 CNAME を辿り → レース選択ページから
+  単勝・複勝（馬番順）CNAME を辿り → オッズ表をパースする。
+  CNAME 末尾のチェックサムは推測で生成せず、必ず公式ページのリンクから辿る。
+- ユーザーの二本立て方針を厳守: オッズは選定に混ぜない。JRAオッズの格納は
+  スコア計算・穴選定・買い目生成が全て終わった後に行い、選定結果
+  （top5・穴・買い目）は取得前と完全一致させる。格納したオッズは
+  odds_coverage / レース信頼度・グレード / bet_eligible ゲート /
+  トラック2 post_odds 集計でのみ使う。人気は単勝オッズ順から復元する。
+- 取得失敗時は例外で生成全体を落とさず、オッズなし（null）として
+  従来動作にフォールバックする（ゲートにより shadow 行きになる）。
+- 地方のオッズ取得・配分（パターンA/B）・ゲート条件・集計ロジックは無変更。
 
 改善点 (v34.5):
 - 馬の選定ロジック（スコア・本命/対抗/3番手/穴の決定）は無変更。
@@ -93,7 +111,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.5_EXPERT"
+ENGINE_VERSION = "BAGEN_34.6_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -566,6 +584,159 @@ def enrich_odds_from_odds_page(runners, rid, source):
         status = "ページ応答あり・値未描画の可能性（JavaScript/発売前）"
     else:
         status = "オッズ欄を解析できず"
+    return {"attempted": True, "status": status, "fetched": updated}
+
+
+# ---------------------------------------------------------------------------
+# v34.6: JRA公式サイト（www.jra.go.jp）からの中央単勝オッズ取得
+# JRADB の CNAME 末尾にはチェックサムがあり推測生成できないため、固定入口
+# （オッズ開催選択 pw15oli00/6D）から公式ページの doAction リンクを辿る。
+# 選定には一切使わない: 格納は parse_race の選定完了後に行う（後述）。
+# ---------------------------------------------------------------------------
+JRA_ODDS_URL = "https://www.jra.go.jp/JRADB/accessO.html"
+JRA_ODDS_TOP_CNAME = "pw15oli00/6D"
+_JRA_ODDS_CACHE = {}
+
+
+def _post_jra_odds(cname):
+    """JRADB accessO.html へ CNAME を POST し、cp932 デコード済み HTML を返す。
+    接続系の失敗のみ最大2回まで再試行し、最終失敗時は例外を出さず "" を返す
+    （get_html と同じフォールバック方針）。"""
+    last_error = None
+    for attempt in range(3):
+        try:
+            r = SESSION.post(JRA_ODDS_URL, data={"cname": cname}, timeout=TIMEOUT)
+            r.raise_for_status()
+            r.encoding = "cp932"
+            body = r.text
+            if len(body) < 100:
+                warn(f"JRAオッズ: HTMLが空または短すぎます: {cname}")
+                return ""
+            low = body.lower()
+            if any(x in low for x in ["アクセス制限", "アクセスが集中",
+                                       "too many requests", "captcha",
+                                       "パラメータエラー"]):
+                warn(f"JRAオッズ: 取得不可の応答: {cname}")
+                return ""
+            time.sleep(DELAY)
+            return body
+        except requests.RequestException as e:
+            last_error = e
+            if attempt < 2:
+                time.sleep(2.0)
+    warn(f"JRAオッズ: HTTP取得失敗: {cname} ({type(last_error).__name__})")
+    return ""
+
+
+def _jra_doaction_cnames(page):
+    """JRADB ページ内の doAction('/JRADB/accessO.html', 'CNAME') を出現順に返す。"""
+    found = []
+    for m in re.finditer(
+            r"doAction\('/JRADB/accessO\.html',\s*'([^']+)'\)", page or ""):
+        if m.group(1) not in found:
+            found.append(m.group(1))
+    return found
+
+
+def _jra_holding_date(cname):
+    """開催 CNAME から日付（YYYYMMDD）を返す。
+    形式: pw15orl + 区分2 + 場2 + 年4 + 回2 + 日2 + 日付8 + /チェックサム"""
+    m = re.fullmatch(r"pw15orl.{2}\d{2}\d{4}\d{2}\d{2}(\d{8})(?:/\w+)?", cname or "")
+    return m.group(1) if m else None
+
+
+def _jra_race_id_from_odds_cname(cname):
+    """単勝・複勝（馬番順）CNAME から netkeiba 形式レースID（12桁）を復元する。
+    形式: pw151ou + 区分2 + 場2 + 年4 + 回2 + 日2 + レース2 + 日付8 + 'Z' + /チェックサム"""
+    m = re.fullmatch(
+        r"pw151ou.{2}(\d{2})(\d{4})(\d{2})(\d{2})(\d{2})\d{8}Z(?:/\w+)?",
+        cname or "")
+    if not m:
+        return None
+    venue, year, rnd, day, race = m.groups()
+    return f"{year}{venue}{rnd}{day}{race}"
+
+
+def parse_jra_win_odds_page(page):
+    """JRA公式 単勝・複勝オッズ（馬番順）ページから 馬番→単勝オッズ を抽出。
+    未発売・取消等で数値でないセルは未取得のままにする。"""
+    soup = soup_of(page)
+    found = {}
+    for row in soup.select("tr"):
+        num_node = row.select_one("td.num")
+        tan_node = row.select_one("td.odds_tan")
+        if num_node is None or tan_node is None:
+            continue
+        no = safe_int(text_of(num_node), 0)
+        if not no:
+            continue
+        val = numeric(text_of(tan_node))
+        if val is not None and 0 < val <= 9999:
+            found[no] = float(val)
+    return found
+
+
+def fetch_jra_win_odds(date_str):
+    """指定日（YYYYMMDD）の中央全レースの単勝オッズ {race_id: {馬番: odds}}。
+    実行内キャッシュし、入口→開催→レースの順に公式リンクだけを辿る。
+    どの段階で失敗しても例外は出さず、取れた分だけ返す。"""
+    if date_str in _JRA_ODDS_CACHE:
+        return _JRA_ODDS_CACHE[date_str]
+    result = {}
+    try:
+        top = _post_jra_odds(JRA_ODDS_TOP_CNAME)
+        holdings = []
+        if top:
+            for cname in _jra_doaction_cnames(top):
+                if _jra_holding_date(cname) == date_str:
+                    holdings.append(cname)
+        race_cnames = {}
+        for holding in holdings:
+            page = _post_jra_odds(holding)
+            if not page:
+                continue
+            for cname in _jra_doaction_cnames(page):
+                rid = _jra_race_id_from_odds_cname(cname)
+                if rid and rid not in race_cnames:
+                    race_cnames[rid] = cname
+        for rid, cname in race_cnames.items():
+            page = _post_jra_odds(cname)
+            if not page:
+                continue
+            odds_map = parse_jra_win_odds_page(page)
+            if odds_map:
+                result[rid] = odds_map
+    except Exception as e:  # 取得経路の失敗で生成全体を落とさない
+        warn(f"JRAオッズ取得で例外: {type(e).__name__}")
+    _JRA_ODDS_CACHE[date_str] = result
+    return result
+
+
+def enrich_odds_from_jra_official(runners, rid, date_str):
+    """v34.6: 中央レースの単勝オッズ・人気を JRA公式サイトから補完する。
+    必ず選定（スコア・穴・買い目）完了後に呼ぶこと。選定には使わない。
+    人気は単勝オッズ順（同値は同順位）から復元する。"""
+    missing = [h for h in runners if h.get("odds") is None]
+    if not missing:
+        return {"attempted": False, "status": "出馬表から取得済み", "fetched": 0}
+    odds_map = fetch_jra_win_odds(date_str).get(str(rid), {})
+    if not odds_map:
+        return {"attempted": True, "status": "JRA公式オッズ未取得", "fetched": 0}
+    values = list(odds_map.values())
+    updated = 0
+    for h in missing:
+        val = odds_map.get(int(h["horse_no"]))
+        if val is None or val <= 0:
+            continue
+        h["odds"] = float(val)
+        if h.get("popularity") is None:
+            h["popularity"] = _popularity_rank(float(val), values)
+        h.setdefault("data_quality", {})["odds"] = True
+        if h.get("popularity") is not None:
+            h["data_quality"]["popularity"] = True
+        h["odds_source"] = "JRA公式"
+        updated += 1
+    status = "JRA公式から一部/全部取得" if updated else "JRA公式オッズ未取得"
     return {"attempted": True, "status": status, "fetched": updated}
 
 
@@ -2141,6 +2312,25 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     if not verified:
         warn(f"{rid}: 出走頭数検証未通過 ({count}頭)")
     tickets = build_tickets(ranked, outsiders, verified)
+    # v34.6: 中央は選定（スコア・穴・買い目）が全て完了した後に JRA公式
+    # オッズを格納する。選定ロジックへは一切渡らない（ユーザーの二本立て
+    # 方針）。格納後に odds_count 等を再計算し、odds_coverage / 信頼度 /
+    # グレード / bet_eligible ゲート / post_odds 集計が公式オッズで
+    # 機能するようにする。
+    if kind == "中央":
+        jra_odds_diag = enrich_odds_from_jra_official(
+            runners, rid, date_iso.replace("-", ""))
+        diag["jra_odds_attempted"] = jra_odds_diag["attempted"]
+        diag["jra_odds_status"] = jra_odds_diag["status"]
+        diag["jra_odds_fetched_count"] = jra_odds_diag["fetched"]
+        odds_count = sum(1 for h in runners if h.get("odds") is not None)
+        diag["odds_count"] = odds_count
+        diag["odds_missing_count"] = len(runners) - odds_count
+        diag["odds_status"] = (
+            "OK" if runners and odds_count == len(runners)
+            else ("一部取得" if odds_count else "未取得"))
+        diag["popularity_count"] = sum(
+            1 for h in runners if h.get("popularity") is not None)
     finished = False
     if post and not is_tomorrow:
         try:
