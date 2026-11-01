@@ -10,7 +10,7 @@
 <link rel="apple-touch-icon" href="./IMG_6215.jpeg">
 <link rel="icon" type="image/jpeg" href="./IMG_6215.jpeg">
 <title>馬玄 BAGEN｜中央・地方競馬 AI予想</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" defer></script>
+<script src="./chart.umd.min.js" defer></script>
 <style>
 :root{color-scheme:dark;--bg0:#04060b;--bg1:#0a1220;--gold:#e9c767;--gold-hi:#fff3c4;--gold-soft:#d9b45c;--gold-deep:#9a7a2e;--teal:#2dd4bf;--text:#f5f2e9;--muted:#a9b7ca;--line:rgba(233,199,103,.20);--line-soft:rgba(160,180,210,.13);--green:#5ee4a8;--red:#ff8a97;--blue:#83baff;--orange:#ffc58a;--glass:linear-gradient(160deg,rgba(26,37,58,.72),rgba(10,16,28,.80))}
 *{box-sizing:border-box}
@@ -737,16 +737,17 @@ function applyTab() {
 function switchTab(tab) {
   ACTIVE_TAB = tab;
   applyTab();
-  if (tab === 'top') maybeRenderCharts();
+  if (tab === 'top') { chartRetryCount = 0; maybeRenderCharts(); }
   if (tab === 'results') renderResults();
 }
 
 /* Chart.js は非表示コンテナ内で初期化するとサイズが崩れるための保険:
    グラフのある「トップ」タブが表示されている時だけ生成し、タブを開くたびに再生成して正しいサイズにする */
+let chartRetryCount = 0;
 function maybeRenderCharts() {
   if (ACTIVE_TAB !== 'top') return;
-  if (typeof Chart !== 'undefined' && typeof renderCharts === 'function') renderCharts();
-  else setTimeout(maybeRenderCharts, 80);
+  if (typeof Chart !== 'undefined' && typeof renderCharts === 'function') { chartRetryCount = 0; renderCharts(); }
+  else if (chartRetryCount < 75) { chartRetryCount++; setTimeout(maybeRenderCharts, 80); }
 }
 
 /* ===== レース検索 ===== */
