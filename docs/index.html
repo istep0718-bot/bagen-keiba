@@ -150,6 +150,7 @@ ul.reasons{margin:7px 0 2px;padding-left:17px;font-size:11px;color:#c9d6e6;line-
 ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 .caution{font-size:10.5px;color:var(--orange);margin-top:5px;line-height:1.55;overflow-wrap:anywhere}
 .badge.rec{border-color:rgba(45,212,191,.55);color:#a7f3ea;background:rgba(13,52,48,.55)}
+.occultrow{margin-top:6px;font-size:11px;color:#dcc7ff;letter-spacing:.3px}
 .charts{display:grid;gap:13px}
 .chart-card{background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,243,196,.06);backdrop-filter:blur(14px);transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease}
 .chart-card h3{margin:0 0 4px;font-size:13.5px;color:#ecd28e;letter-spacing:1px}
@@ -255,6 +256,21 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <div class="metric"><label>最大配当</label><strong class="gold" id="dfBest">—</strong></div>
 </div>
 <div id="dfRaces" style="margin-top:10px"></div>
+</div>
+</section>
+
+<section data-panel="top" id="occultSection" hidden>
+<div class="sectionhead"><h2>🔮 オカルト枠（馬番指数・別枠計測）</h2><span class="small">夢枠とは別の独立枠・選定には使わない参考項目</span></div>
+<div class="panel">
+<div id="occultTop5"></div>
+<div class="metrics" style="margin-top:10px">
+<div class="metric"><label>オカルト枠 対象レース</label><strong id="ocRaces">—</strong></div>
+<div class="metric"><label>単勝的中</label><strong id="ocWinHits">—</strong></div>
+<div class="metric"><label>3着以内</label><strong id="ocPlaceHits">—</strong></div>
+<div class="metric"><label>仮回収率（単勝100円）</label><strong id="ocRoi">—</strong><span class="small" id="ocDetail" style="display:block;margin-top:4px;color:var(--muted)"></span></div>
+</div>
+<div id="occultTendency" style="margin-top:10px"></div>
+<p class="small" style="margin-top:8px">馬番オカルト指数は、精算済み全履歴から「その馬番がランダムに勝つ期待値」と実勝ち数を比べたズレ（σ）です。オカルト枠は注目馬だけを単勝100円で追う仮定の別枠計測で、本体の予想・買い目には一切使っていません。</p>
 </div>
 </section>
 
@@ -385,6 +401,22 @@ function gradeBadge(r) {
   if (r.race_grade === '注目レース') return '<span class="badge rec">注目レース</span>';
   if (r.is_recommended) return '<span class="badge gold">おすすめ</span>';
   return '';
+}
+
+/* ===== オカルト注目バッジ（表示専用・選定には無関係） ===== */
+function fmtSigma(v) {
+  const n = Number(v || 0);
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + 'σ';
+}
+
+function occultBadge(r) {
+  const p = r && r.occult_pick;
+  if (!p || p.number === null || p.number === undefined) return '';
+  const why = p.source === 'course_time'
+    ? 'この場・この時間帯で熱い ' + fmtSigma(p.sigma)
+    : '馬番指数 ' + fmtSigma(p.sigma);
+  return '<div class="occultrow">🔮 オカルト注目: ' + esc(p.number) + '番 ' +
+    esc(p.name || '') + '（' + esc(why) + '）</div>';
 }
 
 /* ===== G1 / Jpn1 判定（レース名の基底名照合） =====
@@ -873,6 +905,7 @@ function metricUpdate() {
   setPat('mPatBHit', 'mPatBDetail', 'mPatBProfit', 'mPatBRoi', pb);
   renderBetTypes(s);
   renderDream(s);
+  renderOccult(s);
 }
 
 /* ===== 券種別成績（目安ベンチマークは14頭立て換算のランダム値・静的定数） ===== */
@@ -928,6 +961,65 @@ function renderDream(s) {
           '<div class="topodds">' + yen(r.return_yen) + '</div></div>';
       }).join('')
     : '<p class="small">まだ的中なし。夢枠は当たれば大きい、一撃狙いの枠です。</p>';
+}
+
+/* ===== オカルト枠セクション（馬番指数トップ5・別枠成績・場×時間帯の傾向）
+   夢枠とは別の独立枠。stats にオカルト項目が無い旧データでは非表示のまま。 ===== */
+function renderOccult(s) {
+  const sec = $('occultSection');
+  if (!sec) return;
+  const numbers = s && Array.isArray(s.occult_numbers) ? s.occult_numbers : null;
+  const track = s && s.occult_track;
+  if (!numbers && !track) { sec.setAttribute('hidden', ''); return; }
+  sec.removeAttribute('hidden');
+  /* (a) 馬番オカルト指数トップ5（σの大きい順） */
+  const top5 = (numbers || []).slice()
+    .sort((a, b) => Number(b.sigma || 0) - Number(a.sigma || 0)).slice(0, 5);
+  $('occultTop5').innerHTML = top5.length
+    ? '<div style="font-size:12px;font-weight:800;color:#dcc7ff;letter-spacing:1.2px;margin-bottom:6px">🎲 馬番オカルト指数 トップ5</div>' +
+      top5.map(e => {
+        return '<div class="toprow" style="grid-template-columns:minmax(0,1fr) auto">' +
+          '<div><div class="topname">' + esc(e.num) + '番</div>' +
+          '<div class="topdetail">実勝ち ' + num(e.wins) + ' / 期待 ' +
+            (has(e.expected) ? Number(e.expected).toFixed(1) : '—') + '</div></div>' +
+          '<div class="topodds">' + esc(fmtSigma(e.sigma)) + '</div></div>';
+      }).join('')
+    : '<p class="small">馬番オカルト指数はまだありません。</p>';
+  /* (b) オカルト枠の別枠成績（対象が無ければ「計測中」） */
+  const t = track || {};
+  const races = Number(t.races || 0);
+  if (!races) {
+    $('ocRaces').textContent = '計測中';
+    $('ocWinHits').textContent = '—';
+    $('ocPlaceHits').textContent = '—';
+    $('ocRoi').textContent = '—';
+    $('ocDetail').textContent = 'オカルト注目馬が出たレースの精算から計測が始まります';
+  } else {
+    $('ocRaces').textContent = num(races) + 'レース';
+    $('ocWinHits').textContent = num(t.win_hits) + '回';
+    $('ocPlaceHits').textContent = num(t.place_hits) + '回';
+    $('ocRoi').textContent = Number(t.cost || 0) ? pct(t.roi_pct) : '—';
+    $('ocDetail').textContent = '投資 ' + yen(t.cost) + ' → 回収 ' + yen(t.return);
+  }
+  /* (c) 場×時間帯の傾向（精算15レース以上の区分だけ・σの大きい順） */
+  const tend = (s && s.occult_tendency) || {};
+  const divs = Object.keys(tend)
+    .map(k => ({ key: k, d: tend[k] }))
+    .filter(x => x.d && Number(x.d.races || 0) >= 15 && x.d.best)
+    .sort((a, b) => Number(b.d.best.sigma || 0) - Number(a.d.best.sigma || 0));
+  $('occultTendency').innerHTML = divs.length
+    ? '<div style="font-size:12px;font-weight:800;color:#dcc7ff;letter-spacing:1.2px;margin-bottom:6px">🕐 場×時間帯の傾向（15レース以上の区分）</div>' +
+      divs.map(x => {
+        const parts = String(x.key).split('|');
+        const b = x.d.best;
+        return '<div class="toprow" style="grid-template-columns:minmax(0,1fr) auto">' +
+          '<div><div class="topname">' + esc(parts[0] || '') + ' · ' + esc(parts[1] || '') + '</div>' +
+          '<div class="topdetail">熱い馬番 ' + esc(b.num) + '番（実勝ち ' + num(b.wins) +
+            ' / 期待 ' + (has(b.expected) ? Number(b.expected).toFixed(1) : '—') +
+            '）· ' + num(x.d.races) + 'レース</div></div>' +
+          '<div class="topodds">' + esc(fmtSigma(b.sigma)) + '</div></div>';
+      }).join('')
+    : '';
 }
 
 function horseNo(h) {
@@ -1099,6 +1191,7 @@ function renderRace(r, i) {
           gradeClassBadge(r) +
           (r.is_finished ? '<span class="badge">結果確認対象</span>' : '') +
         '</div>' +
+        occultBadge(r) +
       '</div>' +
       '<div class="topodds">' + esc(r.runner_count ?? '—') + '頭<small>取得頭数</small></div>' +
     '</div>' +
