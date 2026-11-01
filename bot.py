@@ -1,9 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.4_EXPERT
+BAGEN KEIBA v34.5_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.5):
+- 馬の選定ロジック（スコア・本命/対抗/3番手/穴の決定）は無変更。
+  オッズを選定に混ぜない（ユーザー方針: オッズなし分析とオッズ判明後の
+  分析は別々に集計して比べる二本立て）
+- パターンBの配分を S3a（実績ROIシフト）に変更: 単勝200/馬連[本命-対抗]200/
+  馬連[本命-3番手]300/3連複[本命軸]400/3連複[穴絡み]200/ワイド[本命-穴]100/
+  3連単[夢枠]100 の7点・合計1,500円（夢枠は完全維持、パターンAは無変更）。
+  穴絡み額は定数 PATTERN_B_TRIO_OUTSIDER_YEN で保守版（100、その分を
+  馬連[本命-3番手] PATTERN_B_QUINELLA_3RD_YEN=400）に切替可能
+- bet_eligible ゲート新設（CORE-A相当）: 最終生成時点で
+  (a) グレードが「データ不足・様子見」 (b) odds_coverage < 0.5
+  (c) 出走頭数 >= 13 (d) race_confidence_score >= 100 のいずれかに該当する
+  レースは本精算の対象外とし、shadow（仮想）として精算・別集計する。
+  予想・買い目の表示は全レース従来どおり
+- 精算レコード（スナップショット）に最終生成時点の race_grade /
+  race_confidence_score / odds_coverage / runner_count / kind と
+  bet_eligible / gate_reasons を保存（frozen の値で上書きしない）
+- トラック2「オッズ判明後の分析」の別集計（選定には使わない）:
+  各精算レコードに post_odds（本命の最終単勝オッズと人気順位）を記録し、
+  stats["post_odds"] に人気帯別・オッズ帯別・市場乖離の集計
+  （本精算/shadow の区分つき）を追加。stats["shadow"] にゲート外の
+  件数・投資・回収・ROI・ゲート理由別内訳を追加
 
 改善点 (v34.4):
 - 券種別成績の集計を追加: calculate_stats が精算済みレースの買い目明細
@@ -70,7 +93,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.4_EXPERT"
+ENGINE_VERSION = "BAGEN_34.5_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -86,6 +109,15 @@ MAX_WARNINGS = 150
 MAX_RACES_PER_SOURCE = 100
 RETENTION_DAYS = 180
 PAPER_BUDGET_YEN = 2000
+# v34.5: パターンB配分（S3a）の切替可能定数。合計は常に ¥1,500 になる組で使うこと。
+#   標準版: 穴絡み200 / 馬連[本命-3番手]300
+#   保守版: 穴絡み100 / 馬連[本命-3番手]400（3連複[穴絡み]の増額寄与が不確実なため）
+PATTERN_B_TRIO_OUTSIDER_YEN = 200
+PATTERN_B_QUINELLA_3RD_YEN = 300
+# v34.5: bet_eligible ゲート（CORE-A相当）の閾値
+BET_GATE_MIN_ODDS_COVERAGE = 0.5
+BET_GATE_MAX_RUNNERS = 13          # 出走頭数がこれ以上は対象外
+BET_GATE_MAX_CONFIDENCE = 100      # race_confidence_score がこれ以上は対象外
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -1714,6 +1746,21 @@ def select_outsiders(ranked):
     return outsiders[:5], long_eligible[:5], [], "heuristic_no_odds"
 
 
+def evaluate_bet_gate(race_grade, odds_coverage, runner_count, confidence_score):
+    """v34.5: 紙上ベット対象ゲート（CORE-A相当）。最終生成時点の値で判定する。
+    戻り値は (bet_eligible, gate_reasons)。選定・表示には一切影響しない。"""
+    reasons = []
+    if race_grade == "データ不足・様子見":
+        reasons.append("データ不足・様子見")
+    if odds_coverage is not None and odds_coverage < BET_GATE_MIN_ODDS_COVERAGE:
+        reasons.append("オッズ取得率50%未満")
+    if runner_count is not None and runner_count >= BET_GATE_MAX_RUNNERS:
+        reasons.append("13頭以上")
+    if confidence_score is not None and confidence_score >= BET_GATE_MAX_CONFIDENCE:
+        reasons.append("信頼度100以上")
+    return (not reasons), reasons
+
+
 def build_tickets(ranked, outsiders, verified):
     if not verified or len(ranked) < 3:
         return []
@@ -1722,12 +1769,15 @@ def build_tickets(ranked, outsiders, verified):
     d = top[3]["horse_no"] if len(top) >= 4 else c
     outsider = next((h["horse_no"] for h in outsiders if h["horse_no"] not in (a, b, c)), None)
     if outsider is not None:
+        # v34.5: 配分を S3a（実績ROIシフト）へ。単勝400→200、馬連[本命-対抗]300→200、
+        # 馬連[本命-3番手]200→300、3連複[本命軸]300→400、3連複[穴絡み]100→200。
+        # ワイド・夢枠（3連単）は据え置き。合計 ¥1,500 は不変。
         lines = [
-            ("win", [a], 400),
-            ("quinella", sorted([a, b]), 300),
-            ("quinella", sorted([a, c]), 200),
-            ("trio", sorted([a, b, c]), 300),
-            ("trio", sorted([a, b, outsider]), 100),
+            ("win", [a], 200),
+            ("quinella", sorted([a, b]), 200),
+            ("quinella", sorted([a, c]), PATTERN_B_QUINELLA_3RD_YEN),
+            ("trio", sorted([a, b, c]), 400),
+            ("trio", sorted([a, b, outsider]), PATTERN_B_TRIO_OUTSIDER_YEN),
             ("wide", sorted([a, outsider]), 100),
             ("trifecta", [a, outsider, b], 100),
         ]
@@ -2156,6 +2206,10 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         and (rno == 11
              or (candidate_mode == "odds_based" and (len(outsiders) >= 2 or len(longshots) >= 1))
              or (candidate_mode == "heuristic_no_odds" and len(outsiders) >= 3)))
+    # v34.5: ベット対象ゲートは最終生成時点の値（この生成の grade/coverage/
+    # 頭数/confidence）で判定する。表示・買い目生成には影響しない。
+    bet_eligible, gate_reasons = evaluate_bet_gate(
+        race_grade, odds_coverage, count, race_confidence)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -2181,6 +2235,8 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         "settlement_status": "結果精算待ち", "payout_confirmed": False,
         "is_recommended": recommended, "is_tomorrow": is_tomorrow,
         "race_confidence_score": race_confidence, "race_grade": race_grade,
+        "odds_coverage": round(odds_coverage, 4),
+        "bet_eligible": bet_eligible, "gate_reasons": gate_reasons,
         "race_recommendation_reasons": reasons,
         "race_data_coverage": {
             "odds_pct": round(odds_coverage * 100, 1),
@@ -2263,6 +2319,65 @@ def load_history():
         raise
 
 
+def _popularity_rank(odds, odds_values):
+    """単勝オッズの順位（小さい順、同値は同順位）。人気は単勝オッズ順で決まるため、
+    人気が未取得の場合の復元に使う。"""
+    if odds is None:
+        return None
+    vals = [v for v in odds_values if isinstance(v, (int, float))]
+    if not vals:
+        return None
+    return 1 + sum(1 for v in vals if v < odds)
+
+
+def post_odds_from_race(race):
+    """v34.5 トラック2: 最終生成のレース dict から本命の単勝オッズと人気順位を取る。
+    選定には使わず、集計専用。"""
+    horses = race.get("horses", []) or []
+    top5 = race.get("top5") or []
+    top = top5[0] if top5 else (horses[0] if horses else {})
+    honmei_no = top.get("horse_no")
+    target = next((h for h in horses if h.get("horse_no") == honmei_no), None)
+    if target is None:
+        return {"horse_no": honmei_no, "win_odds": None, "popularity": None}
+    odds = target.get("odds")
+    odds = float(odds) if isinstance(odds, (int, float)) else None
+    pop = target.get("popularity")
+    if not isinstance(pop, int):
+        pop = _popularity_rank(odds, [h.get("odds") for h in horses])
+    return {"horse_no": honmei_no, "win_odds": odds, "popularity": pop}
+
+
+def derive_post_odds(snap):
+    """v34.5 トラック2: スナップショットから post_odds を復元する。
+    保存済みがあればそれを使い、なければ単勝の買い目（本命）と
+    last_odds / last_popularity から組み立てる（34.4以前の履歴用）。"""
+    stored = snap.get("post_odds")
+    if isinstance(stored, dict) and stored.get("horse_no") is not None:
+        return stored
+    honmei_no = None
+    for ln in snap.get("settled_lines") or []:
+        if isinstance(ln, dict) and ln.get("type") == "win" and ln.get("horses"):
+            honmei_no = ln["horses"][0]
+            break
+    if honmei_no is None:
+        top5 = (snap.get("frozen_prediction") or {}).get("top5") or []
+        if top5 and isinstance(top5[0], dict):
+            honmei_no = top5[0].get("horse_no")
+    if honmei_no is None:
+        return {"horse_no": None, "win_odds": None, "popularity": None}
+    last_odds = snap.get("last_odds") or {}
+    raw = last_odds.get(str(honmei_no))
+    odds = float(raw) if isinstance(raw, (int, float)) else None
+    pop = None
+    pv = (snap.get("last_popularity") or {}).get(str(honmei_no))
+    if isinstance(pv, int):
+        pop = pv
+    elif odds is not None:
+        pop = _popularity_rank(odds, list(last_odds.values()))
+    return {"horse_no": honmei_no, "win_odds": odds, "popularity": pop}
+
+
 def update_snapshot(snapshots, race):
     rid = str(race["id"])
     old = snapshots.get(rid, {})
@@ -2292,6 +2407,20 @@ def update_snapshot(snapshots, race):
                          for h in race.get("horses", [])},
             })
         odds_snaps = odds_snaps[-12:]
+    # v34.5: 最終生成時点の値を保存する（frozen の値で上書きしない）。
+    # odds_coverage はレース側に無い場合のみ last odds 相当から復元する。
+    snap_odds_coverage = race.get("odds_coverage")
+    if snap_odds_coverage is None:
+        _lo = [h.get("odds") for h in race.get("horses", [])]
+        _rc = race.get("runner_count") or len(_lo)
+        snap_odds_coverage = (
+            round(sum(1 for v in _lo if v is not None) / _rc, 4) if _rc else 0.0)
+    snap_bet_eligible = race.get("bet_eligible")
+    if snap_bet_eligible is None:
+        snap_bet_eligible = old.get("bet_eligible")
+    snap_gate_reasons = race.get("gate_reasons")
+    if snap_gate_reasons is None:
+        snap_gate_reasons = old.get("gate_reasons") or []
     snapshot = {
         "race_id": rid, "date": race.get("date"), "kind": race.get("kind"),
         "course": race.get("course"), "race_no": race.get("race_no"),
@@ -2323,6 +2452,14 @@ def update_snapshot(snapshots, race):
             "prediction_status": race.get("prediction_status"),
         },
         "last_odds": {str(h.get("horse_no")): h.get("odds") for h in race.get("horses", [])},
+        # v34.5: 最終生成スナップショット（grade/confidence は上の既存キーで
+        # 最終値が入る。ここでは coverage・頭数・ゲート・post_odds を追加保存）
+        "last_popularity": {str(h.get("horse_no")): h.get("popularity")
+                            for h in race.get("horses", [])},
+        "post_odds": post_odds_from_race(race),
+        "odds_coverage": snap_odds_coverage,
+        "bet_eligible": snap_bet_eligible,
+        "gate_reasons": snap_gate_reasons,
         "runner_count": race.get("runner_count"),
         "runner_count_verified": race.get("runner_count_verified"),
         "odds_snapshots": odds_snaps,
@@ -2332,15 +2469,25 @@ def update_snapshot(snapshots, race):
 
 
 def calculate_stats(snapshots):
-    """払戻確認済みの精算完了レースのみ集計。パターンA/B別も算出。"""
+    """払戻確認済みの精算完了レースのみ集計。パターンA/B別も算出。
+    v34.5: 本精算（bet_eligible が False でないもの）と shadow（ゲート外）を分け、
+    shadow は stats["shadow"]、オッズ判明後の分析は stats["post_odds"] に別集計する。
+    34.4以前の履歴には bet_eligible が無いため本精算扱いになる
+    （ゲートは 34.5 で生成されたレースから効く）。"""
     items = list(snapshots.values())
-    settled = [
+    settled_all = [
         x for x in items
         if x.get("settlement_complete") is True
         and x.get("all_bet_return") is not None
         and x.get("race_profit") is not None
         and x.get("payout_confirmed", True)
     ]
+    # v34.5 トラック2: 各精算レコードに post_odds を記録する（保存済みが
+    # なければ last_odds 等から復元。snapshots はそのまま history に保存される）
+    for x in settled_all:
+        x["post_odds"] = derive_post_odds(x)
+    settled = [x for x in settled_all if x.get("bet_eligible") is not False]
+    settled_shadow = [x for x in settled_all if x.get("bet_eligible") is False]
 
     def pattern_of(x):
         pt = x.get("pattern_type")
@@ -2376,6 +2523,91 @@ def calculate_stats(snapshots):
             "profit_yen": profit,
             "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
         }
+
+    def agg_simple(rows):
+        stake = sum(safe_int(x.get("cost"), 0) for x in rows)
+        ret = sum(safe_int(x.get("all_bet_return"), 0) for x in rows)
+        return {
+            "races": len(rows),
+            "stake_yen": stake,
+            "return_yen": ret,
+            "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
+        }
+
+    # v34.5: shadow（ゲート外）集計。理由別内訳は複数理由の重複カウントあり。
+    shadow_by_reason = {}
+    for x in settled_shadow:
+        for reason in (x.get("gate_reasons") or ["不明"]):
+            shadow_by_reason.setdefault(reason, []).append(x)
+    shadow_stats = dict(agg(settled_shadow))
+    shadow_stats["by_reason"] = {
+        reason: agg(rows) for reason, rows in sorted(shadow_by_reason.items())
+    }
+
+    # v34.5 トラック2: オッズ判明後の分析（選定には使わない集計専用）
+    POP_BANDS = ("1人気", "2-3人気", "4-5人気", "6人気以下", "オッズなし")
+    ODDS_BANDS = ("1.0-1.9", "2.0-2.9", "3.0-4.9", "5.0-9.9", "10.0以上", "なし")
+
+    def pop_band(po):
+        if not po or po.get("win_odds") is None or po.get("popularity") is None:
+            return "オッズなし"
+        p = po["popularity"]
+        if p <= 1:
+            return "1人気"
+        if p <= 3:
+            return "2-3人気"
+        if p <= 5:
+            return "4-5人気"
+        return "6人気以下"
+
+    def odds_band(po):
+        if not po or po.get("win_odds") is None:
+            return "なし"
+        o = po["win_odds"]
+        if o < 2.0:
+            return "1.0-1.9"
+        if o < 3.0:
+            return "2.0-2.9"
+        if o < 5.0:
+            return "3.0-4.9"
+        if o < 10.0:
+            return "5.0-9.9"
+        return "10.0以上"
+
+    def band_split(rows_all, band_fn, bands):
+        out = {}
+        for band in bands:
+            rows = [x for x in rows_all if band_fn(x.get("post_odds")) == band]
+            out[band] = {
+                "main": agg_simple(
+                    [x for x in rows if x.get("bet_eligible") is not False]),
+                "shadow": agg_simple(
+                    [x for x in rows if x.get("bet_eligible") is False]),
+                "all": agg_simple(rows),
+            }
+        return out
+
+    def is_divergent(po):
+        if not po:
+            return False
+        return ((po.get("popularity") is not None and po["popularity"] >= 6)
+                or (po.get("win_odds") is not None and po["win_odds"] >= 20.0))
+
+    div_rows = [x for x in settled_all if is_divergent(x.get("post_odds"))]
+    post_odds_stats = {
+        "note": ("精算時点の最終オッズで集計した参考分析。馬の選定には使用していない。"
+                 "人気は保存値、無ければ最終オッズ順から復元。"),
+        "by_popularity": band_split(settled_all, pop_band, POP_BANDS),
+        "by_win_odds": band_split(settled_all, odds_band, ODDS_BANDS),
+        "market_divergence": {
+            "definition": "本命が6人気以下 または 本命の単勝オッズ20倍以上",
+            "main": agg_simple(
+                [x for x in div_rows if x.get("bet_eligible") is not False]),
+            "shadow": agg_simple(
+                [x for x in div_rows if x.get("bet_eligible") is False]),
+            "all": agg_simple(div_rows),
+        },
+    }
 
     win_items = [x for x in settled if x.get("win_hit") is not None]
     win_stake = sum(safe_int(x.get("cost"), 0) for x in win_items)
@@ -2443,6 +2675,7 @@ def calculate_stats(snapshots):
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
+        "races_settled_including_shadow": len(settled_all),
         "win_bets": len(win_items),
         "win_hits": sum(1 for x in win_items if x.get("win_hit") is True),
         "total_stake_yen": win_stake,
@@ -2461,11 +2694,15 @@ def calculate_stats(snapshots):
         "pattern_unknown": agg(by_u),
         "bet_types": bet_types,
         "dream_frame": dream_frame,
+        "shadow": shadow_stats,
+        "post_odds": post_odds_stats,
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
             "着順一致のみで払戻未確認のレースは回収率から除外。"
-            "パターンA=上位評価中心 / パターンB=穴候補含む。"),
+            "パターンA=上位評価中心 / パターンB=穴候補含む。"
+            "v34.5: ベット対象ゲート外のレースは本集計から除き shadow に別集計。"
+            "post_odds はオッズ判明後の参考分析で、選定には使用していない。"),
     }
 
 
