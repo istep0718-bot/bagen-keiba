@@ -1,9 +1,30 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.6_EXPERT
+BAGEN KEIBA v34.7_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.7):
+- 「超おすすめ」の付与条件を厳格化（中央・地方共通、種別キャップはしない）:
+  34.6 で JRA公式オッズが入った結果、信頼度の「オッズ取得率×15点」
+  ボーナスが中央にも効くようになり、2026-11-01 13:39 生成では
+  超おすすめが当日28件（うち中央20件）・翌日分と合わせて34件表示に
+  膨れた。この状態は「厳選」とは言えないため、従来条件に加えて次の
+  全てを満たす場合のみ「超おすすめ」とし、満たさない場合は従来なら
+  超おすすめだったレースを「注目レース」に落とす:
+  (a) bet_eligible が True（ゲート通過＝本精算対象であること）
+  (b) 90 <= race_confidence_score < 100
+  (c) 9 <= 出走頭数 <= 12
+  根拠は 2026-11-01 の精算データ分析: conf90台は ROI 90.5% で最良の
+  バンド、conf90-99＆9-12頭に限ると ROI 101.9%。逆にゲート外
+  （データ不足・13頭以上・conf100台）は構造的に悪く、特に conf100台は
+  従来ゲートでも除外されるのに表示は超おすすめになり得る不整合が
+  あった。閾値は定数 SUPER_RECOMMENDED_* で明示する。
+- 変更はグレード最終決定箇所での超おすすめ条件の厳格化のみ。
+  選定ロジック、スコア/信頼度の計算式、配分、bet_eligible ゲート条件
+  そのものは変更しない（ゲートは「データ不足・様子見」判定で動くため、
+  超おすすめ→注目レースの降格ではゲート結果は変わらない）。
 
 改善点 (v34.6):
 - 中央（JRA）レースの単勝オッズを JRA公式サイト（www.jra.go.jp、無料）の
@@ -111,7 +132,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.6_EXPERT"
+ENGINE_VERSION = "BAGEN_34.7_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -136,6 +157,13 @@ PATTERN_B_QUINELLA_3RD_YEN = 300
 BET_GATE_MIN_ODDS_COVERAGE = 0.5
 BET_GATE_MAX_RUNNERS = 13          # 出走頭数がこれ以上は対象外
 BET_GATE_MAX_CONFIDENCE = 100      # race_confidence_score がこれ以上は対象外
+# v34.7: 「超おすすめ」の追加厳格条件（従来条件に加えて全て満たすこと。
+# 根拠は 2026-11-01 分析: conf90台 ROI 90.5%、conf90-99＆9-12頭で 101.9%、
+# ゲート外・conf100台・13頭以上は構造的に悪い。詳細は冒頭ドキュメント参照）
+SUPER_RECOMMENDED_MIN_CONFIDENCE = 90     # 信頼度の下限（含む）
+SUPER_RECOMMENDED_MAX_CONFIDENCE = 100    # 信頼度の上限（含まない）
+SUPER_RECOMMENDED_MIN_RUNNERS = 9         # 出走頭数の下限（含む）
+SUPER_RECOMMENDED_MAX_RUNNERS = 12        # 出走頭数の上限（含む）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -1932,6 +1960,26 @@ def evaluate_bet_gate(race_grade, odds_coverage, runner_count, confidence_score)
     return (not reasons), reasons
 
 
+def finalize_super_recommendation(race_grade, bet_eligible, confidence_score,
+                                  runner_count):
+    """v34.7: 「超おすすめ」の厳格化。従来条件で超おすすめになったレースでも、
+    追加条件（ゲート通過・信頼度90台・9〜12頭）を全て満たさなければ
+    「注目レース」に落とす。それ以外のグレードはそのまま返す。
+    根拠: 2026-11-01 分析で conf90台 ROI 90.5%（最良バンド）、
+    conf90-99＆9-12頭で 101.9%。ゲート外・conf100台・13頭以上は構造的に
+    悪く、conf100台はゲートで除外されるのに超おすすめ表示になり得る
+    不整合もあった。ゲート条件そのものは evaluate_bet_gate 側で不変。"""
+    if race_grade != "超おすすめ":
+        return race_grade
+    if (bet_eligible
+            and confidence_score is not None
+            and SUPER_RECOMMENDED_MIN_CONFIDENCE <= confidence_score < SUPER_RECOMMENDED_MAX_CONFIDENCE
+            and runner_count is not None
+            and SUPER_RECOMMENDED_MIN_RUNNERS <= runner_count <= SUPER_RECOMMENDED_MAX_RUNNERS):
+        return "超おすすめ"
+    return "注目レース"
+
+
 def build_tickets(ranked, outsiders, verified):
     if not verified or len(ranked) < 3:
         return []
@@ -2400,6 +2448,12 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # 頭数/confidence）で判定する。表示・買い目生成には影響しない。
     bet_eligible, gate_reasons = evaluate_bet_gate(
         race_grade, odds_coverage, count, race_confidence)
+    # v34.7: 「超おすすめ」は追加条件（ゲート通過・信頼度90台・9〜12頭）を
+    # 全て満たす場合に限る。満たさなければ「注目レース」に落とす。
+    # ゲートは「データ不足・様子見」判定でのみ grade を見るため、この降格で
+    # bet_eligible / gate_reasons は変わらない。信頼度スコア自体も変更しない。
+    race_grade = finalize_super_recommendation(
+        race_grade, bet_eligible, race_confidence, count)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
