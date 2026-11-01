@@ -1,9 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.8_EXPERT
+BAGEN KEIBA v34.9_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.9):
+- オカルト項目を追加（ユーザー希望）。ただし二本立て方針どおり、選定・
+  スコア・信頼度・配分（夢枠含む）・bet_eligible ゲート・グレードには
+  一切混ぜず、表示と別枠集計だけに使う。
+- 馬番オカルト指数: 精算済み全履歴（paper_betting history と同じ対象）から
+  馬番1〜18ごとに実勝ち数とランダム期待値（各レースで 1/出走頭数 の合計）を
+  集計し、σ=(実勝ち-期待値)/sqrt(期待値) を stats["occult_numbers"] に保存する。
+  発端は 2026-11-01 時点（326レース）で 12番が 24勝/期待11.6 の +3.6σ と
+  突出していたこと（1番は 21勝/期待30.8 の -1.8σ）。
+- 場×時間帯のオカルト傾向: 競馬場×時間帯（発走時刻で 午前 〜11:59 /
+  午後 12:00〜16:59 / ナイター 17:00〜）ごとに同じ集計をし、区分ごとの
+  代表（最大σの馬番）を stats["occult_tendency"] に保存する。
+  発走時刻が履歴に無いレースはこの集計から除外する。スナップショットに
+  post_time を保存するよう追加したため、傾向の集計は 34.9 以降に
+  スナップショットが更新されたレースから効き始める。
+- オカルト注目馬（occult_pick）: 2サイン制で決める表示専用の注目馬。
+  (a) 馬番指数サイン: 出走馬のうち期待値>=5 の馬番の中で最大σの馬
+      （最大σ >= +1.0 のときだけ成立）
+  (b) 場×時間帯サイン: そのレースの場・時間帯の区分で精算レース数>=15
+      かつ代表馬番の σ >= +1.0 のとき、その馬番の馬が成立
+  両方ある場合は σ の大きい方を採用し、occult_pick に source
+  （"number" / "course_time"）を持たせる。レース dict と
+  スナップショットに保存し、サイトで根拠つきバッジ表示する。
+- オカルト枠（別枠成績）: 精算時に occult_pick があったレースを
+  stats["occult_track"] に夢枠（dream_frame）とは完全に独立に集計する。
+  単勝100円の仮定で 1着数・3着以内数を数え、回収は単勝の最終オッズ
+  （スナップショットの last_odds）から算出する。オッズ不明のレースは
+  cost/return に含めず races/win/place のみ数える。34.9生成分から
+  計測開始とし、過去分の遡及再構成はしない。
 
 改善点 (v34.8):
 - 「注目レース」にも bet_eligible（ゲート通過＝本精算対象）を必須にした
@@ -152,7 +182,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.8_EXPERT"
+ENGINE_VERSION = "BAGEN_34.9_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -162,6 +192,11 @@ PEOPLE_FETCHED_THIS_RUN = 0
 PEOPLE_CACHE = {}
 # v34.2: 競馬場別 枠順バイアス（main でスナップショットから算出して保持）
 VENUE_FRAME_BIAS = {}
+# v34.9: 馬番オカルト指数 {馬番: {num, wins, expected, sigma}} と
+# 場×時間帯傾向 {"場名|時間帯": {races, best}}（main でスナップショットから
+# 算出して保持。表示・別枠集計専用で、選定には使わない）
+OCCULT_NUMBER_INDEX = {}
+OCCULT_TENDENCY = {}
 TIMEOUT = (10, 25)
 DELAY = 0.35
 MAX_WARNINGS = 150
@@ -184,6 +219,13 @@ SUPER_RECOMMENDED_MIN_CONFIDENCE = 90     # 信頼度の下限（含む）
 SUPER_RECOMMENDED_MAX_CONFIDENCE = 100    # 信頼度の上限（含まない）
 SUPER_RECOMMENDED_MIN_RUNNERS = 9         # 出走頭数の下限（含む）
 SUPER_RECOMMENDED_MAX_RUNNERS = 12        # 出走頭数の上限（含む）
+# v34.9: オカルト項目の閾値（表示・別枠集計専用。選定・スコア・信頼度・
+# 配分・ゲート・グレードには一切使わない）
+OCCULT_MIN_EXPECTED = 5.0        # 馬番指数サイン: 期待値がこれ未満の馬番はサンプル不足として扱わない
+OCCULT_MIN_SIGMA = 2.0           # サイン（馬番指数・場×時間帯 共通）を立てるσの下限（+1.0では9番等でほぼ全レースに付着し看板が薄まるため、親レビューで+2.0に厳格化）
+OCCULT_TENDENCY_MIN_RACES = 15   # 場×時間帯サイン: 区分の精算レース数がこれ以上で有効
+OCCULT_TENDENCY_MIN_EXPECTED = 1.0  # 場×時間帯の代表馬番は期待値がこれ以上の馬番から選ぶ（高馬番の低期待値ノイズ除け）
+OCCULT_STAKE_YEN = 100           # オカルト枠の仮定ベット額（1レース単勝100円）
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
@@ -2494,6 +2536,10 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # ゲート外のレースは最下位グレードへ落とし、看板の3段階
     # （超おすすめ/注目レース/データ不足・様子見）に意味を持たせる。
     race_grade = finalize_recommended_grade(race_grade, bet_eligible)
+    # v34.9: オカルト注目馬（表示専用）。履歴から算出済みの馬番オカルト指数と
+    # 場×時間帯傾向（いずれも main でグローバルに保持）だけから決める。
+    # 選定・スコア・買い目・ゲート・グレードには一切影響しない。
+    occult_pick = pick_occult_horse(ranked, venue or "競馬場未取得", post)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -2521,6 +2567,8 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         "race_confidence_score": race_confidence, "race_grade": race_grade,
         "odds_coverage": round(odds_coverage, 4),
         "bet_eligible": bet_eligible, "gate_reasons": gate_reasons,
+        # v34.9: オカルト注目馬（表示・別枠集計専用。選定には無関係）
+        "occult_pick": occult_pick,
         "race_recommendation_reasons": reasons,
         "race_data_coverage": {
             "odds_pct": round(odds_coverage * 100, 1),
@@ -2662,6 +2710,181 @@ def derive_post_odds(snap):
     return {"horse_no": honmei_no, "win_odds": odds, "popularity": pop}
 
 
+# ===== v34.9: オカルト項目（表示・別枠集計専用。選定には使わない） =====
+
+def _occult_settled_rows(snapshots):
+    """オカルト集計の対象行: paper_betting history と同じフィルタ
+    （精算完了・収支確定・払戻確認済み）のスナップショットだけを返す。"""
+    rows = snapshots.values() if isinstance(snapshots, dict) else (snapshots or [])
+    out = []
+    for snap in rows:
+        if not isinstance(snap, dict):
+            continue
+        if snap.get("settlement_complete") is not True:
+            continue
+        if snap.get("all_bet_return") is None or snap.get("race_profit") is None:
+            continue
+        if not snap.get("payout_confirmed", True):
+            continue
+        out.append(snap)
+    return out
+
+
+def occult_time_band(post_time):
+    """発走時刻 "HH:MM" を時間帯に変換する: 午前（〜11:59）/
+    午後（12:00〜16:59）/ ナイター（17:00〜）。
+    時刻が取得できない場合は None を返し、そのレースは場×時間帯の
+    集計・判定の材料にしない。"""
+    try:
+        hh, mm = map(int, str(post_time).split(":")[:2])
+    except (ValueError, AttributeError):
+        return None
+    t = hh * 60 + mm
+    if t < 12 * 60:
+        return "午前"
+    if t < 17 * 60:
+        return "午後"
+    return "ナイター"
+
+
+def compute_occult_numbers(snapshots):
+    """v34.9: 馬番オカルト指数。精算済み全履歴から馬番1〜18ごとに
+    実勝ち数・ランダム期待値・σ を算出する。期待値は「その馬番が存在する
+    レースごとに 1/出走頭数」を合計したもの（全馬が等しく勝つと仮定した
+    場合の勝ち数）で、σ = (実勝ち - 期待値) / sqrt(期待値)。
+    あくまでオカルト（表示・別枠集計専用）で、選定・スコアには使わない。"""
+    wins = {n: 0 for n in range(1, 19)}
+    expected = {n: 0.0 for n in range(1, 19)}
+    for snap in _occult_settled_rows(snapshots):
+        finishes = snap.get("result_finishes") or []
+        field = snap.get("runner_count")
+        if not finishes or not field:
+            continue
+        try:
+            field = int(field)
+            winner = int(finishes[0])
+        except (ValueError, TypeError):
+            continue
+        if field < 1:
+            continue
+        if winner in wins:
+            wins[winner] += 1
+        for n in range(1, min(field, 18) + 1):
+            expected[n] += 1.0 / field
+    out = []
+    for n in range(1, 19):
+        e = expected[n]
+        sigma = (wins[n] - e) / math.sqrt(e) if e > 0 else 0.0
+        out.append({
+            "num": n,
+            "wins": wins[n],
+            "expected": round(e, 2),
+            "sigma": round(sigma, 2),
+        })
+    return out
+
+
+def compute_occult_tendency(snapshots):
+    """v34.9: 場×時間帯のオカルト傾向。精算済み履歴を
+    「競馬場|時間帯」区分に分け、区分ごとに馬番別の実勝ち vs 期待値（σ）を
+    集計し、最もσが高い馬番を代表（best）として返す。
+    発走時刻（post_time）が履歴に無いレースはこの集計から除外する
+    （34.8以前のスナップショットには post_time が無いため、傾向は
+    34.9 以降に更新されたスナップショットから効き始める）。"""
+    divisions = {}
+    for snap in _occult_settled_rows(snapshots):
+        course = snap.get("course")
+        band = occult_time_band(snap.get("post_time"))
+        finishes = snap.get("result_finishes") or []
+        field = snap.get("runner_count")
+        if not course or band is None or not finishes or not field:
+            continue
+        try:
+            field = int(field)
+            winner = int(finishes[0])
+        except (ValueError, TypeError):
+            continue
+        if field < 1:
+            continue
+        div = divisions.setdefault(
+            f"{course}|{band}", {"races": 0, "wins": {}, "expected": {}})
+        div["races"] += 1
+        if 1 <= winner <= 18:
+            div["wins"][winner] = div["wins"].get(winner, 0) + 1
+        for n in range(1, min(field, 18) + 1):
+            div["expected"][n] = div["expected"].get(n, 0.0) + 1.0 / field
+    out = {}
+    for key, div in divisions.items():
+        # 代表（best）は期待値が OCCULT_TENDENCY_MIN_EXPECTED 以上の馬番から
+        # 選ぶ。頭数の多いレースでしか存在しない高馬番は期待値が極小になり、
+        # 1勝だけで σ が跳ね上がるノイズ（例: 期待0.06で1勝 = +3.9σ）を
+        # 「熱い馬番」と誤認しないため。該当が無ければ best は None。
+        best = None
+        for n, e in div["expected"].items():
+            if e < OCCULT_TENDENCY_MIN_EXPECTED:
+                continue
+            w = div["wins"].get(n, 0)
+            sigma = (w - e) / math.sqrt(e)
+            if best is None or sigma > best["sigma"]:
+                best = {"num": n, "wins": w,
+                        "expected": round(e, 2), "sigma": round(sigma, 2)}
+        out[key] = {"races": div["races"], "best": best}
+    return out
+
+
+def pick_occult_horse(runners, course, post_time):
+    """v34.9: レースのオカルト注目馬を2サイン制で決める（表示専用）。
+    (a) 馬番指数サイン: 出走馬のうち、馬番指数の期待値が
+        OCCULT_MIN_EXPECTED 以上ある馬番の中で σ が最大の馬。
+        最大σ が OCCULT_MIN_SIGMA 未満なら不成立。
+    (b) 場×時間帯サイン: そのレースの場・時間帯の区分で精算レース数が
+        OCCULT_TENDENCY_MIN_RACES 以上かつ代表馬番の σ が
+        OCCULT_MIN_SIGMA 以上のとき、その馬番の馬。
+    両方ある場合は σ の大きい方を採用する（同点なら (a) を優先）。
+    選定・スコア・買い目・ゲート・グレードには一切影響しない。"""
+    candidates = []
+    # (a) 馬番指数サイン
+    best_a = None
+    for h in runners or []:
+        try:
+            no = int(h.get("horse_no"))
+        except (TypeError, ValueError):
+            continue
+        entry = OCCULT_NUMBER_INDEX.get(no)
+        if not entry or entry.get("expected", 0.0) < OCCULT_MIN_EXPECTED:
+            continue
+        if best_a is None or entry["sigma"] > best_a["sigma"]:
+            best_a = {"number": no, "name": h.get("name"),
+                      "sigma": entry["sigma"], "source": "number"}
+    if best_a is not None and best_a["sigma"] >= OCCULT_MIN_SIGMA:
+        candidates.append(best_a)
+    # (b) 場×時間帯サイン
+    band = occult_time_band(post_time)
+    if course and band is not None:
+        div = OCCULT_TENDENCY.get(f"{course}|{band}")
+        best = (div or {}).get("best")
+        if (div and div.get("races", 0) >= OCCULT_TENDENCY_MIN_RACES
+                and best and best.get("sigma", 0.0) >= OCCULT_MIN_SIGMA):
+            for h in runners or []:
+                try:
+                    no = int(h.get("horse_no"))
+                except (TypeError, ValueError):
+                    continue
+                if no == best["num"]:
+                    candidates.append({
+                        "number": no, "name": h.get("name"),
+                        "sigma": best["sigma"], "source": "course_time"})
+                    break
+    if not candidates:
+        return None
+    # σ の大きい方（同点なら先に入れた (a) 馬番指数サインを優先）
+    pick = candidates[0]
+    for c in candidates[1:]:
+        if c["sigma"] > pick["sigma"]:
+            pick = c
+    return pick
+
+
 def update_snapshot(snapshots, race):
     rid = str(race["id"])
     old = snapshots.get(rid, {})
@@ -2708,6 +2931,8 @@ def update_snapshot(snapshots, race):
     snapshot = {
         "race_id": rid, "date": race.get("date"), "kind": race.get("kind"),
         "course": race.get("course"), "race_no": race.get("race_no"),
+        # v34.9: 場×時間帯のオカルト傾向集計のために発走時刻も保存する
+        "post_time": race.get("post_time"),
         "name": race.get("name"), "cost": safe_int(race.get("race_cost"), 0),
         "pattern_type": ticket.get("pattern_type") or old.get("pattern_type") or (
             (old.get("frozen_prediction") or {}).get("tickets") or {}
@@ -2741,6 +2966,8 @@ def update_snapshot(snapshots, race):
         "last_popularity": {str(h.get("horse_no")): h.get("popularity")
                             for h in race.get("horses", [])},
         "post_odds": post_odds_from_race(race),
+        # v34.9: オカルト注目馬を保存し、精算後に occult_track へ別集計する
+        "occult_pick": race.get("occult_pick"),
         "odds_coverage": snap_odds_coverage,
         "bet_eligible": snap_bet_eligible,
         "gate_reasons": snap_gate_reasons,
@@ -2893,6 +3120,47 @@ def calculate_stats(snapshots):
         },
     }
 
+    # v34.9: オカルト項目（表示・別枠集計専用。選定には使わない）。
+    # 馬番オカルト指数と場×時間帯傾向は精算済み全履歴（shadow 含む）から算出。
+    occult_numbers = compute_occult_numbers(settled_all)
+    occult_tendency = compute_occult_tendency(settled_all)
+    # オカルト枠: occult_pick が保存されている精算レース（34.9生成分から）を
+    # 夢枠とは完全に独立に集計する。単勝100円の仮定で、回収は単勝の
+    # 最終オッズ（last_odds）から算出する。オッズ不明のレースは
+    # cost/return に含めず、races / win_hits / place_hits のみ数える。
+    occult_track = {
+        "races": 0, "win_hits": 0, "place_hits": 0,
+        "cost": 0, "return": 0, "roi_pct": 0.0,
+        "note": ("オカルト注目馬だけを追う別枠計測（夢枠とは独立）。"
+                 "単勝100円の仮定。オッズ不明のレースは投資・回収に含めない。"
+                 "34.9生成分から計測開始。"),
+    }
+    for x in settled_all:
+        pick = x.get("occult_pick")
+        if not isinstance(pick, dict) or pick.get("number") is None:
+            continue
+        occult_track["races"] += 1
+        try:
+            pno = int(pick["number"])
+            fnums = [int(f) for f in (x.get("result_finishes") or [])]
+        except (ValueError, TypeError):
+            continue
+        is_win = bool(fnums) and fnums[0] == pno
+        if is_win:
+            occult_track["win_hits"] += 1
+        if pno in fnums[:3]:
+            occult_track["place_hits"] += 1
+        raw_odds = (x.get("last_odds") or {}).get(str(pno))
+        odds = float(raw_odds) if isinstance(raw_odds, (int, float)) else None
+        if odds is None:
+            continue
+        occult_track["cost"] += OCCULT_STAKE_YEN
+        if is_win:
+            occult_track["return"] += int(OCCULT_STAKE_YEN * odds)
+    if occult_track["cost"]:
+        occult_track["roi_pct"] = round(
+            occult_track["return"] / occult_track["cost"] * 100, 1)
+
     win_items = [x for x in settled if x.get("win_hit") is not None]
     win_stake = sum(safe_int(x.get("cost"), 0) for x in win_items)
     win_return = sum(safe_int(x.get("win_return"), 0) for x in win_items)
@@ -2980,6 +3248,10 @@ def calculate_stats(snapshots):
         "dream_frame": dream_frame,
         "shadow": shadow_stats,
         "post_odds": post_odds_stats,
+        # v34.9: オカルト項目（表示・別枠集計専用）
+        "occult_numbers": occult_numbers,
+        "occult_tendency": occult_tendency,
+        "occult_track": occult_track,
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
@@ -3053,6 +3325,22 @@ def main():
         history.get("people_cache", {})
         if isinstance(history.get("people_cache", {}), dict) else {})
     VENUE_FRAME_BIAS = compute_frame_bias(snapshots)
+    # v34.9: 馬番オカルト指数と場×時間帯傾向を履歴から算出する
+    # （表示・別枠集計専用。parse_race が occult_pick の判定にだけ使う）
+    global OCCULT_NUMBER_INDEX, OCCULT_TENDENCY
+    OCCULT_NUMBER_INDEX = {
+        e["num"]: e for e in compute_occult_numbers(snapshots)}
+    OCCULT_TENDENCY = compute_occult_tendency(snapshots)
+    _occult_top = sorted(
+        OCCULT_NUMBER_INDEX.values(), key=lambda e: -e["sigma"])[:3]
+    print("[INFO] occult_numbers top: " + ", ".join(
+        f"{e['num']}番({e['sigma']:+.1f}σ)" for e in _occult_top))
+    _hot_divs = [
+        k for k, v in OCCULT_TENDENCY.items()
+        if v.get("races", 0) >= OCCULT_TENDENCY_MIN_RACES
+        and v.get("best") and v["best"]["sigma"] >= OCCULT_MIN_SIGMA]
+    print(f"[INFO] occult_tendency divisions={len(OCCULT_TENDENCY)} "
+          f"hot={len(_hot_divs)}")
     biased = [f"{v}({'内' if b['direction'] == 'inner' else '外'}有利)"
               for v, b in VENUE_FRAME_BIAS.items() if b.get("direction")]
     print(f"[INFO] frame_bias venues={len(VENUE_FRAME_BIAS)} biased={biased}")
