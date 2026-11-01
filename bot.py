@@ -1,9 +1,29 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.7_EXPERT
+BAGEN KEIBA v34.8_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.8):
+- 「注目レース」にも bet_eligible（ゲート通過＝本精算対象）を必須にした
+  （ユーザー決定）。34.7 で超おすすめは厳格化できたが、注目レースは
+  実質「データ不足でないレース全部」のままで、2026-11-01 のデータでは
+  当日72レース全部が注目以上になり、3段階の看板に意味がなかった。
+  そこでグレード最終化を拡張し、bet_eligible が False のレースは
+  「注目レース」から最下位グレードへ降格する。最終化の結果、
+  「超おすすめ」「注目レース」の両方が bet_eligible=True を必須とする。
+- 降格先のラベルは既存の最下位ラベル「データ不足・様子見」に統一する。
+  サイト（index.html）はグレードを完全一致文字列で扱う
+  （'超おすすめ' / '注目レース' のみバッジ・フィルタ対象で、それ以外は
+  無印）ため、新しいラベルを作ると表示・絞り込みから漏れる。
+  注意: この統一により、データ不足以外の理由（13頭以上・信頼度100以上・
+  オッズ取得率50%未満）でゲート外になったレースも最下位ラベルになる。
+  実際のゲート理由は gate_reasons に従来どおり残る。
+- 変更はグレード最終化での注目レース降格だけ。選定ロジック、スコア/
+  信頼度の計算式、配分、bet_eligible ゲート条件そのもの、34.7 の
+  超おすすめ厳格化ルールは変更しない。ゲートは最終化前のグレードで
+  判定するため、降格によって bet_eligible / gate_reasons は変わらない。
 
 改善点 (v34.7):
 - 「超おすすめ」の付与条件を厳格化（中央・地方共通、種別キャップはしない）:
@@ -132,7 +152,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.7_EXPERT"
+ENGINE_VERSION = "BAGEN_34.8_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -1980,6 +2000,22 @@ def finalize_super_recommendation(race_grade, bet_eligible, confidence_score,
     return "注目レース"
 
 
+def finalize_recommended_grade(race_grade, bet_eligible):
+    """v34.8: 「注目レース」にもゲート通過を必須にする。bet_eligible が
+    False のレースは「注目レース」から最下位グレードへ降格する。
+    finalize_super_recommendation の後に適用し、最終的に「超おすすめ」
+    「注目レース」の両方が bet_eligible=True を必須とする形にする。
+    降格先は既存の最下位ラベル「データ不足・様子見」に統一する
+    （サイトはグレードを完全一致文字列で扱い、新ラベルは表示・絞り込み
+    から漏れるため）。データ不足以外のゲート理由（13頭以上・信頼度
+    100以上・オッズ取得率50%未満）でも同じラベルになるが、実際の理由は
+    gate_reasons に残る。ゲート判定は最終化前のグレードで行うため、
+    この降格で bet_eligible / gate_reasons は変わらない。"""
+    if race_grade == "注目レース" and not bet_eligible:
+        return "データ不足・様子見"
+    return race_grade
+
+
 def build_tickets(ranked, outsiders, verified):
     if not verified or len(ranked) < 3:
         return []
@@ -2454,6 +2490,10 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # bet_eligible / gate_reasons は変わらない。信頼度スコア自体も変更しない。
     race_grade = finalize_super_recommendation(
         race_grade, bet_eligible, race_confidence, count)
+    # v34.8: 「注目レース」もゲート通過（本精算対象）を必須とする。
+    # ゲート外のレースは最下位グレードへ落とし、看板の3段階
+    # （超おすすめ/注目レース/データ不足・様子見）に意味を持たせる。
+    race_grade = finalize_recommended_grade(race_grade, bet_eligible)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
