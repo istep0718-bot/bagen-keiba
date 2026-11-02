@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.10_EXPERT
+BAGEN KEIBA v34.11_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.11):
+- 会場名マッピング NAR_CODES の誤りを修正（ユーザー友人の指摘で発覚、
+  2026-11-02 に nar.netkeiba 公式の競馬場ページ jyo_cd で全場を実地照合）。
+  旧表は南関東が1つずつずれる等、体系的に誤っていた:
+  30=帯広→門別（帯広ばんえいは 65）、42=大井→浦和、43=川崎→船橋、
+  54=姫路→高知、55=高知→佐賀。未確認コード（37-41,49,52,53,56）は
+  誤表示を避けるため削除し、未知コードは「競馬場未取得」に倒す。
+  会場名は表示だけでなく、騎手の場別成績（course_splits は開催名テキスト
+  由来で正しい名前）との突合や場×時間帯オカルト傾向・枠順バイアスの
+  集計キーにも使われるため、選定の精度にも関わる修正。
+- 履歴スナップショットに焼き付いた旧会場名を、起動時に race_id から
+  再計算して自己修復する（repair_snapshot_venues）。精算金額・着順・
+  買い目には一切触れない。選定ロジック・スコア・信頼度・配分・
+  ゲート・グレード条件は 34.10 から無変更。
 
 改善点 (v34.10):
 - オカルト枠を「3連単狙いのみ」に仕様変更（ユーザー指示）。34.9 の
@@ -203,7 +218,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.10_EXPERT"
+ENGINE_VERSION = "BAGEN_34.11_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -264,14 +279,16 @@ SOURCES = [
 ]
 JRA_CODES = {"01": "札幌", "02": "函館", "03": "福島", "04": "新潟", "05": "東京", "06": "中山",
              "07": "中京", "08": "京都", "09": "阪神", "10": "小倉"}
+# v34.11: nar.netkeiba 公式の競馬場ページ（jyo_cd）で全場を実地照合した表。
+# 旧表は 30=帯広（実際は門別、帯広ばんえいは65）・42=大井（実際は浦和）・
+# 43=川崎（実際は船橋）・54=姫路（実際は高知）・55=高知（実際は佐賀）と
+# 体系的に誤っていた。未確認のコードは誤表示を避けるため入れない。
 NAR_CODES = {
-    "30": "帯広", "35": "盛岡", "36": "水沢",
-    "37": "門別", "38": "門別", "39": "門別",
-    "40": "浦和", "41": "船橋", "42": "大井", "43": "川崎",
-    "44": "大井", "45": "川崎",
-    "46": "金沢", "47": "笠松", "48": "名古屋", "49": "園田",
-    "50": "園田", "51": "姫路", "52": "園田", "53": "園田", "54": "姫路",
-    "55": "高知", "56": "佐賀",
+    "30": "門別", "35": "盛岡", "36": "水沢",
+    "42": "浦和", "43": "船橋", "44": "大井", "45": "川崎",
+    "46": "金沢", "47": "笠松", "48": "名古屋",
+    "50": "園田", "51": "姫路", "54": "高知", "55": "佐賀",
+    "65": "帯広",
 }
 # v34: 種牡馬リストを実在確認できる範囲で拡充（ダート系/芝パワー系）
 DIRT_SIRES = ["ヘニーヒューズ", "シニスターミニスター", "パイロ", "マジェスティックウォリアー",
@@ -367,6 +384,37 @@ def venue_from_id(rid, kind):
     if not valid_race_id(rid):
         return ""
     return (JRA_CODES if kind == "中央" else NAR_CODES).get(str(rid)[4:6], "")
+
+
+def repair_snapshot_venues(snapshots):
+    """v34.11: 旧 NAR_CODES の誤りで履歴スナップショットに焼き付いた
+    会場名を race_id から再計算して直す。表示と場別集計（枠順バイアス・
+    場×時間帯オカルト傾向）の是正のみで、精算金額・着順・買い目には
+    一切触れない。"""
+    fixed = 0
+    for snap in (snapshots or {}).values():
+        if not isinstance(snap, dict):
+            continue
+        rid = snap.get("race_id")
+        kind = snap.get("kind")
+        if not rid or kind not in ("中央", "地方"):
+            continue
+        venue = venue_from_id(rid, kind)
+        if not venue:
+            continue
+        old = snap.get("course") or ""
+        if old == venue:
+            continue
+        snap["course"] = venue
+        name = snap.get("name") or ""
+        if old and old != "競馬場未取得" and name.startswith(old):
+            snap["name"] = venue + name[len(old):]
+        elif old == "競馬場未取得" and snap.get("race_no"):
+            snap["name"] = f"{venue}{snap['race_no']}R"
+        fixed += 1
+    if fixed:
+        print(f"[INFO] venue repair: {fixed} snapshots fixed")
+    return fixed
 
 
 def extract_ids_from_url(url):
@@ -3399,6 +3447,8 @@ def main():
     history = load_history()
     snapshots = history["snapshots"]
     backfill_settled_lines(snapshots)
+    # v34.11: 旧会場マッピングで焼き付いた履歴の会場名を自己修復する
+    repair_snapshot_venues(snapshots)
     global HORSE_FORM_CACHE
     HORSE_FORM_CACHE = (
         history.get("horse_form_cache", {})
