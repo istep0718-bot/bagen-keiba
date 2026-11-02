@@ -1,9 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.11_EXPERT
+BAGEN KEIBA v34.12_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.12):
+- 配分C（shadow並走計測）を新設（ユーザー承認 2026-11-02）。パターンBと
+  同一レース・同一買い目・同一精算結果を使い、配分だけを C スキームに
+  変えた場合の収支を settled_lines から再計算して stats["alloc_c"] に
+  別集計する。本番の選定・スコア・信頼度・配分（A/B）・ゲート・グレード
+  には一切使わない計測専用トラック（post_odds / occult_track と同格）。
+- C スキーム: 券種配分は保険（単勝+ワイド）を 150/1500 に圧縮し、
+  芯（馬連+3連複軸）に寄せる（単勝100/馬連対抗250/馬連3番手350/
+  3連複軸450/3連複穴200/ワイド50/夢枠100、合計1,500は B と同一）。
+  さらにレース単位の傾斜として、グレードで総額を 超おすすめ×1.5 /
+  注目・おすすめ×1.2 / 通常×0.7 に変える。
+- 計測対象は ALLOC_C_START_DATE（2026-11-03）以降のレースのパターンB
+  本精算分のみ。同一レース集合でのパターンB実績（pattern_b_same_races）
+  も併記し、回収率を直接比較できるようにする。各スナップショットには
+  alloc_c（C換算の投資・回収・損益）を記録する。
 
 改善点 (v34.11):
 - 会場名マッピング NAR_CODES の誤りを修正（ユーザー友人の指摘で発覚、
@@ -218,7 +234,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.11_EXPERT"
+ENGINE_VERSION = "BAGEN_34.12_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -244,6 +260,22 @@ PAPER_BUDGET_YEN = 2000
 #   保守版: 穴絡み100 / 馬連[本命-3番手]400（3連複[穴絡み]の増額寄与が不確実なため）
 PATTERN_B_TRIO_OUTSIDER_YEN = 200
 PATTERN_B_QUINELLA_3RD_YEN = 300
+# v34.12: 配分C（shadow計測専用。本番配分・選定には一切使わない）。
+# キーはパターンBの (券種, 現行ステーク) で、C のステークに読み替える。
+# 合計は B と同じ ¥1,500。マップに無い買い目は B と同額として扱う。
+ALLOC_C_STAKES = {
+    ("win", 200): 100,
+    ("quinella", 200): 250,
+    ("quinella", 300): 350,
+    ("trio", 400): 450,
+    ("trio", 200): 200,
+    ("wide", 100): 50,
+    ("trifecta", 100): 100,
+}
+ALLOC_C_MULT_SUPER = 1.5        # 超おすすめのレース総額倍率
+ALLOC_C_MULT_RECOMMENDED = 1.2  # 注目レース / おすすめの倍率
+ALLOC_C_MULT_NORMAL = 0.7       # それ以外の倍率
+ALLOC_C_START_DATE = "2026-11-03"  # この日付以降のレースから計測
 # v34.5: bet_eligible ゲート（CORE-A相当）の閾値
 BET_GATE_MIN_ODDS_COVERAGE = 0.5
 BET_GATE_MAX_RUNNERS = 13          # 出走頭数がこれ以上は対象外
@@ -3302,6 +3334,65 @@ def calculate_stats(snapshots):
     by_a = [x for x in settled if pattern_of(x) == "A"]
     by_b = [x for x in settled if pattern_of(x) == "B"]
     by_u = [x for x in settled if pattern_of(x) not in ("A", "B")]
+    # v34.12: 配分C（shadow並走）。パターンBの同一レースについて、
+    # settled_lines の払戻（100円あたり）から C 配分の収支を再計算する。
+    # 本番配分には一切影響しない計測専用。
+    def alloc_c_for(x):
+        lines = x.get("settled_lines") or []
+        if not lines:
+            return None
+        grade = x.get("race_grade")
+        if grade == "超おすすめ":
+            mult = ALLOC_C_MULT_SUPER
+        elif grade == "注目レース" or x.get("is_recommended") is True:
+            mult = ALLOC_C_MULT_RECOMMENDED
+        else:
+            mult = ALLOC_C_MULT_NORMAL
+        stake = 0.0
+        ret = 0.0
+        for ln in lines:
+            if not isinstance(ln, dict):
+                continue
+            b_stake = safe_int(ln.get("stake_yen"), 0)
+            c_stake = ALLOC_C_STAKES.get((ln.get("type"), b_stake), b_stake)
+            stake += c_stake * mult
+            if ln.get("hit") is True:
+                p100 = ln.get("payout_per_100")
+                if p100:
+                    ret += float(p100) * (c_stake * mult) / 100.0
+                elif b_stake:
+                    ret += safe_int(ln.get("return_yen"), 0) * (c_stake / b_stake) * mult
+        return {"stake_yen": round(stake), "return_yen": round(ret)}
+
+    alloc_c_rows = []
+    for x in settled:
+        if pattern_of(x) != "B":
+            continue
+        if str(x.get("date") or "") < ALLOC_C_START_DATE:
+            continue
+        c = alloc_c_for(x)
+        if c is None:
+            continue
+        c["profit_yen"] = c["return_yen"] - c["stake_yen"]
+        x["alloc_c"] = c
+        alloc_c_rows.append(x)
+    _c_stake = sum(x["alloc_c"]["stake_yen"] for x in alloc_c_rows)
+    _c_return = sum(x["alloc_c"]["return_yen"] for x in alloc_c_rows)
+    _c_hits = sum(1 for x in alloc_c_rows if x["alloc_c"]["return_yen"] > 0)
+    alloc_c_stats = {
+        "races": len(alloc_c_rows),
+        "hit_races": _c_hits,
+        "hit_rate_pct": round(_c_hits / len(alloc_c_rows) * 100, 1) if alloc_c_rows else 0.0,
+        "stake_yen": _c_stake,
+        "return_yen": _c_return,
+        "profit_yen": _c_return - _c_stake,
+        "roi_pct": round(_c_return / _c_stake * 100, 1) if _c_stake else 0.0,
+        "pattern_b_same_races": agg(alloc_c_rows),
+        "start_date": ALLOC_C_START_DATE,
+        "note": ("パターンBと同一レース・同一買い目の配分違いを測る shadow 計測。"
+                 "本番配分・選定には使用していない。対象は "
+                 + ALLOC_C_START_DATE + " 以降のパターンB本精算分のみ。"),
+    }
     # v34.4: 券種別成績。買い目1点単位で集計し、的中率は hits/lines で算出する
     # （サイト側のランダム目安ベンチマークと比較できるよう買い目ベースに統一）。
     bet_types = {}
@@ -3376,6 +3467,8 @@ def calculate_stats(snapshots):
         "pattern_a": agg(by_a),
         "pattern_b": agg(by_b),
         "pattern_unknown": agg(by_u),
+        # v34.12: 配分C（shadow並走計測）
+        "alloc_c": alloc_c_stats,
         "bet_types": bet_types,
         "dream_frame": dream_frame,
         "shadow": shadow_stats,
