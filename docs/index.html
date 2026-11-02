@@ -112,6 +112,11 @@ th{color:#d9bd72;font-weight:700;letter-spacing:.8px;font-size:10.5px}
 .resnum{text-align:right;white-space:nowrap}
 .respager{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:12px}
 .respager .pinfo{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;text-align:center}
+.vchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.vchip{border:1px solid rgba(127,127,127,.45);background:transparent;color:inherit;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer}
+.vchip.active{background:#d9ab3c;border-color:#d9ab3c;color:#1d1503;font-weight:700}
+tbody tr.vrow{cursor:pointer}
+tbody tr.vrow.active{background:rgba(217,171,60,.14)}
 .btn:disabled{opacity:.35;cursor:default}
 details{border-top:1px solid var(--line-soft);padding-top:10px;margin-top:11px}
 summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spacing:.6px}
@@ -362,7 +367,15 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <div class="metric"><label>回収合計</label><strong id="resReturn">—</strong></div>
 <div class="metric"><label>損益</label><strong id="resProfit">—</strong></div>
 </div>
+<div class="sectionhead"><h2>競馬場別損益</h2><span class="small">精算済みのみ・行タップで結果一覧を絞り込み</span></div>
 <div class="panel">
+<div class="tablewrap"><table style="min-width:0">
+<thead><tr><th>競馬場</th><th style="text-align:right">レース</th><th style="text-align:right">投資</th><th style="text-align:right">回収</th><th style="text-align:right">損益</th><th style="text-align:right">回収率</th></tr></thead>
+<tbody id="venueBody"></tbody>
+</table></div>
+</div>
+<div class="panel">
+<div class="vchips" id="resVenueChips"></div>
 <div class="tablewrap"><table style="min-width:0">
 <thead><tr><th>日付</th><th>レース</th><th style="text-align:right">投資</th><th style="text-align:right">回収</th><th style="text-align:right">損益</th></tr></thead>
 <tbody id="resBody"></tbody>
@@ -616,6 +629,7 @@ function historyItems() {
 /* ===== 結果一覧（投資・回収・損益のみ） ===== */
 let RES_PAGE = 1;
 const RES_PER_PAGE = 50;
+let RES_VENUE = 'all';
 
 function renderResults() {
   const body = $('resBody');
@@ -626,9 +640,11 @@ function renderResults() {
     if (ka !== kb) return ka < kb ? 1 : -1;
     return String(b.race_id || '').localeCompare(String(a.race_id || ''));
   });
-  const total = items.length;
+  renderVenueSummary();
+  const viewItems = RES_VENUE === 'all' ? items : items.filter(x => (x.course || '不明') === RES_VENUE);
+  const total = viewItems.length;
   let stake = 0, ret = 0, profit = 0;
-  for (const x of items) {
+  for (const x of viewItems) {
     const c = Number(x.cost) || 0;
     const r = Number(x.all_bet_return) || 0;
     stake += c; ret += r;
@@ -640,11 +656,11 @@ function renderResults() {
   const pe = $('resProfit');
   pe.textContent = (profit > 0 ? '+' : '') + yen(profit);
   pe.className = profit > 0 ? 'green' : (profit < 0 ? 'red' : '');
-  $('resCount').textContent = total ? '精算済み ' + total + 'レース' : '精算済みデータなし';
+  $('resCount').textContent = total ? '精算済み ' + total + 'レース' + (RES_VENUE !== 'all' ? '（' + RES_VENUE + '）' : '') : '精算済みデータなし';
   const pages = Math.max(1, Math.ceil(total / RES_PER_PAGE));
   if (RES_PAGE > pages) RES_PAGE = pages;
   if (RES_PAGE < 1) RES_PAGE = 1;
-  const slice = items.slice((RES_PAGE - 1) * RES_PER_PAGE, RES_PAGE * RES_PER_PAGE);
+  const slice = viewItems.slice((RES_PAGE - 1) * RES_PER_PAGE, RES_PAGE * RES_PER_PAGE);
   body.innerHTML = slice.length ? slice.map(x => {
     const p = x.race_profit != null ? Number(x.race_profit) : (Number(x.all_bet_return) || 0) - (Number(x.cost) || 0);
     const d = String(x.date || '').slice(5).replace('-', '/');
@@ -657,6 +673,48 @@ function renderResults() {
   $('resPageInfo').textContent = RES_PAGE + ' / ' + pages + ' ページ（' + from + '–' + to + '件 / 全' + total + '件）';
   $('resPrev').disabled = RES_PAGE <= 1;
   $('resNext').disabled = RES_PAGE >= pages;
+}
+
+/* ===== 競馬場別損益＆場別フィルタ ===== */
+function venueAgg() {
+  const map = new Map();
+  for (const x of historyItems()) {
+    const k = x.course || '不明';
+    if (!map.has(k)) map.set(k, {venue: k, n: 0, stake: 0, ret: 0, profit: 0});
+    const a = map.get(k);
+    a.n += 1;
+    a.stake += Number(x.cost) || 0;
+    a.ret += Number(x.all_bet_return) || 0;
+    a.profit += x.race_profit != null ? Number(x.race_profit) : ((Number(x.all_bet_return) || 0) - (Number(x.cost) || 0));
+  }
+  return [...map.values()].sort((a, b) => b.n - a.n || b.profit - a.profit);
+}
+
+function renderVenueSummary() {
+  const tb = $('venueBody');
+  const chips = $('resVenueChips');
+  if (!tb && !chips) return;
+  const agg = venueAgg();
+  if (tb) {
+    tb.innerHTML = agg.length ? agg.map(a => {
+      const roi = a.stake ? (a.ret / a.stake * 100) : 0;
+      return '<tr class="vrow' + (RES_VENUE === a.venue ? ' active' : '') + '" data-venue="' + esc(a.venue) + '"><td>' + esc(a.venue) + '</td>' +
+        '<td class="resnum">' + a.n + '</td><td class="resnum">' + yen(a.stake) + '</td><td class="resnum">' + yen(a.ret) + '</td>' +
+        '<td class="resnum ' + (a.profit > 0 ? 'green' : (a.profit < 0 ? 'red' : '')) + '">' + (a.profit > 0 ? '+' : '') + yen(a.profit) + '</td>' +
+        '<td class="resnum">' + roi.toFixed(1) + '%</td></tr>';
+    }).join('') : '<tr><td colspan="6">精算済みデータがありません</td></tr>';
+  }
+  if (chips) {
+    chips.innerHTML = '<button type="button" class="vchip' + (RES_VENUE === 'all' ? ' active' : '') + '" data-venue="all">全場</button>' +
+      agg.map(a => '<button type="button" class="vchip' + (RES_VENUE === a.venue ? ' active' : '') + '" data-venue="' + esc(a.venue) + '">' + esc(a.venue) + '（' + a.n + '）</button>').join('');
+  }
+}
+
+function setResVenue(v) {
+  if (v === 'all') RES_VENUE = 'all';
+  else RES_VENUE = (RES_VENUE === v) ? 'all' : v;
+  RES_PAGE = 1;
+  renderResults();
 }
 
 function filterHist(items) {
@@ -1456,6 +1514,10 @@ const resPrevEl = $('resPrev');
 if (resPrevEl) resPrevEl.addEventListener('click', () => { RES_PAGE -= 1; renderResults(); });
 const resNextEl = $('resNext');
 if (resNextEl) resNextEl.addEventListener('click', () => { RES_PAGE += 1; renderResults(); });
+const venueBodyEl = $('venueBody');
+if (venueBodyEl) venueBodyEl.addEventListener('click', e => { const tr = e.target.closest('tr[data-venue]'); if (tr) setResVenue(tr.getAttribute('data-venue')); });
+const resVenueChipsEl = $('resVenueChips');
+if (resVenueChipsEl) resVenueChipsEl.addEventListener('click', e => { const b = e.target.closest('button[data-venue]'); if (b) setResVenue(b.getAttribute('data-venue')); });
 
 applyTab();
 
