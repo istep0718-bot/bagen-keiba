@@ -229,7 +229,7 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <p class="small" id="statsNote">精算済みデータのみ集計。払戻未確認のレースは除外。</p>
 </section>
 <section data-panel="top">
-<div class="sectionhead"><h2>パターン別 成績</h2><span class="small">A=上位中心 / B=穴候補含む</span></div>
+<div class="sectionhead"><h2>パターン別 成績</h2><span class="small">A=上位中心 / B=穴候補含む / C=Bの配分違い（shadow計測）</span></div>
 <div class="metrics">
 <div class="metric">
 <label>パターンA 的中率</label><strong id="mPatAHit">—</strong>
@@ -247,7 +247,16 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <label>パターンB 損益</label><strong id="mPatBProfit">—</strong>
 <span class="small" id="mPatBRoi" style="display:block;margin-top:4px;color:var(--muted)"></span>
 </div>
+<div class="metric">
+<label>配分C 的中率（shadow）</label><strong id="mPatCHit">—</strong>
+<span class="small" id="mPatCDetail" style="display:block;margin-top:4px;color:var(--muted)"></span>
 </div>
+<div class="metric">
+<label>配分C 損益（shadow）</label><strong id="mPatCProfit">—</strong>
+<span class="small" id="mPatCRoi" style="display:block;margin-top:4px;color:var(--muted)"></span>
+</div>
+</div>
+<p class="small" id="mPatCNote" style="margin-top:8px"></p>
 </section>
 
 
@@ -994,6 +1003,15 @@ function metricUpdate() {
   };
   setPat('mPatAHit', 'mPatADetail', 'mPatAProfit', 'mPatARoi', pa);
   setPat('mPatBHit', 'mPatBDetail', 'mPatBProfit', 'mPatBRoi', pb);
+  const pc = s.alloc_c || {};
+  setPat('mPatCHit', 'mPatCDetail', 'mPatCProfit', 'mPatCRoi', pc);
+  const cNote = $('mPatCNote');
+  if (cNote) {
+    const bs = pc.pattern_b_same_races || {};
+    cNote.textContent = Number(pc.races || 0)
+      ? '配分CはBと同一レース・同一買い目で配分だけを変えた shadow 計測（' + (pc.start_date || '2026-11-03') + '以降が対象）。同一レースでのBの回収率は ' + pct(bs.roi_pct) + '。Cの配分: 単勝100/馬連250・350/3連複450・200/ワイド50/夢枠100 にグレード倍率（超おすすめ×1.5・注目×1.2・通常×0.7）。'
+      : '配分C（shadow計測）は ' + (pc.start_date || '2026-11-03') + ' 以降のパターンB精算分から集計されます。';
+  }
   renderBetTypes(s);
   renderDream(s);
   renderOccult(s);
