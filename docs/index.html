@@ -129,6 +129,7 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 @media(max-width:360px){h1{font-size:17px}.metric strong{font-size:18px}.panel{padding:11px}.racebody{padding:11px}.tab,.filter,.btn{padding:7px 9px;font-size:11px}.hero-title{letter-spacing:3px}}
 @media(prefers-reduced-motion:reduce){h1,.hero-title,.hero-card::after{animation:none}main>section{animation:none}.race,.metric,.chart-card{transition:none}}
 .hero-grid{display:grid;gap:13px}
+.superday{font-weight:800;font-size:15px;margin:6px 2px 0;color:#e9c767}
 .hero-card{padding:0;overflow:hidden;position:relative;margin-bottom:4px;border:1px solid rgba(255,222,130,.68);border-radius:18px;background:linear-gradient(150deg,rgba(58,46,16,.62),rgba(16,24,42,.88) 46%,rgba(10,16,28,.92));box-shadow:0 16px 46px rgba(0,0,0,.55),0 0 34px rgba(233,199,103,.20),inset 0 1px 0 rgba(255,243,196,.22);backdrop-filter:blur(14px)}
 .hero-card::after{content:"";position:absolute;inset:0;z-index:3;pointer-events:none;background:linear-gradient(115deg,transparent 32%,rgba(255,242,196,.16) 48%,transparent 64%);transform:translateX(-130%);animation:shine 4.2s ease-in-out infinite}
 @keyframes shine{0%,58%{transform:translateX(-130%)}88%,100%{transform:translateX(130%)}}
@@ -741,25 +742,38 @@ function renderCharts() {
 }
 
 function renderSuper() {
-  const list = getSuperRaces();
   const sec = document.getElementById('superSection');
   if (!sec) return;
+  /* v34.11: 本日分と明日分を混在させず、見出しで分けて表示する */
+  const byConf = (a, b) => Number(b.race_confidence_score || 0) - Number(a.race_confidence_score || 0);
+  const today = DATA ? (DATA.races || []).filter(isSuper).sort(byConf) : [];
+  const tomorrow = DATA ? (DATA.tomorrow_races || []).filter(isSuper).sort(byConf) : [];
+  const total = today.length + tomorrow.length;
   const sc = document.getElementById('superCount');
-  if (sc) sc.textContent = list.length ? (list.length + 'レース') : '0レース';
+  if (sc) sc.textContent = total ? (total + 'レース（本日' + today.length + '・明日' + tomorrow.length + '）') : '0レース';
   const badge = document.getElementById('superTabBadge');
   if (badge) {
-    badge.textContent = list.length;
-    badge.style.display = list.length ? '' : 'none';
+    badge.textContent = total;
+    badge.style.display = total ? '' : 'none';
   }
   const empty = document.getElementById('superEmpty');
   const sl = document.getElementById('superList');
-  if (!list.length) {
+  if (!total) {
     if (sl) sl.innerHTML = '';
     if (empty) empty.style.display = '';
     return;
   }
   if (empty) empty.style.display = 'none';
-  if (sl) sl.innerHTML = list.map((r, i) => renderRace(r, 'super-' + i)).join('').replace(/class="race"/g, 'class="hero-card"');
+  let html = '';
+  if (today.length) {
+    html += '<div class="superday">📅 本日の超おすすめ（' + today.length + '）</div>' +
+      today.map((r, i) => renderRace(r, 'super-t-' + i)).join('');
+  }
+  if (tomorrow.length) {
+    html += '<div class="superday">📅 明日の超おすすめ（' + tomorrow.length + '）</div>' +
+      tomorrow.map((r, i) => renderRace(r, 'super-m-' + i)).join('');
+  }
+  if (sl) sl.innerHTML = html.replace(/class="race"/g, 'class="hero-card"');
 }
 
 
