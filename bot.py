@@ -1,9 +1,42 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.12_EXPERT
+BAGEN KEIBA v34.13_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+
+改善点 (v34.13):
+- 有馬記念（2026-12-27）に向けた shadow 計測を2つ新設（ユーザー承認
+  2026-11-04）。どちらも計測専用で、本番の選定・スコア・信頼度・
+  配分（A/B/C）・ゲート・グレードには一切使わない（alloc_c /
+  occult_track と同格）。選定ロジックとサイト表示も無変更。
+- (1) 3連複トリム計測 stats["trio_trim_jra_large"]: 弱点分析
+  （中央×13頭以上で3連複58点全て不的中、中央全体でも3連複の
+  回収率11.2%）を受け、中央×13頭以上の精算レースについて、
+  同一買い目から (a) trio_off = 3連複を全て外した構成、
+  (b) trio_half = 3連複の穴側だけを外し軸側を残した構成、を
+  settled_lines から再計算して並走集計する。外した分の金額は
+  他券種へ再配分しない（「外す効果」そのものを測る）。
+  軸/穴の判定は frozen_prediction.top5 の上位3頭の集合と一致する
+  3連複を「軸」とする。本精算トラック（bet_eligible が False で
+  ないもの）とゲート外（shadow）トラックを分けて集計する。
+  現行ゲートは13頭以上を常にゲート外にするため、前方で標本が
+  貯まるのはゲート外トラック側（有馬自体も本精算対象外になる
+  ため、その判断材料として分析レポートの改善候補1に沿った形）。
+  過去分は settled_lines から再構成（バックフィル）できる。
+- (2) 3連単チャレンジ枠 stats["trifecta_challenge"]: おすすめ以上
+  （is_recommended）の本精算レースを対象に、予想 rank から固定
+  3パターンを各1点100円で shadow 精算する。P1 本命1着固定流し
+  （1着=rank1、2・3着=rank2,3,4 の順不同ペア6点）/ P2 本命→対抗
+  固定（1着=rank1、2着=rank2、3着=rank3,4,5 の3点）/ P3 上位3頭
+  ボックス（rank1,2,3 の全順列6点）。買い目は予想時点で
+  trifecta_challenge として保存し、精算は夢枠・オカルトと同じ
+  払戻表（payouts["trifecta"]）で照合して
+  trifecta_challenge_settlement に保存する。着順一致でも払戻が
+  確認できない場合は収支集計から除外する（本体と同じ厳密さ）。
+  夢枠・オカルト枠とは別集計。過去のスナップショットには払戻表が
+  保存されていないため収支の再構成はできず、34.13 生成分からの
+  前方計測のみ。
 
 改善点 (v34.12):
 - 配分C（shadow並走計測）を新設（ユーザー承認 2026-11-02）。パターンBと
@@ -234,7 +267,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.12_EXPERT"
+ENGINE_VERSION = "BAGEN_34.13_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -276,6 +309,12 @@ ALLOC_C_MULT_SUPER = 1.5        # 超おすすめのレース総額倍率
 ALLOC_C_MULT_RECOMMENDED = 1.2  # 注目レース / おすすめの倍率
 ALLOC_C_MULT_NORMAL = 0.7       # それ以外の倍率
 ALLOC_C_START_DATE = "2026-11-03"  # この日付以降のレースから計測
+# v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
+# 対象は中央（JRA）×この頭数以上の精算レース。
+TRIO_TRIM_MIN_RUNNERS = 13
+# v34.13: 3連単チャレンジ枠（shadow計測専用。夢枠・オカルト枠とは別集計）。
+TRIFECTA_CHALLENGE_STAKE_YEN = 100  # 1点あたりの仮定ベット額
+TRIFECTA_CHALLENGE_START_DATE = "2026-11-04"  # 前方計測の開始日（34.13生成分から）
 # v34.5: bet_eligible ゲート（CORE-A相当）の閾値
 BET_GATE_MIN_ODDS_COVERAGE = 0.5
 BET_GATE_MAX_RUNNERS = 13          # 出走頭数がこれ以上は対象外
@@ -2472,6 +2511,11 @@ def fetch_and_settle_result(race, source):
             # calculate_stats が別枠集計する）
             race["occult_settlement"] = settle_occult_trifecta(
                 race.get("occult_trifecta") or [], finishes, payouts)
+            # v34.13: 3連単チャレンジ枠も同じ払戻表でパターン別に精算する
+            # （結果は trifecta_challenge_settlement として保存され、
+            # calculate_stats が夢枠・オカルトとは別に集計する）
+            race["trifecta_challenge_settlement"] = settle_trifecta_challenge(
+                race.get("trifecta_challenge") or {}, finishes, payouts)
             race.update({
                 "result_finishes": finishes,
                 "payouts": payouts,
@@ -2648,6 +2692,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     occult_pick = pick_occult_horse(ranked, venue or "競馬場未取得", post)
     # v34.10: オカルト買い目（3連単2点）。注目馬がいるレースだけ生成する。
     occult_trifecta = build_occult_trifecta(ranked, occult_pick)
+    # v34.13: 3連単チャレンジ枠の買い目（固定3パターン・shadow計測専用。
+    # 集計対象はおすすめ以上の本精算レースのみで、calculate_stats 側で絞る）
+    trifecta_challenge = build_trifecta_challenge(ranked)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -2680,6 +2727,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         # v34.10: オカルト買い目（3連単2点・各100円の仮定。別枠集計専用）
         "occult_trifecta": occult_trifecta,
         "occult_settlement": None,
+        # v34.13: 3連単チャレンジ枠（買い目と精算結果。shadow計測専用）
+        "trifecta_challenge": trifecta_challenge,
+        "trifecta_challenge_settlement": None,
         "race_recommendation_reasons": reasons,
         "race_data_coverage": {
             "odds_pct": round(odds_coverage * 100, 1),
@@ -3050,6 +3100,78 @@ def settle_occult_trifecta(combos, finishes, payouts):
     return result
 
 
+def build_trifecta_challenge(ranked):
+    """v34.13: 3連単チャレンジ枠の買い目（shadow計測専用）を組み立てる。
+    予想 rank（ranked の並び順 = 1:本命, 2:対抗, 3:3番手, 4, 5）から
+    固定3パターンを作る。本番の買い目（夢枠含む）とは完全に独立で、
+    選定・配分・ゲートには一切使わない。
+      P1 本命1着固定流し: 1着=rank1、2・3着=rank2,3,4 の順不同ペア（6点）
+      P2 本命→対抗固定:   1着=rank1、2着=rank2、3着=rank3,4,5（3点）
+      P3 上位3頭ボックス: rank1,2,3 の全順列（6点）
+    rank が3頭未満なら空 dict。4・5番手が無い小頭数では、ある rank
+    だけで組み立てるため点数が減る（その場合も tickets 数で明示する）。"""
+    nums = []
+    for h in ranked or []:
+        try:
+            no = int(h.get("horse_no"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if no not in nums:
+            nums.append(no)
+        if len(nums) == 5:
+            break
+    if len(nums) < 3:
+        return {}
+    r1, r2, r3 = nums[0], nums[1], nums[2]
+    r4 = nums[3] if len(nums) >= 4 else None
+    r5 = nums[4] if len(nums) >= 5 else None
+    pool = [n for n in (r2, r3, r4) if n is not None]
+    p1 = [[r1, pool[i], pool[j]]
+          for i in range(len(pool)) for j in range(len(pool)) if i != j]
+    p2 = [[r1, r2, n] for n in (r3, r4, r5) if n is not None]
+    p3 = [[r1, r2, r3], [r1, r3, r2], [r2, r1, r3],
+          [r2, r3, r1], [r3, r1, r2], [r3, r2, r1]]
+    return {"p1": p1, "p2": p2, "p3": p3}
+
+
+def settle_trifecta_challenge(patterns, finishes, payouts):
+    """v34.13: 3連単チャレンジ枠を夢枠・オカルトと同じ経路（結果ページの
+    払戻表 payouts["trifecta"]）でパターン別に精算する。本体の
+    settle_tickets と同じ厳密さ: 着順一致でも払戻金額が確認できない
+    パターンは payout_missing=True として収支集計から除外させる。
+    1パターン内で的中しうるのは実際の1〜3着の並び1点だけ。"""
+    result = {}
+    top3 = None
+    if finishes and len(finishes) >= 3:
+        try:
+            top3 = [int(f) for f in finishes[:3]]
+        except (TypeError, ValueError):
+            top3 = None
+    tri_payouts = (payouts or {}).get("trifecta") or {}
+    for key in ("p1", "p2", "p3"):
+        combos = (patterns or {}).get(key) or []
+        entry = {"tickets": len(combos), "hit": False, "return_yen": 0,
+                 "payout_per_100": None, "payout_missing": False}
+        if top3 is not None:
+            for combo in combos:
+                try:
+                    combo = [int(c) for c in combo]
+                except (TypeError, ValueError):
+                    continue
+                if combo != top3:
+                    continue
+                payout = tri_payouts.get(combo_key(combo, True), 0)
+                if payout:
+                    entry["hit"] = True
+                    entry["payout_per_100"] = payout
+                    entry["return_yen"] += int(
+                        TRIFECTA_CHALLENGE_STAKE_YEN / 100 * payout)
+                else:
+                    entry["payout_missing"] = True
+        result[key] = entry
+    return result
+
+
 def update_snapshot(snapshots, race):
     rid = str(race["id"])
     old = snapshots.get(rid, {})
@@ -3136,6 +3258,9 @@ def update_snapshot(snapshots, race):
         # v34.10: オカルト買い目（3連単2点）とその精算結果を保存する
         "occult_trifecta": race.get("occult_trifecta") or old.get("occult_trifecta") or [],
         "occult_settlement": race.get("occult_settlement") or old.get("occult_settlement"),
+        # v34.13: 3連単チャレンジ枠（買い目と精算結果を保存。shadow計測専用）
+        "trifecta_challenge": race.get("trifecta_challenge") or old.get("trifecta_challenge") or {},
+        "trifecta_challenge_settlement": race.get("trifecta_challenge_settlement") or old.get("trifecta_challenge_settlement"),
         "odds_coverage": snap_odds_coverage,
         "bet_eligible": snap_bet_eligible,
         "gate_reasons": snap_gate_reasons,
@@ -3325,6 +3450,76 @@ def calculate_stats(snapshots):
         occult_track["roi_pct"] = round(
             occult_track["return"] / occult_track["cost"] * 100, 1)
 
+    # v34.13: 3連単チャレンジ枠（shadow計測）。おすすめ以上の本精算レースで
+    # 精算時に保存された trifecta_challenge_settlement をパターン別に
+    # 集計する。夢枠・オカルト枠とは別集計。払戻未確認（payout_missing）の
+    # パターンは本体と同じく収支集計から除外する。過去分は払戻表が
+    # スナップショットに保存されていないため再構成できず、34.13生成分
+    # からの前方計測のみ（settlement が保存されたレースだけが対象）。
+    def _tc_agg(a):
+        stake = a["stake_yen"]
+        ret = a["return_yen"]
+        return {
+            "races": a["races"], "hits": a["hits"],
+            "hit_rate_pct": (round(a["hits"] / a["races"] * 100, 1)
+                             if a["races"] else 0.0),
+            "stake_yen": stake, "return_yen": ret,
+            "profit_yen": ret - stake,
+            "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
+        }
+
+    _tc_labels = {
+        "p1": "本命1着固定流し（1着=rank1、2・3着=rank2,3,4の順不同ペア6点）",
+        "p2": "本命→対抗固定（1着=rank1、2着=rank2、3着=rank3,4,5の3点）",
+        "p3": "上位3頭ボックス（rank1,2,3の全順列6点）",
+    }
+    _tc_raw = {k: {"races": 0, "hits": 0, "stake_yen": 0, "return_yen": 0}
+               for k in ("p1", "p2", "p3")}
+    _tc_races = 0
+    _tc_hit_races = 0
+    for x in settled:
+        if x.get("is_recommended") is not True:
+            continue
+        st = x.get("trifecta_challenge_settlement")
+        if not isinstance(st, dict):
+            continue
+        counted = False
+        any_hit = False
+        for k in ("p1", "p2", "p3"):
+            e = st.get(k)
+            if not isinstance(e, dict) or e.get("payout_missing"):
+                continue
+            _tc_raw[k]["races"] += 1
+            _tc_raw[k]["stake_yen"] += (
+                safe_int(e.get("tickets"), 0)
+                * TRIFECTA_CHALLENGE_STAKE_YEN)
+            if e.get("hit") is True:
+                _tc_raw[k]["hits"] += 1
+                any_hit = True
+            _tc_raw[k]["return_yen"] += safe_int(e.get("return_yen"), 0)
+            counted = True
+        if counted:
+            _tc_races += 1
+            if any_hit:
+                _tc_hit_races += 1
+    trifecta_challenge_stats = {
+        "p1": dict(_tc_agg(_tc_raw["p1"]), label=_tc_labels["p1"]),
+        "p2": dict(_tc_agg(_tc_raw["p2"]), label=_tc_labels["p2"]),
+        "p3": dict(_tc_agg(_tc_raw["p3"]), label=_tc_labels["p3"]),
+        "total": _tc_agg({
+            "races": _tc_races, "hits": _tc_hit_races,
+            "stake_yen": sum(v["stake_yen"] for v in _tc_raw.values()),
+            "return_yen": sum(v["return_yen"] for v in _tc_raw.values()),
+        }),
+        "start_date": TRIFECTA_CHALLENGE_START_DATE,
+        "note": ("おすすめ以上の本精算レースで3連単の固定3パターンを測る "
+                 "shadow 計測（各1点100円）。本番の選定・配分・夢枠・"
+                 "オカルト枠には使用していない。過去分は払戻表が保存されて"
+                 "いないため再構成できず、" + TRIFECTA_CHALLENGE_START_DATE
+                 + " 以降の前方計測のみ。total の hits は3パターンの"
+                 "いずれかが的中したレース数。"),
+    }
+
     win_items = [x for x in settled if x.get("win_hit") is not None]
     win_stake = sum(safe_int(x.get("cost"), 0) for x in win_items)
     win_return = sum(safe_int(x.get("win_return"), 0) for x in win_items)
@@ -3392,6 +3587,125 @@ def calculate_stats(snapshots):
         "note": ("パターンBと同一レース・同一買い目の配分違いを測る shadow 計測。"
                  "本番配分・選定には使用していない。対象は "
                  + ALLOC_C_START_DATE + " 以降のパターンB本精算分のみ。"),
+    }
+    # v34.13: 3連複トリム計測（shadow並走）。中央×13頭以上の精算レースで、
+    # settled_lines から「3連複を全て外した構成（trio_off）」と「穴側だけ
+    # 外した構成（trio_half）」を再計算する。外した分は他券種へ再配分
+    # しない。本番配分・選定には一切影響しない計測専用。
+    # 軸 = frozen_prediction.top5 の上位3頭の集合と一致する3連複。
+    def trio_trim_for(x):
+        lines = x.get("settled_lines") or []
+        if not lines:
+            return None
+        top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+        axis_set = None
+        if len(top5) >= 3:
+            try:
+                axis_set = frozenset(int(h.get("horse_no")) for h in top5[:3])
+            except (TypeError, ValueError, AttributeError):
+                axis_set = None
+        trio_lines = []
+        stake = ret = 0
+        for ln in lines:
+            if not isinstance(ln, dict):
+                continue
+            stake += safe_int(ln.get("stake_yen"), 0)
+            ret += safe_int(ln.get("return_yen"), 0)
+            if ln.get("type") == "trio":
+                trio_lines.append(ln)
+        if not trio_lines:
+            return None
+        off_stake = sum(safe_int(ln.get("stake_yen"), 0) for ln in trio_lines)
+        off_ret = sum(safe_int(ln.get("return_yen"), 0) for ln in trio_lines)
+        # 穴側（=軸でない3連複）だけの合計。判定できない場合は half を None
+        # にして集計から外す（off は軸/穴の判定なしで常に再構成できる）。
+        half = None
+        if axis_set is not None:
+            ana_stake = ana_ret = 0
+            classified = True
+            for ln in trio_lines:
+                hs = ln.get("horses") or []
+                try:
+                    is_axis = (len(hs) == 3
+                               and frozenset(int(v) for v in hs) == axis_set)
+                except (TypeError, ValueError):
+                    classified = False
+                    break
+                if not is_axis:
+                    ana_stake += safe_int(ln.get("stake_yen"), 0)
+                    ana_ret += safe_int(ln.get("return_yen"), 0)
+            if classified:
+                half = {"stake_yen": stake - ana_stake,
+                        "return_yen": ret - ana_ret}
+        elif len(trio_lines) == 1 and pattern_of(x) == "A":
+            # パターンAの3連複は軸1点のみ（穴側は存在しない）ため half = 現行
+            half = {"stake_yen": stake, "return_yen": ret}
+        return {
+            "main": {"stake_yen": stake, "return_yen": ret},
+            "trio_off": {"stake_yen": stake - off_stake,
+                         "return_yen": ret - off_ret},
+            "trio_half": half,
+        }
+
+    def variant_agg(pairs):
+        stake = sum(p["stake_yen"] for p in pairs)
+        ret = sum(p["return_yen"] for p in pairs)
+        hits = sum(1 for p in pairs if p["return_yen"] > 0)
+        n = len(pairs)
+        return {
+            "races": n, "hit_races": hits,
+            "hit_rate_pct": round(hits / n * 100, 1) if n else 0.0,
+            "stake_yen": stake, "return_yen": ret,
+            "profit_yen": ret - stake,
+            "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
+        }
+
+    def trio_trim_track(rows):
+        asis, off, half = [], [], []
+        for x in rows:
+            t = trio_trim_for(x)
+            if t is None:
+                continue
+            rec = {"trio_off": dict(t["trio_off"]),
+                   "trio_half": (dict(t["trio_half"])
+                                 if t["trio_half"] is not None else None)}
+            rec["trio_off"]["profit_yen"] = (
+                rec["trio_off"]["return_yen"] - rec["trio_off"]["stake_yen"])
+            if rec["trio_half"] is not None:
+                rec["trio_half"]["profit_yen"] = (
+                    rec["trio_half"]["return_yen"]
+                    - rec["trio_half"]["stake_yen"])
+            x["trio_trim"] = rec
+            asis.append(t["main"])
+            off.append(t["trio_off"])
+            if t["trio_half"] is not None:
+                half.append(t["trio_half"])
+        return {
+            "races": len(asis),
+            "as_is": variant_agg(asis),
+            "trio_off": variant_agg(off),
+            "trio_half": variant_agg(half),
+            "trio_half_races": len(half),
+        }
+
+    def _trio_trim_target(x):
+        return (x.get("kind") == "中央"
+                and safe_int(x.get("runner_count"), 0)
+                >= TRIO_TRIM_MIN_RUNNERS)
+
+    trio_trim_stats = {
+        "target": "中央（JRA）×13頭以上",
+        "main": trio_trim_track(
+            [x for x in settled if _trio_trim_target(x)]),
+        "shadow": trio_trim_track(
+            [x for x in settled_shadow if _trio_trim_target(x)]),
+        "note": ("中央×13頭以上の精算レースで、3連複を外す/絞る構成を測る "
+                 "shadow 計測。本番配分・選定には使用していない。"
+                 "現行ゲートは13頭以上を常にゲート外にするため、本精算"
+                 "トラックはゲート前（〜2026-10-31）の再構成分のみで、"
+                 "前方標本はゲート外（shadow）トラックに貯まる。"
+                 "軸/穴の判定は frozen_prediction.top5 上位3頭の集合との"
+                 "一致による。trio_half は判定できたレースのみ集計。"),
     }
     # v34.4: 券種別成績。買い目1点単位で集計し、的中率は hits/lines で算出する
     # （サイト側のランダム目安ベンチマークと比較できるよう買い目ベースに統一）。
@@ -3469,6 +3783,8 @@ def calculate_stats(snapshots):
         "pattern_unknown": agg(by_u),
         # v34.12: 配分C（shadow並走計測）
         "alloc_c": alloc_c_stats,
+        # v34.13: 3連複トリム計測（中央×13頭以上・shadow並走計測）
+        "trio_trim_jra_large": trio_trim_stats,
         "bet_types": bet_types,
         "dream_frame": dream_frame,
         "shadow": shadow_stats,
@@ -3477,6 +3793,8 @@ def calculate_stats(snapshots):
         "occult_numbers": occult_numbers,
         "occult_tendency": occult_tendency,
         "occult_track": occult_track,
+        # v34.13: 3連単チャレンジ枠（shadow計測・前方計測のみ）
+        "trifecta_challenge": trifecta_challenge_stats,
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
