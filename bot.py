@@ -1,9 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.13_EXPERT
+BAGEN KEIBA v34.14_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
-history.json の snapshots / stats / horse_form_cache / people_cache を維持する。
+history.json の snapshots / stats / horse_form_cache / people_cache /
+pedigree_cache を維持する。
+
+改善点 (v34.14):
+- 血統（父・母父）の組み込み Phase 1（ユーザー最優先指示 2026-11-06）。
+  旧実装は馬ページ本文への「父:」「母父:」正規表現で抽出を試みたが、
+  その表記は netkeiba のページに存在せず、キャッシュ全件で取得0件・
+  血統加点は一度も発動していなかった（監査レポート
+  hybrid-osusume-2026-11-06.md 第3章）。
+- 取得元を db.netkeiba の血統ページ（horse/ped/<馬ID>/）の5代血統表
+  （table.blood_table）に切り替え、rowspan を展開した位置構造
+  （父=[0][0]／母=[16][0]／母父=[16][1]）で抽出する専用パーサを新設。
+  実測検証（2026-11-06）: 中央8頭・地方11頭の全19頭で父・母父を取得。
+- 血統は馬ごとに不変のため、馬IDキーの永続キャッシュ pedigree_cache
+  （history.json 内、people_cache と同方式）に分離し、新規取得は
+  実行あたり上限 MAX_NEW_PEDIGREE_FETCHES で保護する。取得失敗時は
+  キャッシュしない（次回再試行）。
+- 接続先: parse_runners で父名を血統ページ優先に解決し、馬ごとの
+  sire / damsire / dam / horse_id を保持。根拠表示に実名を出す
+  （bloodline_status と理由文）。frozen_prediction.top5 にも
+  horse_id / sire / damsire を保存し、将来の馬単位の前方検証を可能にする。
+- スコアの重み・条件は一切変更しない。ただし既存の血統加点スロット
+  （ダートで is_dirt_blood → +1.0、芝で is_power_blood → +0.75）は
+  父名が DIRT_SIRES / POWER_SIRES に一致すれば従来設計通り自動で
+  発動し始める（データ欠落で死んでいた既存仕様の復活であり、
+  重みの新設・変更ではない）。
 
 改善点 (v34.13):
 - 有馬記念（2026-12-27）に向けた shadow 計測を2つ新設（ユーザー承認
@@ -267,7 +292,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.13_EXPERT"
+ENGINE_VERSION = "BAGEN_34.14_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -275,6 +300,11 @@ HORSE_FORM_CACHE = {}
 MAX_NEW_PEOPLE_FETCHES = 24
 PEOPLE_FETCHED_THIS_RUN = 0
 PEOPLE_CACHE = {}
+# v34.14: 血統キャッシュ（馬IDキー。血統は不変情報なので people_cache と
+# 同方式の永続キャッシュに分離し、14日更新の horse_form_cache には混ぜない）
+MAX_NEW_PEDIGREE_FETCHES = 24
+PEDIGREE_FETCHED_THIS_RUN = 0
+PEDIGREE_CACHE = {}
 # v34.2: 競馬場別 枠順バイアス（main でスナップショットから算出して保持）
 VENUE_FRAME_BIAS = {}
 # v34.9: 馬番オカルト指数 {馬番: {num, wins, expected, sigma}} と
@@ -1326,6 +1356,101 @@ def get_horse_form(row):
     return form
 
 
+def _pedigree_cell_name(cell):
+    """v34.14: 血統表のセルから馬名を取り出す。
+    セル内の馬リンク（/horse/<id>/ 形式。[血統]=/horse/ped/、[産駒]=/horse/sire/
+    は除外）の文字列が馬名。海外馬の「(米)」「（英）」等の産地サフィックスは
+    照合・表示用に取り除く。リンクが無いセルはセル先頭のテキストを使う。"""
+    if cell is None:
+        return None
+    link = None
+    for a in cell.select("a[href]"):
+        if re.search(r"/horse/(?!ped/|sire/)[^/]+/?$", a.get("href", "")):
+            link = a
+            break
+    raw = text_of(link) if link is not None else text_of(cell)
+    name = clean(raw)
+    name = re.sub(r"\s*[(（][^()（）]{1,4}[)）]\s*$", "", name).strip()
+    return name or None
+
+
+def parse_pedigree_page(page):
+    """v34.14: db.netkeiba の血統ページ（horse/ped/<馬ID>/）を解析する。
+
+    5代血統表（table.blood_table）は「父:」のようなテキスト表記ではなく
+    32行×5列の位置構造で家系を表す:
+      父   = [0][0]  （rowspan 16、0〜15行）
+      母   = [16][0] （rowspan 16、16〜31行）
+      母父 = [16][1] （母の父、rowspan 8、16〜23行）
+    旧実装の「父:」「母父:」正規表現は、その表記がページに存在しないため
+    永遠に一致しなかった（取得0件の原因）。ここでは rowspan を展開した
+    行列位置で抽出する。取れない項目は推測で補完せず None のまま返す。"""
+    empty = {"available": False, "sire": None, "damsire": None, "dam": None,
+             "source": "血統ページ・血統表未検出"}
+    soup = soup_of(page)
+    table = soup.select_one("table.blood_table")
+    if table is None:
+        return empty
+    grid = {}
+    for ri, tr in enumerate(table.select("tr")):
+        ci = 0
+        for cell in tr.find_all(["td", "th"], recursive=False):
+            while (ri, ci) in grid:
+                ci += 1
+            try:
+                rs = max(1, int(cell.get("rowspan") or 1))
+            except (TypeError, ValueError):
+                rs = 1
+            try:
+                cs = max(1, int(cell.get("colspan") or 1))
+            except (TypeError, ValueError):
+                cs = 1
+            for dr in range(rs):
+                for dc in range(cs):
+                    grid[(ri + dr, ci + dc)] = cell
+            ci += cs
+
+    def name_at(r, c):
+        return _pedigree_cell_name(grid.get((r, c)))
+
+    sire = name_at(0, 0)
+    dam = name_at(16, 0)
+    damsire = name_at(16, 1)
+    if not sire and not damsire:
+        return empty
+    return {"available": True, "sire": sire, "damsire": damsire, "dam": dam,
+            "source": "db.netkeiba 血統ページの5代血統表（位置構造）から抽出"}
+
+
+def get_pedigree(horse_id):
+    """v34.14: 馬IDから父・母父・母を解決する。血統は馬ごとに不変なので
+    永続キャッシュ（PEDIGREE_CACHE）優先で、新規取得は実行あたり上限で
+    保護する。ページ取得自体に失敗した場合はキャッシュせず次回再試行する
+    （取得できたが血統表が無い結果は不変としてキャッシュする）。"""
+    global PEDIGREE_FETCHED_THIS_RUN
+    empty = {"available": False, "sire": None, "damsire": None, "dam": None,
+             "source": "血統未取得"}
+    if not horse_id:
+        return empty
+    cached = PEDIGREE_CACHE.get(horse_id)
+    if isinstance(cached, dict) and cached.get("checked_at"):
+        ped = cached.get("pedigree")
+        return ped if isinstance(ped, dict) else empty
+    if PEDIGREE_FETCHED_THIS_RUN >= MAX_NEW_PEDIGREE_FETCHES:
+        return {**empty, "source": "無料実行時間保護のため今回の取得上限"}
+    PEDIGREE_FETCHED_THIS_RUN += 1
+    page = get_html(f"https://db.netkeiba.com/horse/ped/{horse_id}/")
+    if not page:
+        return {**empty, "source": "血統ページ取得失敗"}
+    ped = parse_pedigree_page(page)
+    # 永続キャッシュするのは「抽出成功」か「本物の馬ページ（タイトルに
+    # 競走馬データを含む）で血統表が無いと確認できた場合」だけにする。
+    # 一時的なブロック/リダイレクトページを未取得として固定しないため。
+    if ped.get("available") or "競走馬データ" in page:
+        PEDIGREE_CACHE[horse_id] = {"checked_at": NOW.isoformat(), "pedigree": ped}
+    return ped
+
+
 def frame_no_from_field(field_size, horse_no):
     """v34.2: 頭数と馬番から枠番を復元する（標準の枠組表）。
     8頭以下は馬番=枠番。9頭以上は外枠から順に複数頭を割り当てる。"""
@@ -1601,6 +1726,9 @@ def parse_runners(soup, surface):
         jockey = parse_jockey(row)
         odds, pop = parse_odds_popularity(row)
         past_form = get_horse_form(row)
+        # v34.14: 血統（父・母父・母）を馬IDキー永続キャッシュで解決する
+        horse_id, _horse_url = horse_id_from_row(row)
+        pedigree = get_pedigree(horse_id)
         # v34.2: 調教師・騎手の人物データ（IDが取れた場合のみ取得を試みる）
         trainer_name, trainer_id = parse_trainer(row)
         jockey_id = person_id_from_link(row, "jockey")
@@ -1613,7 +1741,12 @@ def parse_runners(soup, surface):
         power = any(x in rowtext for x in POWER_SIRES)
         # v34: 馬ページで父名が取れた場合は父名でも種牡馬リストと照合する
         # （行テキスト照合との重複加点は score 側で従来通り一方のみ）
-        sire_name = past_form.get("sire") if past_form.get("available") else None
+        # v34.14: 父名は血統ページ（位置構造パーサ）を正とし、旧・馬ページ
+        # 抽出は予備に残す。母父・母は血統ページからのみ得られる
+        sire_name = pedigree.get("sire") or (
+            past_form.get("sire") if past_form.get("available") else None)
+        damsire_name = pedigree.get("damsire")
+        dam_name = pedigree.get("dam")
         if sire_name:
             dirt = dirt or any(x in sire_name for x in DIRT_SIRES)
             power = power or any(x in sire_name for x in POWER_SIRES)
@@ -1646,6 +1779,10 @@ def parse_runners(soup, surface):
             reasons.append("取得できた血統テキストにダート血統候補")
         if bloodline_available and surface == "芝" and power:
             reasons.append("取得できた血統テキストに芝・持続力型血統候補")
+        # v34.14: 血統が解決できた場合は根拠表示に実名を出す
+        if sire_name or damsire_name:
+            reasons.append(
+                f"血統 父:{sire_name or '不明'}／母父:{damsire_name or '不明'}")
         if wd is not None and abs(wd) >= 6:
             reasons.append(f"馬体重増減 {wd:+d}kg")
         if positive:
@@ -1654,6 +1791,9 @@ def parse_runners(soup, surface):
             reasons.append("掲載テキストに注意ワード")
         runners[no] = {
             "horse_no": no, "number": no, "frame_no": frame, "horse": name, "name": name,
+            # v34.14: 馬IDと血統（解決できた場合のみ実名、未解決は None）
+            "horse_id": horse_id or None,
+            "sire": sire_name, "damsire": damsire_name, "dam": dam_name,
             "jockey": jockey or "未取得", "odds": odds, "popularity": pop, "score": 0.0,
             # v34.2: 調教師と人物データ
             "trainer": trainer_name or "未取得", "trainer_id": trainer_id or None,
@@ -1666,9 +1806,12 @@ def parse_runners(soup, surface):
             "is_outer": frame in (7, 8) if frame else False,
             "is_dirt_blood": dirt if bloodline_available else False,
             "is_power_blood": power if bloodline_available else False,
-            "bloodline_status": ("出馬表テキストで血統欄を確認" if bloodline_in_row
-                                 else ("馬ページで父名を確認" if sire_name
-                                       else "未取得・血統加点なし")),
+            "bloodline_status": (
+                (f"血統表で確認 父:{sire_name}" + (f"／母父:{damsire_name}" if damsire_name else ""))
+                if pedigree.get("available") and sire_name
+                else ("出馬表テキストで血統欄を確認" if bloodline_in_row
+                      else ("馬ページで父名を確認" if sire_name
+                            else "未取得・血統加点なし"))),
             # v34: 今回の斤量（取れなければ None のまま）
             "carried_weight": cw,
             "is_positive_memo": positive, "is_negative_memo": negative, "w_diff": wd,
@@ -2797,12 +2940,13 @@ def fetch_races_for_date(date_str, is_tomorrow):
 def load_history():
     if not HISTORY.exists():
         return {"schema_version": 29, "snapshots": {}, "stats": {},
-                "horse_form_cache": {}, "people_cache": {}}
+                "horse_form_cache": {}, "people_cache": {}, "pedigree_cache": {}}
     try:
         v = json.loads(HISTORY.read_text(encoding="utf-8"))
         if not isinstance(v, dict):
             raise ValueError("history root not object")
-        for k in ("snapshots", "stats", "horse_form_cache", "people_cache"):
+        for k in ("snapshots", "stats", "horse_form_cache", "people_cache",
+                  "pedigree_cache"):
             if not isinstance(v.get(k), dict):
                 v[k] = {}
         v["schema_version"] = 29
@@ -3241,7 +3385,11 @@ def update_snapshot(snapshots, race):
         "frozen_prediction": old.get("frozen_prediction") or {
             "top5": [
                 {"horse_no": h.get("horse_no"), "name": h.get("name"),
-                 "score": h.get("score"), "odds": h.get("odds"), "rank": h.get("rank")}
+                 "score": h.get("score"), "odds": h.get("odds"), "rank": h.get("rank"),
+                 # v34.14: 馬IDと血統を前方保存する（将来の馬単位検証の鍵。
+                 # 未解決の馬は None のまま＝未取得を明示する）
+                 "horse_id": h.get("horse_id"),
+                 "sire": h.get("sire"), "damsire": h.get("damsire")}
                 for h in race.get("top5", [])
             ],
             "tickets": ticket,
@@ -3869,6 +4017,11 @@ def main():
     PEOPLE_CACHE = (
         history.get("people_cache", {})
         if isinstance(history.get("people_cache", {}), dict) else {})
+    # v34.14: 血統キャッシュの読み込み（馬IDキー・永続）
+    global PEDIGREE_CACHE
+    PEDIGREE_CACHE = (
+        history.get("pedigree_cache", {})
+        if isinstance(history.get("pedigree_cache", {}), dict) else {})
     VENUE_FRAME_BIAS = compute_frame_bias(snapshots)
     # v34.9: 馬番オカルト指数と場×時間帯傾向を履歴から算出する
     # （表示・別枠集計専用。parse_race が occult_pick の判定にだけ使う）
@@ -3908,6 +4061,7 @@ def main():
         "snapshots": snapshots,
         "horse_form_cache": HORSE_FORM_CACHE,
         "people_cache": PEOPLE_CACHE,
+        "pedigree_cache": PEDIGREE_CACHE,
     })
     save_json(HISTORY, history)
     verified = sum(1 for r in today_races if r.get("runner_count_verified"))
@@ -3944,6 +4098,12 @@ def main():
             # v34.2: 人物データと枠順バイアスの取得状況
             "new_people_fetches": PEOPLE_FETCHED_THIS_RUN,
             "people_cache_entries": len(PEOPLE_CACHE),
+            # v34.14: 血統の取得状況
+            "new_pedigree_fetches": PEDIGREE_FETCHED_THIS_RUN,
+            "pedigree_cache_entries": len(PEDIGREE_CACHE),
+            "pedigree_resolved_runners": sum(
+                1 for r in today_races + tomorrow_races
+                for h in r.get("horses", []) if h.get("sire")),
             "frame_bias": VENUE_FRAME_BIAS,
             "odds_available_runners": sum(
                 1 for r in today_races + tomorrow_races
