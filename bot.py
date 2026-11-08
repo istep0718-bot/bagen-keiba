@@ -1,10 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.18_EXPERT
+BAGEN KEIBA v34.19_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.19):
+- 配分D shadow を新設（ユーザー承認 2026-11-09「新配分 shadow を
+  設計して計測開始」）。根拠は同日の区分別分析（segment-analysis-
+  2026-11-09）: 券種別で馬連が最良（回収率85.6%）、3連複が最大の
+  損失源（−¥64,330）。既存の配分C（alloc_c）は 151R で 63.9% と
+  現行に敗北済みのため、券種別データに基づく別設計とする。
+- 設計: 買い目の馬の組み合わせと総額は現行パターンA/Bと完全同一の
+  まま、配分だけを馬連寄りに変える。B'（合計¥1,500）: 単勝200／
+  馬連[本命-対抗]400／馬連[本命-3番手]400／3連複[軸]200／
+  3連複[穴]100／ワイド[穴]100／夢枠（3連単）100（馬連53%・
+  3連複20%）。A'（合計¥1,900）: 単勝500／馬連[本命-対抗]500／
+  馬連[本命-3番手]400／3連複[軸]300／ワイド100／ワイド100。
+  3連複・3連単は本人の券種方針（当てる楽しみとして残す）に沿い、
+  消さずに薄くする。
+- 実装は種別 shadow（34.17）と同格: build_tickets の出力から
+  組み合わせをそのまま引き継いで金額だけを付け替え、本体と同じ
+  settle_tickets で精算し、stats["alloc_d"] で本精算（main）と
+  ゲート外（gate_out）を分けて現行実績と並走比較する。計測開始は
+  ALLOC_D_START_DATE（2026-11-09）以降の生成分から。本番の選定・
+  スコア・信頼度・配分A/B・ゲート・グレードには一切使わない。
 
 改善点 (v34.18):
 - 凍結保存の拡張と確率の前方検証（監査レポート
@@ -399,7 +420,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.18_EXPERT"
+ENGINE_VERSION = "BAGEN_34.19_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -460,6 +481,27 @@ ALLOC_C_MULT_SUPER = 1.5        # 超おすすめのレース総額倍率
 ALLOC_C_MULT_RECOMMENDED = 1.2  # 注目レース / おすすめの倍率
 ALLOC_C_MULT_NORMAL = 0.7       # それ以外の倍率
 ALLOC_C_START_DATE = "2026-11-03"  # この日付以降のレースから計測
+# v34.19: 配分D（shadow計測専用。本番配分・選定には一切使わない）。
+# 買い目の組み合わせと総額は現行パターンA/Bと完全同一で、配分だけを
+# 馬連寄りに変える。キーは (パターン, 券種, 同一券種内の出現順) で、
+# build_tickets のライン順（馬連は [本命-対抗] → [本命-3番手]、
+# 3連複は [軸] → [穴]）に対応する。マップに無いラインは現行額を維持。
+ALLOC_D_STAKES = {
+    ("B", "win", 0): 200,
+    ("B", "quinella", 0): 400,
+    ("B", "quinella", 1): 400,
+    ("B", "trio", 0): 200,
+    ("B", "trio", 1): 100,
+    ("B", "wide", 0): 100,
+    ("B", "trifecta", 0): 100,
+    ("A", "win", 0): 500,
+    ("A", "quinella", 0): 500,
+    ("A", "quinella", 1): 400,
+    ("A", "trio", 0): 300,
+    ("A", "wide", 0): 100,
+    ("A", "wide", 1): 100,
+}
+ALLOC_D_START_DATE = "2026-11-09"  # 前方計測の開始日（34.19生成分から）
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -3026,6 +3068,51 @@ def build_kind_pattern_shadow(ranked, outsiders, verified, kind, runner_count):
     }]
 
 
+def build_alloc_d_tickets(ranked, outsiders, verified):
+    """v34.19: 配分D shadow の買い目（計測専用・本番不使用）。
+    build_tickets（現行パターンA/B）の出力から馬の組み合わせを
+    そのまま引き継ぎ、金額だけを ALLOC_D_STAKES で付け替える。
+    組み合わせ・総額が現行と完全同一になることを構造で保証する
+    （B=¥1,500 / A=¥1,900）。配分の狙いは馬連へのシフト
+    （B': 馬連53%・3連複20%）で、3連複・夢枠は残して薄くする。"""
+    base = build_tickets(ranked, outsiders, verified)
+    if not base:
+        return []
+    src = base[0]
+    pattern = src.get("pattern_type")
+    names = {
+        "win": "単勝", "quinella": "馬連", "trio": "3連複",
+        "wide": "ワイド", "trifecta": "3連単",
+    }
+    counts = {}
+    items = []
+    for it in src.get("line_items") or []:
+        typ = it.get("type")
+        idx = counts.get(typ, 0)
+        counts[typ] = idx + 1
+        stake = ALLOC_D_STAKES.get((pattern, typ, idx))
+        if stake is None:
+            stake = safe_int(it.get("stake_yen"), 0)
+        hs = list(it.get("horses") or [])
+        items.append({
+            "type": typ, "horses": hs, "stake_yen": stake,
+            "label": f"{names.get(typ, typ)} "
+                     f"{'→'.join(map(str, hs)) if typ == 'trifecta' else '-'.join(map(str, hs))} "
+                     f"({stake}円)",
+        })
+    if not items:
+        return []
+    cost = sum(x["stake_yen"] for x in items)
+    return [{
+        "pattern_type": pattern,
+        "pattern": f"配分D shadow（パターン{pattern}・馬連寄せ）",
+        "cost_yen": cost,
+        "lines": [x["label"] for x in items], "line_items": items,
+        "note": "v34.19 配分D shadow。現行A/Bと同一の買い目・同額で"
+                "配分のみ変更した対照案。計測専用で実購入禁止。",
+    }]
+
+
 def combo_key(horses, ordered=False):
     return "-".join(map(str, horses if ordered else sorted(horses)))
 
@@ -3294,6 +3381,12 @@ def fetch_and_settle_result(race, source):
             if race.get("kind_pattern_shadow"):
                 race["kind_pattern_shadow_settlement"] = settle_tickets(
                     race.get("kind_pattern_shadow") or [], finishes, payouts)
+            # v34.19: 配分D shadow も本体と同じ精算経路（settle_tickets）
+            # で精算し、現行A/Bと並走比較できるようにする。買い目が
+            # 無いレースでは None のまま。
+            if race.get("alloc_d"):
+                race["alloc_d_settlement"] = settle_tickets(
+                    race.get("alloc_d") or [], finishes, payouts)
             # v34.16: pool shadow 計測用に、実際の3着内組み合わせの
             # 3連複配当（100円あたり）を保存する。仮想ラインの払戻
             # 計算に使う計測専用の値で、本体の精算には使わない。
@@ -3484,6 +3577,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # 本番の買い目・配分には一切使わない。
     kind_pattern_shadow = build_kind_pattern_shadow(
         ranked, outsiders, verified, kind, count)
+    # v34.19: 配分D shadow（馬連寄せ配分。買い目の組み合わせ・総額は
+    # 現行パターンA/Bと同一）。本番の買い目・配分には一切使わない。
+    alloc_d = build_alloc_d_tickets(ranked, outsiders, verified)
     # v34.15: レース単位の hybrid メタ（使用したテーブル版と、全出走馬の
     # 中で時計指数ベストが最大の馬）。特徴量の前方保存に使う計測専用で、
     # 選定・スコア・買い目には一切使わない。
@@ -3548,6 +3644,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         # v34.17: 種別専用買い方 shadow（買い目と精算結果。計測専用）
         "kind_pattern_shadow": kind_pattern_shadow,
         "kind_pattern_shadow_settlement": None,
+        # v34.19: 配分D shadow（買い目と精算結果。計測専用）
+        "alloc_d": alloc_d,
+        "alloc_d_settlement": None,
         # v34.15: hybrid 特徴量のレース単位メタ（shadow計測専用）
         "hybrid_features": hybrid_meta,
         "race_recommendation_reasons": reasons,
@@ -4188,6 +4287,9 @@ def update_snapshot(snapshots, race):
         # v34.17: 種別専用買い方 shadow（買い目と精算結果を保存。計測専用）
         "kind_pattern_shadow": race.get("kind_pattern_shadow") or old.get("kind_pattern_shadow") or [],
         "kind_pattern_shadow_settlement": race.get("kind_pattern_shadow_settlement") or old.get("kind_pattern_shadow_settlement"),
+        # v34.19: 配分D shadow（買い目と精算結果を保存。計測専用）
+        "alloc_d": race.get("alloc_d") or old.get("alloc_d") or [],
+        "alloc_d_settlement": race.get("alloc_d_settlement") or old.get("alloc_d_settlement"),
         # v34.15: hybrid 特徴量のレース単位メタ（テーブル版・全出走馬中の
         # 時計指数1位）。shadow計測専用で選定には使わない
         "hybrid_features": race.get("hybrid_features") or old.get("hybrid_features"),
@@ -5010,6 +5112,61 @@ def calculate_stats(snapshots):
         for bk, rows in sorted(_kps_groups.items())
     }
 
+    # v34.19: 配分D shadow の集計。精算完了した alloc_d 買い目を、
+    # 本精算（main）とゲート外（gate_out）に分けて、同ーレースの
+    # 現行A/B実績と並べて比較する。対象は ALLOC_D_START_DATE 以降に
+    # alloc_d が保存されたレースのみ（34.19 の前方計測）。
+    def _alloc_d_agg(rows):
+        if not rows:
+            return {"races": 0}
+        d_stake = sum(
+            safe_int(((x.get("alloc_d") or [{}])[0]).get("cost_yen"), 0)
+            for x in rows)
+        d_ret = sum(
+            safe_int((x.get("alloc_d_settlement") or {}).get("all_bet_return"), 0)
+            for x in rows)
+        return {
+            "races": len(rows),
+            "shadow_stake_yen": d_stake,
+            "shadow_return_yen": d_ret,
+            "shadow_profit_yen": d_ret - d_stake,
+            "shadow_roi_pct": (round(d_ret / d_stake * 100, 1)
+                               if d_stake else 0.0),
+            "actual_same_races": agg_simple(rows),
+        }
+
+    def _alloc_d_track(rows):
+        return {
+            "main": _alloc_d_agg([x for x in rows
+                                  if x.get("bet_eligible") is not False]),
+            "gate_out": _alloc_d_agg([x for x in rows
+                                      if x.get("bet_eligible") is False]),
+        }
+
+    _alloc_d_rows = []
+    for x in settled_all:
+        if str(x.get("date") or "") < ALLOC_D_START_DATE:
+            continue
+        _dt = x.get("alloc_d") or []
+        _ds = x.get("alloc_d_settlement") or {}
+        if not _dt or not _ds.get("settlement_complete"):
+            continue
+        if _ds.get("all_bet_return") is None:
+            continue
+        _alloc_d_rows.append(x)
+    alloc_d_stats = dict(_alloc_d_track(_alloc_d_rows))
+    alloc_d_stats["by_pattern"] = {
+        pt: _alloc_d_track([x for x in _alloc_d_rows
+                            if pattern_of(x) == pt])
+        for pt in ("A", "B")
+    }
+    alloc_d_stats["start_date"] = ALLOC_D_START_DATE
+    alloc_d_stats["note"] = (
+        "現行パターンA/Bと同一レース・同一買い目・同一総額で、配分だけを"
+        "馬連寄りに変えた shadow 計測（B': 馬連53%・3連複20%／"
+        "A': 馬連900円・3連複300円）。本番配分・選定には使用していない。"
+        "対象は " + ALLOC_D_START_DATE + " 以降の生成分のみ。")
+
     hybrid_shadow = {
         "main": _hybrid_track(settled),
         "shadow": _hybrid_track(settled_shadow),
@@ -5239,6 +5396,8 @@ def calculate_stats(snapshots):
         "pattern_unknown": agg(by_u),
         # v34.12: 配分C（shadow並走計測）
         "alloc_c": alloc_c_stats,
+        # v34.19: 配分D（馬連寄せ配分・shadow並走計測）
+        "alloc_d": alloc_d_stats,
         # v34.13: 3連複トリム計測（中央×13頭以上・shadow並走計測）
         "trio_trim_jra_large": trio_trim_stats,
         "bet_types": bet_types,
