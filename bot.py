@@ -1,10 +1,32 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.17_EXPERT
+BAGEN KEIBA v34.18_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.18):
+- 凍結保存の拡張と確率の前方検証（監査レポート
+  audit-2026-11-08-chatgpt-plan.md の最優先項目、ユーザー承認
+  2026-11-08）。いずれも保存・計測専用で、本番の選定・スコア・
+  信頼度・配分・ゲート・グレードには一切使わない。
+- (1) 校正確率の併記保存: Phase 3 リサーチ（probability-
+  calibration-2026-11-08.md）の推奨マッピングを実装。勝率は
+  2段階 softmax（T=6.51、頭数帯カバレッジ 8頭以下0.80／
+  9〜12頭0.75／13頭以上0.64、top5 内の相対配分）、連対・複勝は
+  順位の経験率テーブル。パラメータは fit 期（〜2026-11-07）の値で、
+  エンジン版が変われば再 fit が前提。
+- (2) frozen_prediction に all_horses（全頭の馬番・順位・score／
+  form_score／market_score・odds_free_rank・オッズ・人気・脚質・
+  未校正確率・校正確率3種）と pace_shadow（逃げ頭数・先行頭数・
+  ペース想定ラベル）を保存する。従来は top5 のみで、6位以下の
+  確率と再校正の材料が永遠に作れなかった問題への対処。
+- (3) stats["probability_forward"]: 凍結した確率と実際の勝ち馬を
+  照合し、Brier Score と Log Loss を校正版／未校正版で並走計測
+  する（対象は Phase 3 の方法論に合わせ評価 top5 の馬のみ）。
+  中央×芝／中央×ダート／地方の内訳と、校正ビン別の予測 vs 実績も
+  出す。勝ち馬が top5 にいた率（カバレッジ）も記録する。
 
 改善点 (v34.17):
 - 「中央と地方で同じ物差し」問題への対応 第1弾（ユーザー指示
@@ -377,7 +399,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.17_EXPERT"
+ENGINE_VERSION = "BAGEN_34.18_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -2176,6 +2198,51 @@ def attach_probability_and_value(ranked):
             h["past_form_win_rate_recent_pct"] = None
 
 
+# v34.18: 確率校正 Phase 3（probability-calibration-2026-11-08.md）の
+# 推奨マッピング。勝率は2段階 softmax（T=6.51、カバレッジ C は頭数帯
+# 別の fit 期実測）、連対・複勝は順位の経験率テーブル。いずれも
+# 保存・計測専用で、選定・スコア・信頼度・買い目には使わない。
+# パラメータは fit 期（〜2026-11-07）の値で、版が変われば再 fit 前提。
+CALIB_T = 6.51
+CALIB_COVERAGE_BANDS = ((8, 0.80), (12, 0.75), (999, 0.64))
+CALIB_PLACE_BY_RANK = {1: 49.0, 2: 38.1, 3: 26.5, 4: 21.0, 5: 17.4}
+CALIB_SHOW_BY_RANK = {1: 63.0, 2: 50.6, 3: 40.7, 4: 35.1, 5: 28.8}
+
+
+def _calib_coverage(runner_count):
+    for limit, cov in CALIB_COVERAGE_BANDS:
+        if (runner_count or 0) <= limit:
+            return cov
+    return 0.64
+
+
+def attach_calibrated_probabilities(ranked):
+    """v34.18: 校正確率を runner に付ける（保存・計測専用）。
+    勝率は top5 内の相対 softmax × カバレッジ。6位以下は Phase 3 の
+    方法論上、個別確率を推定できないため None（未推定を明示）。
+    連対・複勝も top5 のみ順位テーブルで付ける。"""
+    if not ranked:
+        return
+    top5 = ranked[:5]
+    cov = _calib_coverage(len(ranked))
+    vals = [float(h.get("score", 0)) for h in top5]
+    mx = max(vals)
+    weights = [math.exp(max(-30.0, min(0.0, (v - mx) / CALIB_T)))
+               for v in vals]
+    total = sum(weights) or 1.0
+    for i, h in enumerate(ranked):
+        rank = i + 1
+        if i < 5:
+            h["calibrated_win_probability_pct"] = round(
+                cov * weights[i] / total * 100, 2)
+            h["calibrated_place_probability_pct"] = CALIB_PLACE_BY_RANK.get(rank)
+            h["calibrated_show_probability_pct"] = CALIB_SHOW_BY_RANK.get(rank)
+        else:
+            h["calibrated_win_probability_pct"] = None
+            h["calibrated_place_probability_pct"] = None
+            h["calibrated_show_probability_pct"] = None
+
+
 def parse_runners(soup, surface, distance=None):
     table, rows = choose_shutuba_table(soup)
     if table is None:
@@ -2657,6 +2724,8 @@ def score_runners(runners, surface, venue, going=None, weather=None):
     for rank, h in enumerate(odds_free, 1):
         h["odds_free_rank"] = rank
     attach_probability_and_value(ranked)
+    # v34.18: 校正確率（Phase 3）を併記する。保存・計測専用。
+    attach_calibrated_probabilities(ranked)
     return ranked
 
 
@@ -4005,6 +4074,19 @@ def update_snapshot(snapshots, race):
                 snap_last_outsiders = [
                     h.get("horse_no") for h in race.get("outsiders")
                     if isinstance(h, dict)]
+    # v34.18: 展開（ペース）予測の事前記録。脚質の頭数から単純な
+    # 想定ラベルを作る（計測専用。選定・スコアには使わない）。将来、
+    # 実際のペース結果と照合して予測精度を測るための保存。
+    _styles_all = [h.get("running_style") for h in race.get("horses", [])]
+    _front_n = sum(1 for s in _styles_all if s == "逃げ")
+    _lead_n = sum(1 for s in _styles_all if s == "先行")
+    _pace_shadow = {
+        "front_count": _front_n, "lead_count": _lead_n,
+        "pace_prediction": (
+            "ハイ想定" if _front_n >= 3 else
+            "平均〜ハイ想定" if _front_n == 2 else
+            "単騎逃げ想定" if _front_n == 1 else "スロー想定"),
+    }
     snapshot = {
         "race_id": rid, "date": race.get("date"), "kind": race.get("kind"),
         "course": race.get("course"), "race_no": race.get("race_no"),
@@ -4062,6 +4144,32 @@ def update_snapshot(snapshots, race):
             ],
             "tickets": ticket,
             "prediction_status": race.get("prediction_status"),
+            # v34.18: 全頭の凍結保存（スコア3種・確率・脚質）。前方の
+            # 校正検証と再 fit の材料で、選定には使わない
+            "all_horses": [
+                {"horse_no": h.get("horse_no"), "name": h.get("name"),
+                 "horse_id": h.get("horse_id"),
+                 "rank": h.get("rank"), "score": h.get("score"),
+                 # v34.18: クラス（格）も全頭分を残す（34.17 は top5 のみ）
+                 "today_class_rank": h.get("today_class_rank"),
+                 "class_drop": h.get("class_drop"),
+                 "form_score": h.get("form_score"),
+                 "market_score": h.get("market_score"),
+                 "odds_free_rank": h.get("odds_free_rank"),
+                 "odds": h.get("odds"), "popularity": h.get("popularity"),
+                 "running_style": h.get("running_style"),
+                 "estimated_win_probability_pct":
+                     h.get("estimated_win_probability_pct"),
+                 "calibrated_win_probability_pct":
+                     h.get("calibrated_win_probability_pct"),
+                 "calibrated_place_probability_pct":
+                     h.get("calibrated_place_probability_pct"),
+                 "calibrated_show_probability_pct":
+                     h.get("calibrated_show_probability_pct")}
+                for h in race.get("horses", [])
+            ],
+            # v34.18: 展開予測の事前記録（計測専用）
+            "pace_shadow": _pace_shadow,
         },
         "last_odds": {str(h.get("horse_no")): h.get("odds") for h in race.get("horses", [])},
         # v34.5: 最終生成スナップショット（grade/confidence は上の既存キーで
@@ -4775,6 +4883,91 @@ def calculate_stats(snapshots):
                 for bk, sub in _kind_surface_groups(rows).items()},
         }
 
+    # v34.18: 確率の前方検証。凍結した全頭確率（34.18 以降の snapshot）
+    # と実際の勝ち馬を照合し、Brier Score と Log Loss を測る。対象は
+    # Phase 3 の方法論に合わせ評価 top5 の馬のみ。未校正の従来確率も
+    # 同じ土俵で測り、校正の効果を前方データで確認する。
+    def _prob_metrics(pairs):
+        if not pairs:
+            return {"horses": 0}
+        n = len(pairs)
+        brier = sum((p - y) ** 2 for p, y in pairs) / n
+        ll = 0.0
+        for p, y in pairs:
+            pc = min(max(p, 1e-6), 1 - 1e-6)
+            ll += -(y * math.log(pc) + (1 - y) * math.log(1 - pc))
+        return {"horses": n, "brier": round(brier, 4),
+                "log_loss": round(ll / n, 4)}
+
+    def _prob_track(rows):
+        cal_pairs, raw_pairs = [], []
+        bins = {}
+        cov_hit = cov_all = 0
+        for x in rows:
+            fp = x.get("frozen_prediction") or {}
+            allh = fp.get("all_horses") or []
+            rf = x.get("result_finishes") or []
+            if not allh or not rf:
+                continue
+            winner = rf[0]
+            top5 = [h for h in allh if isinstance(h, dict)
+                    and isinstance(h.get("rank"), int) and h["rank"] <= 5]
+            if not top5:
+                continue
+            cov_all += 1
+            if any(h.get("horse_no") == winner for h in top5):
+                cov_hit += 1
+            for h in top5:
+                y = 1 if h.get("horse_no") == winner else 0
+                cp = h.get("calibrated_win_probability_pct")
+                if cp is not None:
+                    cal_pairs.append((cp / 100.0, y))
+                    b = min(int(cp // 5), 6)
+                    e = bins.setdefault(b, [0, 0.0, 0])
+                    e[0] += 1
+                    e[1] += cp
+                    e[2] += y
+                rp = h.get("estimated_win_probability_pct")
+                if rp is not None:
+                    raw_pairs.append((rp / 100.0, y))
+        labels = ["0-5", "5-10", "10-15", "15-20", "20-25", "25-30", "30+"]
+        bin_out = {}
+        for b, (n, psum, wins) in sorted(bins.items()):
+            bin_out[labels[b]] = {
+                "horses": n,
+                "predicted_mean_pct": round(psum / n, 1) if n else 0.0,
+                "actual_win_rate_pct": (round(wins / n * 100, 1)
+                                        if n else 0.0)}
+        return {
+            "races": cov_all,
+            "winner_in_top5_rate_pct": (round(cov_hit / cov_all * 100, 1)
+                                        if cov_all else 0.0),
+            "calibrated": _prob_metrics(cal_pairs),
+            "uncalibrated": _prob_metrics(raw_pairs),
+            "calibration_bins": bin_out,
+        }
+
+    _fs_groups = {"8頭以下": [], "9〜12頭": [], "13頭以上": []}
+    for x in settled_all:
+        _rc = x.get("runner_count")
+        if not isinstance(_rc, int):
+            continue
+        _fs_groups["8頭以下" if _rc <= 8 else
+                   "9〜12頭" if _rc <= 12 else "13頭以上"].append(x)
+    probability_forward = {
+        "main": _prob_track(settled),
+        "all_settled": _prob_track(settled_all),
+        "by_kind_surface": {
+            bk: _prob_track(sub)
+            for bk, sub in _kind_surface_groups(settled_all).items()},
+        "by_field_size": {
+            bk: _prob_track(sub) for bk, sub in _fs_groups.items() if sub},
+        "note": ("34.18 以降に凍結した全頭確率の前方検証。対象は評価 "
+                 "top5 の馬のみ（Phase 3 の方法論に合わせた）。校正 "
+                 "パラメータ（T=6.51・カバレッジ・順位テーブル）は "
+                 "2026-11-08 の fit 期の値で、版が変われば再 fit 前提。"),
+    }
+
     # v34.17: 種別専用買い方 shadow の集計。精算完了した shadow 買い目を
     # バケット別に集め、同ーレースの現行A/B実績と並べて比較する。
     # 本精算（main）とゲート外（gate_out）を分ける（中央13頭以上は
@@ -5068,6 +5261,8 @@ def calculate_stats(snapshots):
             for bk, sub in _kind_surface_groups(settled).items()},
         # v34.17: 種別専用買い方 shadow（現行A/Bとの並走比較・計測専用）
         "kind_pattern_shadow": kind_pattern_shadow_stats,
+        # v34.18: 確率の前方検証（Brier Score / Log Loss・計測専用）
+        "probability_forward": probability_forward,
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
