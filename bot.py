@@ -1,10 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.19_EXPERT
+BAGEN KEIBA v34.20_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.20):
+- 金額の強弱 shadow を新設（ユーザー承認 2026-11-09。設計正本は
+  goals/bagen-keiba-horse-racing-prediction/hidden_files/
+  stake-shadow-design-2026-11-09.md）。配分D（34.19）とは変更変数を
+  分離するため、配分比率は現行パターンA/Bのまま変えず、レース総額
+  だけをグレード×種別で段階化する。一律増額は回収率を変えないが、
+  強弱をつけると混合回収率が動く、という仮説の前方検証。
+- 段階（最終グレード race_grade と種別 kind の既存判定のみで決定）:
+  最強 ×4 = 超おすすめ × 中央（B ¥6,000／A ¥7,600）、
+  強 ×2 = 超おすすめ（B ¥3,000／A ¥3,800）、
+  通常 ×1 = それ以外（注目レース等、現行額 B ¥1,500／A ¥1,900）。
+  根拠は同日の区分別分析: 超おすすめ×中央 133.0%（23R・標本僅少）／
+  超おすすめ全体 93.3%（60R）／超おすすめ×地方 68.9% のため、
+  最強は中央限定とする。
+- 実装は配分D（34.19）と同格: build_tickets の出力から組み合わせを
+  そのまま引き継いで各ラインの金額に倍率だけを掛け、本体と同じ
+  settle_tickets で精算し、stats["stake_shadow"] で本精算レース
+  のみを対象に、現行（一律額）の同一レース実績と回収率・損益・
+  最大DD（累積損益曲線のピークからの最大下落）を並走比較する。
+  段階別（通常／強／最強）の内訳も持つ。計測開始は
+  STAKE_SHADOW_START_DATE（2026-11-09）以降の生成分から。
+  本番の選定・スコア・信頼度・配分A/B・ゲート・グレード・
+  配分Dには一切使わない。
 
 改善点 (v34.19):
 - 配分D shadow を新設（ユーザー承認 2026-11-09「新配分 shadow を
@@ -420,7 +444,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.19_EXPERT"
+ENGINE_VERSION = "BAGEN_34.20_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -502,6 +526,12 @@ ALLOC_D_STAKES = {
     ("A", "wide", 1): 100,
 }
 ALLOC_D_START_DATE = "2026-11-09"  # 前方計測の開始日（34.19生成分から）
+# v34.20: 金額の強弱（shadow計測専用。本番配分・選定には一切使わない）。
+# 配分比率は現行パターンA/Bのまま、レース総額だけを段階化する。
+# 段階は最終グレード（race_grade）と種別（kind）の既存判定だけで
+# 決める（stake_shadow_tier）: 最強×4＝超おすすめ×中央、
+# 強×2＝超おすすめ、通常×1＝それ以外（注目レース等）。
+STAKE_SHADOW_START_DATE = "2026-11-09"  # 前方計測の開始日（34.20生成分から）
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -3113,6 +3143,59 @@ def build_alloc_d_tickets(ranked, outsiders, verified):
     }]
 
 
+def stake_shadow_tier(race_grade, kind):
+    """v34.20: 金額の強弱 shadow の段階判定。既存の最終グレード
+    （race_grade）と種別（kind）だけから決める（独自判定は作らない）。
+    戻り値は (段階名, 倍率)。"""
+    if race_grade == "超おすすめ":
+        if kind == "中央":
+            return "最強", 4
+        return "強", 2
+    return "通常", 1
+
+
+def build_stake_shadow_tickets(ranked, outsiders, verified, race_grade, kind):
+    """v34.20: 金額の強弱 shadow の買い目（計測専用・本番不使用）。
+    build_tickets（現行パターンA/B）の出力から馬の組み合わせを
+    そのまま引き継ぎ、各ラインの金額に段階倍率だけを掛ける。
+    配分比率と組み合わせが現行と完全同一で、総額だけが段階倍率倍に
+    なることを構造で保証する（通常×1: B ¥1,500／A ¥1,900、
+    強×2: B ¥3,000／A ¥3,800、最強×4: B ¥6,000／A ¥7,600）。"""
+    base = build_tickets(ranked, outsiders, verified)
+    if not base:
+        return []
+    src = base[0]
+    tier, mult = stake_shadow_tier(race_grade, kind)
+    names = {
+        "win": "単勝", "quinella": "馬連", "trio": "3連複",
+        "wide": "ワイド", "trifecta": "3連単",
+    }
+    items = []
+    for it in src.get("line_items") or []:
+        typ = it.get("type")
+        stake = safe_int(it.get("stake_yen"), 0) * mult
+        hs = list(it.get("horses") or [])
+        items.append({
+            "type": typ, "horses": hs, "stake_yen": stake,
+            "label": f"{names.get(typ, typ)} "
+                     f"{'→'.join(map(str, hs)) if typ == 'trifecta' else '-'.join(map(str, hs))} "
+                     f"({stake}円)",
+        })
+    if not items:
+        return []
+    cost = sum(x["stake_yen"] for x in items)
+    return [{
+        "pattern_type": src.get("pattern_type"),
+        "pattern": f"金額強弱 shadow（{tier}×{mult}・パターン{src.get('pattern_type')}）",
+        "cost_yen": cost,
+        "lines": [x["label"] for x in items], "line_items": items,
+        "stake_tier": tier, "stake_multiplier": mult,
+        "note": "v34.20 金額の強弱 shadow。現行A/Bと同一の買い目・"
+                "同一配分比率で、総額だけをグレード×種別で段階化した"
+                "対照案。計測専用で実購入禁止。",
+    }]
+
+
 def combo_key(horses, ordered=False):
     return "-".join(map(str, horses if ordered else sorted(horses)))
 
@@ -3387,6 +3470,12 @@ def fetch_and_settle_result(race, source):
             if race.get("alloc_d"):
                 race["alloc_d_settlement"] = settle_tickets(
                     race.get("alloc_d") or [], finishes, payouts)
+            # v34.20: 金額の強弱 shadow も本体と同じ精算経路
+            # （settle_tickets）で精算し、現行（一律額）と並走比較
+            # できるようにする。買い目が無いレースでは None のまま。
+            if race.get("stake_shadow"):
+                race["stake_shadow_settlement"] = settle_tickets(
+                    race.get("stake_shadow") or [], finishes, payouts)
             # v34.16: pool shadow 計測用に、実際の3着内組み合わせの
             # 3連複配当（100円あたり）を保存する。仮想ラインの払戻
             # 計算に使う計測専用の値で、本体の精算には使わない。
@@ -3580,6 +3669,11 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # v34.19: 配分D shadow（馬連寄せ配分。買い目の組み合わせ・総額は
     # 現行パターンA/Bと同一）。本番の買い目・配分には一切使わない。
     alloc_d = build_alloc_d_tickets(ranked, outsiders, verified)
+    # v34.20: 金額の強弱 shadow（総額の段階化。配分比率・買い目の
+    # 組み合わせは現行パターンA/Bと同一で、段階は最終グレードと
+    # 種別で決める）。本番の買い目・配分には一切使わない。
+    stake_shadow = build_stake_shadow_tickets(
+        ranked, outsiders, verified, race_grade, kind)
     # v34.15: レース単位の hybrid メタ（使用したテーブル版と、全出走馬の
     # 中で時計指数ベストが最大の馬）。特徴量の前方保存に使う計測専用で、
     # 選定・スコア・買い目には一切使わない。
@@ -3647,6 +3741,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         # v34.19: 配分D shadow（買い目と精算結果。計測専用）
         "alloc_d": alloc_d,
         "alloc_d_settlement": None,
+        # v34.20: 金額の強弱 shadow（買い目と精算結果。計測専用）
+        "stake_shadow": stake_shadow,
+        "stake_shadow_settlement": None,
         # v34.15: hybrid 特徴量のレース単位メタ（shadow計測専用）
         "hybrid_features": hybrid_meta,
         "race_recommendation_reasons": reasons,
@@ -4290,6 +4387,9 @@ def update_snapshot(snapshots, race):
         # v34.19: 配分D shadow（買い目と精算結果を保存。計測専用）
         "alloc_d": race.get("alloc_d") or old.get("alloc_d") or [],
         "alloc_d_settlement": race.get("alloc_d_settlement") or old.get("alloc_d_settlement"),
+        # v34.20: 金額の強弱 shadow（買い目と精算結果を保存。計測専用）
+        "stake_shadow": race.get("stake_shadow") or old.get("stake_shadow") or [],
+        "stake_shadow_settlement": race.get("stake_shadow_settlement") or old.get("stake_shadow_settlement"),
         # v34.15: hybrid 特徴量のレース単位メタ（テーブル版・全出走馬中の
         # 時計指数1位）。shadow計測専用で選定には使わない
         "hybrid_features": race.get("hybrid_features") or old.get("hybrid_features"),
@@ -5167,6 +5267,93 @@ def calculate_stats(snapshots):
         "A': 馬連900円・3連複300円）。本番配分・選定には使用していない。"
         "対象は " + ALLOC_D_START_DATE + " 以降の生成分のみ。")
 
+    # v34.20: 金額の強弱 shadow の集計。対象は STAKE_SHADOW_START_DATE
+    # 以降に stake_shadow が保存され精算完了した本精算レースのみ
+    # （settled = bet_eligible が False でないもの。設計どおり対象は
+    # 本精算だけ）。現行（一律額）の同一レース実績と、回収率・損益・
+    # 最大DD（累積損益曲線のピークからの最大下落額）で並走比較する。
+    def _stake_shadow_agg(rows):
+        if not rows:
+            return {"races": 0}
+        ordered = sorted(rows, key=lambda x: (
+            str(x.get("date") or ""), str(x.get("post_time") or ""),
+            str(x.get("race_id") or "")))
+
+        def _curve(pairs):
+            stake = ret = cum = peak = dd = 0
+            for s, r in pairs:
+                stake += s
+                ret += r
+                cum += r - s
+                peak = max(peak, cum)
+                dd = max(dd, peak - cum)
+            return stake, ret, dd
+
+        s_stake, s_ret, s_dd = _curve([
+            (safe_int(((x.get("stake_shadow") or [{}])[0]).get("cost_yen"), 0),
+             safe_int((x.get("stake_shadow_settlement") or {}).get(
+                 "all_bet_return"), 0))
+            for x in ordered])
+        a_stake, a_ret, a_dd = _curve([
+            (safe_int(x.get("cost"), 0),
+             safe_int(x.get("all_bet_return"), 0))
+            for x in ordered])
+        return {
+            "races": len(rows),
+            "shadow_stake_yen": s_stake,
+            "shadow_return_yen": s_ret,
+            "shadow_profit_yen": s_ret - s_stake,
+            "shadow_roi_pct": (round(s_ret / s_stake * 100, 1)
+                               if s_stake else 0.0),
+            "shadow_max_dd_yen": s_dd,
+            "actual_same_races": {
+                "races": len(rows),
+                "stake_yen": a_stake,
+                "return_yen": a_ret,
+                "profit_yen": a_ret - a_stake,
+                "roi_pct": (round(a_ret / a_stake * 100, 1)
+                            if a_stake else 0.0),
+                "max_dd_yen": a_dd,
+            },
+        }
+
+    def _stake_shadow_tier_of(x):
+        st = x.get("stake_shadow") or []
+        if st and st[0].get("stake_tier"):
+            return st[0]["stake_tier"]
+        return stake_shadow_tier(x.get("race_grade"), x.get("kind"))[0]
+
+    _stake_shadow_rows = []
+    for x in settled:
+        if str(x.get("date") or "") < STAKE_SHADOW_START_DATE:
+            continue
+        _st = x.get("stake_shadow") or []
+        _ss = x.get("stake_shadow_settlement") or {}
+        if not _st or not _ss.get("settlement_complete"):
+            continue
+        if _ss.get("all_bet_return") is None:
+            continue
+        _stake_shadow_rows.append(x)
+    stake_shadow_stats = _stake_shadow_agg(_stake_shadow_rows)
+    stake_shadow_stats["by_tier"] = {
+        tier: _stake_shadow_agg([x for x in _stake_shadow_rows
+                                 if _stake_shadow_tier_of(x) == tier])
+        for tier in ("通常", "強", "最強")
+    }
+    stake_shadow_stats["by_pattern"] = {
+        pt: _stake_shadow_agg([x for x in _stake_shadow_rows
+                               if pattern_of(x) == pt])
+        for pt in ("A", "B")
+    }
+    stake_shadow_stats["start_date"] = STAKE_SHADOW_START_DATE
+    stake_shadow_stats["note"] = (
+        "配分比率は現行パターンA/Bのまま、レース総額だけをグレード×"
+        "種別で段階化した shadow 計測（最強×4＝超おすすめ×中央／"
+        "強×2＝超おすすめ／通常×1＝それ以外）。対象は本精算レース"
+        "のみで、現行（一律額）の同一レース実績と回収率・損益・"
+        "最大DDを並走比較する。本番配分・選定には使用していない。"
+        "対象は " + STAKE_SHADOW_START_DATE + " 以降の生成分のみ。")
+
     hybrid_shadow = {
         "main": _hybrid_track(settled),
         "shadow": _hybrid_track(settled_shadow),
@@ -5398,6 +5585,8 @@ def calculate_stats(snapshots):
         "alloc_c": alloc_c_stats,
         # v34.19: 配分D（馬連寄せ配分・shadow並走計測）
         "alloc_d": alloc_d_stats,
+        # v34.20: 金額の強弱（総額の段階化・shadow並走計測）
+        "stake_shadow": stake_shadow_stats,
         # v34.13: 3連複トリム計測（中央×13頭以上・shadow並走計測）
         "trio_trim_jra_large": trio_trim_stats,
         "bet_types": bet_types,
