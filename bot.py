@@ -1,10 +1,95 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.14_EXPERT
+BAGEN KEIBA v34.17_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.17):
+- 「中央と地方で同じ物差し」問題への対応 第1弾（ユーザー指示
+  2026-11-08。友人指摘「指標が地方・ダート寄り」を受けた検証で、
+  上がり3Fが参考保持のみ・時計指数は保存のみ・クラス評価が皆無・
+  集計が中央/地方×芝ダートで分かれていない、を確認）。いずれも
+  Stage 0（保存と shadow 計測のみ）で、本番の選定・スコア・信頼度・
+  配分・ゲート・グレードには一切使わない（hybrid_shadow と同格）。
+- (1) 上がり3F: 既存の last3f_dev（距離帯中央値との差）を hybrid
+  shadow の計測対象に追加。予想 top5 内の last3f_dev 最大馬の着順を
+  集計し、中央×芝／中央×ダート／地方の内訳（by_kind_surface）でも
+  出す。時計指数リーダー・血統リーダーも同じ内訳で出す。
+- (2) クラス（格）評価を新設: レース名と過去走の行テキストから
+  格の順序尺度を推定する（中央: 新馬0/未勝利1/1勝2/2勝3/3勝4/
+  オープン5/G3=6/G2=7/G1=8、旧表記 500万下=2・1000万下=3・
+  1600万下=4。地方: C3=1〜A1=9）。各馬の前走クラス・近走ピーク・
+  今走クラス・降級フラグを runner と frozen top5 に保存し、
+  hybrid shadow で「降級馬 vs 非降級馬」の着順率を測る。
+  判定できない場合は None のまま（未取得を明示）。
+- (3) 分割集計: snapshot に surface / distance_m の保存を追加し、
+  stats["kind_surface_split"] で本精算を 中央×芝／中央×ダート／
+  地方 に分けて回収率まで出す。過去分は surface 未保存のため
+  「不明」に寄せ、捏造しない。
+- (4) 種別専用買い方 shadow（ユーザー提案 2026-11-08「買い方も
+  地方・中央で分ける」）: 買い目の馬の組み合わせと総額は現行
+  パターンA/Bと同一のまま、配分だけを種別に寄せた対照案を新設し、
+  本体と同じ settle_tickets で精算して stats["kind_pattern_shadow"]
+  で現行実績と並走比較する。中央・13頭以上＝3連複を外して馬連と
+  ワイドへ再配分（jra_large_realloc）／中央・12頭以下＝ワイドを
+  削って単勝と3連複軸へ集中（jra_small_core）／地方＝穴絡みを
+  絞って軸へ寄せる（nar_axis）。本番の買い目・配分は無変更で、
+  切り替えは測定ルール（最低2週間 or 対象300レース）通過後の
+  判定会で行う。
+
+改善点 (v34.16):
+- 候補プール shadow 計測を新設（設計書 candidate-pool-2026-11-06.md、
+  ユーザー承認 2026-11-06）。Phase 1 の敗因分析で最大の敗因だった
+  B「相手選定ミス」の構造要因（最終母集団が4頭しかない／初回 top5 の
+  馬が再生成で候補から落ちる）への対策候補を、本採用せず前方計測する。
+  計測専用で、本番の選定・スコア・信頼度・配分・ゲート・グレードには
+  一切使わない（alloc_c / hybrid_shadow と同格・Stage 0）。
+- 前提となる保存の追加（いずれも計測専用・選定には使わない）:
+  (1) snapshot に last_top6（最終生成時点の上位6頭: 馬番・順位・
+  score・form_score・market_score）と last_outsiders（最終生成の
+  穴候補リスト）を保存する。保存タイミングの規則として、未精算の
+  生成では毎回上書きするが、発走時刻を過ぎた生成と精算した実行の
+  生成では上書きしない（＝発走前の最終生成で固定する）。これは
+  公式買い目の大半が精算実行の生成で確定する現行方式では
+  「発走前の最終候補」が残らない問題への対処である。
+  (2) 精算時に trio_payout（実際の3着内組み合わせの3連複配当・
+  100円あたり）を snapshot に保存する。仮想ラインの払戻計算に使う。
+- 集計 stats["pool_shadow"]: POOL_SHADOW_START_DATE 以降の本精算
+  レースで last_top6 が保存されているものを対象に、現行3連複と
+  同一レースで (a) 案C 保険枠（初回 top5 に入り最終プールに残らず
+  最終順位6位以内の馬を {軸, パートナー, x} の追加ラインで拾う）、
+  (b) 案A6（最終順位6位までを母集団にする）、をそれぞれ追加型
+  （追加ライン各200円）と固定型（3連複総額を現行実績に固定し
+  全ライン等分）で仮想再計算し、カバー率・新規的中・赤字的中（E）
+  の増加も含めて並走集計する。定義は遡及試算と同一に揃えた。
+  判定は設計書のライン（最低2週間かつ対象300レース等）までしない。
+
+改善点 (v34.15):
+- 「欠けている2つの物差し」追加 Phase A/B（設計書
+  missing-gauges-design-2026-11-06.md、ユーザー承認 2026-11-06）。
+  Stage 0（保存と参考表示のみ）として導入し、現行の選定・スコア・
+  信頼度・配分・ゲート・グレードには一切使わない。特徴量は
+  hybrid_features として前方保存し、stats["hybrid_shadow"] で
+  shadow 計測する（特徴量つき200件まで良し悪しの判定をしない）。
+- Phase A 時計指数: 過去走の走破時計を、review 環境でオフライン
+  構築した基準タイム表（time_standards.json。場×芝ダ×距離の
+  推定勝ち時計の中央値＋馬場オフセット。標本不足は
+  L1→L2→L3→None の階層フォールバック）で偏差値化し、馬ごとに
+  ベスト/中央値/標本数を runner と frozen_prediction.top5 に
+  保存する。あわせて A1 として、parse_horse_form_page の
+  surface_text（芝/ダート）が常に None だった不具合を修正した
+  （距離列テキスト「ダ1400」等から抽出する）。
+- Phase B 血統スコア: オフライン構築した産駒成績テーブル
+  （pedigree_stats.json。父・母父 × 芝ダ × 距離4帯の複勝率を
+  全体平均との差 × 標本縮小 n/(n+30) で偏差ポイント化。
+  フォールバック F1→F4、未評価は None）から sire_score /
+  damsire_score を runner と frozen に保存する。既存のリスト
+  一致加点（+1.0/+0.75）とは別物として併存させ、form_score には
+  混ぜない。
+- テーブル JSON が無い場合は特徴量は全て None になり、34.14 と
+  同一の従来動作にフォールバックする。
 
 改善点 (v34.14):
 - 血統（父・母父）の組み込み Phase 1（ユーザー最優先指示 2026-11-06）。
@@ -292,7 +377,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.14_EXPERT"
+ENGINE_VERSION = "BAGEN_34.17_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -305,6 +390,20 @@ PEOPLE_CACHE = {}
 MAX_NEW_PEDIGREE_FETCHES = 24
 PEDIGREE_FETCHED_THIS_RUN = 0
 PEDIGREE_CACHE = {}
+# v34.15: hybrid 特徴量（時計指数・血統スコア）の基準テーブル。
+# review 環境でオフライン構築した JSON を読むだけで、bot 本体では
+# 再計算しない。ファイルが無ければ特徴量は全て None（従来動作）。
+TIME_STANDARDS_PATH = ROOT / "time_standards.json"
+PEDIGREE_STATS_PATH = ROOT / "pedigree_stats.json"
+TIME_STANDARDS = {}
+PEDIGREE_STATS = {}
+# v34.15: 時計指数の基準フォールバック閾値（設計書 2.2）
+TIME_STD_MIN_N_L1 = 20   # (場,芝ダ,距離) セルの最小標本数
+TIME_STD_MIN_N_L2 = 20   # (場,芝ダ,距離帯) プールの最小標本数
+TIME_STD_MIN_N_L3 = 30   # (芝ダ,距離) 全場合成の最小標本数
+# v34.15: 血統スコアの閾値と縮小定数（設計書 3.3）
+PEDIGREE_SCORE_MIN_N = 10
+PEDIGREE_SCORE_SHRINK_K = 30
 # v34.2: 競馬場別 枠順バイアス（main でスナップショットから算出して保持）
 VENUE_FRAME_BIAS = {}
 # v34.9: 馬番オカルト指数 {馬番: {num, wins, expected, sigma}} と
@@ -345,6 +444,10 @@ TRIO_TRIM_MIN_RUNNERS = 13
 # v34.13: 3連単チャレンジ枠（shadow計測専用。夢枠・オカルト枠とは別集計）。
 TRIFECTA_CHALLENGE_STAKE_YEN = 100  # 1点あたりの仮定ベット額
 TRIFECTA_CHALLENGE_START_DATE = "2026-11-04"  # 前方計測の開始日（34.13生成分から）
+# v34.16: 候補プール shadow（案C 保険枠 / 案A6 最終6位まで。shadow計測
+# 専用で、本番の選定・買い目・配分には一切使わない）
+POOL_SHADOW_START_DATE = "2026-11-07"  # 前方計測の開始日（34.16生成分から）
+POOL_SHADOW_ADD_STAKE_YEN = 200        # 追加型の追加ライン1点あたりの金額（現行の穴ラインと同額）
 # v34.5: bet_eligible ゲート（CORE-A相当）の閾値
 BET_GATE_MIN_ODDS_COVERAGE = 0.5
 BET_GATE_MAX_RUNNERS = 13          # 出走頭数がこれ以上は対象外
@@ -1164,6 +1267,15 @@ def parse_horse_form_page(page):
         dist_match = re.search(r"(\d{3,4})", val("distance"))
         distance = int(dist_match.group(1)) if dist_match and 800 <= int(
             dist_match.group(1)) <= 5000 else None
+        # v34.15 (A1): 芝/ダートは距離列の表記（「ダ1400」「芝1600」等）
+        # から抽出する。旧実装は indexes["surface"] の列特定が機能せず
+        # surface_text が全件 None だった。距離列で取れない場合は行全体
+        # から距離一致つきで復元し、それでも取れなければ従来列→None。
+        surface_text = (
+            surface_from_distance_text(val("distance"))
+            or restore_surface_from_row(" ".join(vals), distance)
+            or surface_from_distance_text(val("surface"))
+            or val("surface") or None)
         margin_text = val("margin")
         margin_num = numeric(margin_text)
         corners_text = val("corners")
@@ -1185,7 +1297,7 @@ def parse_horse_form_page(page):
             "first_corner_position": corner_nums[0] if corner_nums else None,
             "last_corner_position": corner_nums[-1] if corner_nums else None,
             "jockey": val("jockey") or None, "time_text": val("time") or None,
-            "course_text": val("course") or None, "surface_text": val("surface") or None,
+            "course_text": val("course") or None, "surface_text": surface_text,
             "going_text": val("going") or None, "row": " ".join(vals)[:220],
             # v34: 追加取得項目
             "last3f": last3f, "popularity": popularity,
@@ -1451,6 +1563,366 @@ def get_pedigree(horse_id):
     return ped
 
 
+# ============================================================
+# v34.15: hybrid 特徴量（時計指数＝Phase A / 血統スコア＝Phase B）
+# Stage 0: 保存と参考表示のみ。選定・スコア・信頼度・配分・
+# ゲート・グレードには一切使わない（stats["hybrid_shadow"] で
+# 別枠計測する）。基準テーブルは review 環境でオフライン構築した
+# JSON（time_standards.json / pedigree_stats.json）を読むだけ。
+# ============================================================
+_SURFACE_BY_KANJI = {"ダ": "ダート", "芝": "芝", "障": "障害"}
+
+
+def _norm_surface(value):
+    """surface 表記を完全表記（ダート/芝/障害）にそろえる。不能なら None。"""
+    t = clean(value)
+    if not t:
+        return None
+    if t in ("ダート", "芝", "障害"):
+        return t
+    return _SURFACE_BY_KANJI.get(t)
+
+
+def surface_from_distance_text(text):
+    """距離列テキスト（例 'ダ1400' '芝 1600'）から芝/ダート/障害を
+    取り出す。取れなければ None（推測で埋めない）。"""
+    t = clean(text)
+    if not t:
+        return None
+    m = re.search(r"(ダ|芝|障)\s*\d{3,4}", t)
+    return _SURFACE_BY_KANJI[m.group(1)] if m else None
+
+
+def restore_surface_from_row(row_text, distance_m):
+    """過去走の生テキスト row から、距離一致の検証つきで surface を
+    復元する（A1 の遡及復元と同方法。実測で全件復元可能を確認済み）。"""
+    if not row_text or not distance_m:
+        return None
+    m = re.search(r"(ダ|芝|障)\s*" + str(int(distance_m)) + r"(?!\d)", row_text)
+    return _SURFACE_BY_KANJI[m.group(1)] if m else None
+
+
+def parse_race_time(text):
+    """走破時計テキスト（'1:33.2' / '33.2'）を秒に変換する。
+    変換できなければ None（100分の1秒表記等は対象外として正直に落とす）。"""
+    t = clean(text)
+    if not t:
+        return None
+    m = re.fullmatch(r"(?:(\d+):)?(\d{1,2})\.(\d)", t)
+    if not m:
+        return None
+    return int(m.group(1) or 0) * 60 + int(m.group(2)) + int(m.group(3)) / 10.0
+
+
+_PAST_VENUE_NAMES = sorted(set(JRA_CODES.values()) | set(NAR_CODES.values()),
+                           key=len, reverse=True)
+
+
+def normalize_past_venue(course_text):
+    """過去走の開催テキストを競馬場名に正規化する。地方は場名そのまま、
+    中央は '3新潟1' のような回次・日次つき表記から場名を取り出す。
+    照合できない表記（海外コース等）は None を返す。"""
+    t = clean(course_text)
+    if not t:
+        return None
+    if t in _PAST_VENUE_NAMES:
+        return t
+    m = re.fullmatch(r"\d+(.+?)\d+", t)
+    if m and m.group(1) in _PAST_VENUE_NAMES:
+        return m.group(1)
+    return None
+
+
+def distance_band_label(distance_m):
+    """距離4帯ラベル（血統スコア用）: 短≤1200 / マイル≤1600 / 中≤2000 / 長>2000。"""
+    if not distance_m:
+        return None
+    d = int(distance_m)
+    if d <= 1200:
+        return "短"
+    if d <= 1600:
+        return "マイル"
+    if d <= 2000:
+        return "中"
+    return "長"
+
+
+def load_hybrid_tables():
+    """time_standards.json / pedigree_stats.json を読み込む。
+    無ければ空のままにし、特徴量は全て None（従来動作）になる。"""
+    global TIME_STANDARDS, PEDIGREE_STATS
+    for path, name in ((TIME_STANDARDS_PATH, "TIME_STANDARDS"),
+                       (PEDIGREE_STATS_PATH, "PEDIGREE_STATS")):
+        try:
+            if path.exists():
+                value = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(value, dict):
+                    globals()[name] = value
+                    print(f"[INFO] hybrid table loaded: {path.name} "
+                          f"(built_at={value.get('built_at')})")
+        except Exception as e:
+            warn(f"hybrid テーブル読込失敗 {path.name}: {type(e).__name__}")
+    return TIME_STANDARDS, PEDIGREE_STATS
+
+
+def _time_standard_cell(venue, surface, distance_m):
+    """基準タイムを階層フォールバックで引く。
+    L1 (場,芝ダ,距離) n>=20 → L2 (場,芝ダ,距離帯) のペース換算
+    → L3 (芝ダ,距離) 全場合成 n>=30 → None（未評価）。"""
+    if not TIME_STANDARDS or not venue or not surface or not distance_m:
+        return None
+    dist = int(distance_m)
+    cell = (TIME_STANDARDS.get("cells") or {}).get(f"{venue}|{surface}|{dist}")
+    if (cell and safe_int(cell.get("n"), 0) >= TIME_STD_MIN_N_L1
+            and cell.get("median") is not None):
+        return {"median": cell["median"], "sigma": cell.get("sigma"), "level": 1}
+    region = distance_band_label(dist)
+    if f"{surface}|{region}" not in (TIME_STANDARDS.get("l2_excluded") or []):
+        band = int(round(dist / 100.0)) * 100
+        bp = (TIME_STANDARDS.get("band_pace") or {}).get(
+            f"{venue}|{surface}|{band}")
+        if (bp and safe_int(bp.get("n"), 0) >= TIME_STD_MIN_N_L2
+                and bp.get("pace") is not None):
+            return {"median": bp["pace"] * dist / 100.0,
+                    "sigma": None, "level": 2}
+    sd = (TIME_STANDARDS.get("surface_distance") or {}).get(f"{surface}|{dist}")
+    if (sd and safe_int(sd.get("n"), 0) >= TIME_STD_MIN_N_L3
+            and sd.get("median") is not None):
+        return {"median": sd["median"], "sigma": sd.get("sigma"), "level": 3}
+    return None
+
+
+def _time_sigma(surface, distance_m, cell_sigma):
+    """σ のフォールバック: セル実測 → (芝ダ,距離帯) プール → 全体。
+    いずれもテーブル構築時に実測した値で、決め打ちはしない。"""
+    if cell_sigma:
+        return cell_sigma
+    pool = TIME_STANDARDS.get("sigma_pool") or {}
+    band = int(round(int(distance_m) / 100.0)) * 100
+    return pool.get(f"{surface}|{band}") or pool.get("all")
+
+
+def _going_offset(venue, surface, group):
+    """(場,芝ダ) 単位で推定した馬場グループ別オフセット（秒）。
+    firm を 0 とした差分。テーブルに無ければ 0（補正なし）。"""
+    if not group:
+        return 0.0
+    offs = (TIME_STANDARDS.get("going_offsets") or {}).get(
+        f"{venue}|{surface}") or {}
+    v = offs.get(group)
+    return float(v) if isinstance(v, (int, float)) else 0.0
+
+
+def _median_of(values):
+    vals = sorted(values)
+    n = len(vals)
+    if not n:
+        return None
+    if n % 2:
+        return vals[n // 2]
+    return (vals[n // 2 - 1] + vals[n // 2]) / 2.0
+
+
+def compute_time_index(past_form):
+    """過去走から時計指数（偏差値）を計算する。Stage 0 の保存専用で
+    スコアには使わない。基準が引けない走は数えず、samples で正直に示す。
+    クラス補正は初版では行わない（設計書 2.2: クラス混合基準に対する
+    絶対評価として読む）。"""
+    empty = {"time_index_best": None, "time_index_med": None,
+             "time_index_samples": 0, "time_index_std_level": None,
+             "last3f_dev": None}
+    if not TIME_STANDARDS or not past_form or not past_form.get("available"):
+        return empty
+    devs = []  # (偏差値, 基準レベル)
+    last3f_diffs = []
+    medians3f = TIME_STANDARDS.get("last3f_medians") or {}
+    for x in past_form.get("recent_results") or []:
+        surf = _norm_surface(x.get("surface_text")) or restore_surface_from_row(
+            x.get("row"), x.get("distance_m"))
+        if not surf or surf == "障害":
+            continue
+        venue = normalize_past_venue(x.get("course_text"))
+        dist = x.get("distance_m")
+        own = parse_race_time(x.get("time_text"))
+        if not venue or not dist or own is None:
+            continue
+        std = _time_standard_cell(venue, surf, dist)
+        if std is None:
+            continue
+        sigma = _time_sigma(surf, dist, std.get("sigma"))
+        if not sigma:
+            continue
+        eff = std["median"] + _going_offset(
+            venue, surf, going_group(x.get("going_text")))
+        devs.append((round(50.0 + 10.0 * (eff - own) / sigma, 1), std["level"]))
+        m3 = medians3f.get(f"{venue}|{surf}")
+        l3 = x.get("last3f")
+        if m3 and isinstance(l3, (int, float)):
+            last3f_diffs.append(round(m3 - l3, 2))
+    out = dict(empty)
+    if last3f_diffs:
+        out["last3f_dev"] = _median_of(last3f_diffs)
+    if not devs:
+        return out
+    best_dev, best_level = max(devs, key=lambda t: t[0])
+    out["time_index_best"] = best_dev
+    out["time_index_med"] = round(_median_of([v for v, _ in devs]), 1)
+    out["time_index_samples"] = len(devs)
+    out["time_index_std_level"] = best_level
+    return out
+
+
+def _pedigree_cell_score(table_entry, baselines, surface, distance_m):
+    """1頭分の血統スコアをフォールバック階層（F1→F2→F3）で計算する。
+    戻り値 (score, score_win, n, level)。未評価は (None, None, 0, None)
+    で、0 とは書かない（設計書 3.3）。"""
+    if not table_entry:
+        return None, None, 0, None
+    band = distance_band_label(distance_m)
+    candidates = []
+    if surface and band:
+        candidates.append((f"{surface}|{band}", f"{surface}|{band}", 1))
+    if surface:
+        candidates.append((surface, surface, 2))
+    candidates.append(("all", "all", 3))
+    for cell_key, base_key, level in candidates:
+        cell = table_entry.get(cell_key)
+        base = (baselines or {}).get(base_key)
+        if not cell or not base:
+            continue
+        n = safe_int(cell.get("starts"), 0)
+        if n < PEDIGREE_SCORE_MIN_N:
+            continue
+        base_top3 = base.get("top3_rate")
+        if base_top3 is None:
+            continue
+        shrink = n / (n + PEDIGREE_SCORE_SHRINK_K)
+        score = round(
+            (safe_int(cell.get("top3"), 0) / n - base_top3) * shrink * 100, 2)
+        base_win = base.get("win_rate")
+        score_win = (
+            round((safe_int(cell.get("wins"), 0) / n - base_win)
+                  * shrink * 100, 2)
+            if base_win is not None else None)
+        return score, score_win, n, level
+    return None, None, 0, None
+
+
+def compute_pedigree_scores(sire, damsire, surface, distance_m):
+    """父・母父の血統スコア（偏差ポイント）を計算する。Stage 0 の
+    保存専用で、既存のリスト一致加点とは別物として併存させる。"""
+    empty = {"sire_score": None, "sire_score_win": None, "sire_score_n": 0,
+             "sire_score_level": None, "damsire_score": None,
+             "damsire_score_n": 0}
+    if not PEDIGREE_STATS:
+        return empty
+    surf = _norm_surface(surface)
+    if surf not in ("芝", "ダート"):
+        surf = None
+    baselines = PEDIGREE_STATS.get("baselines") or {}
+    s_entry = (PEDIGREE_STATS.get("sires") or {}).get(sire) if sire else None
+    d_entry = (PEDIGREE_STATS.get("damsires") or {}).get(damsire) if damsire else None
+    s, sw, sn, sl = _pedigree_cell_score(s_entry, baselines, surf, distance_m)
+    d, _dw, dn, _dl = _pedigree_cell_score(d_entry, baselines, surf, distance_m)
+    return {"sire_score": s, "sire_score_win": sw, "sire_score_n": sn,
+            "sire_score_level": sl, "damsire_score": d, "damsire_score_n": dn}
+
+
+def attach_hybrid_features(runner, surface, distance_m):
+    """v34.15 Stage 0: 時計指数と血統スコアを runner に付け、根拠表示に
+    参考表記を足す。スコア・順位・買い目・信頼度には一切使わない。"""
+    runner.update(compute_time_index(runner.get("past_form") or {}))
+    runner.update(compute_pedigree_scores(
+        runner.get("sire"), runner.get("damsire"), surface, distance_m))
+    reasons = runner.setdefault("reasons", [])
+    if runner.get("time_index_best") is not None:
+        reasons.append(
+            f"時計指数ベスト {runner['time_index_best']:.1f}"
+            f"（近走{runner['time_index_samples']}走・基準L"
+            f"{runner['time_index_std_level']}）【参考・選定不使用】")
+    if runner.get("sire_score") is not None:
+        surf_label = {"ダート": "ダ", "芝": "芝"}.get(
+            _norm_surface(surface) or "", "")
+        band_label = {"短": "短距離", "マイル": "マイル",
+                      "中": "中距離", "長": "長距離"}.get(
+                          distance_band_label(distance_m), "")
+        reasons.append(
+            f"血統スコア 父:{runner['sire_score']:+.1f}"
+            f"（{surf_label}{band_label} n={runner['sire_score_n']}）"
+            "【参考・選定不使用】")
+    return runner
+
+
+# v34.17: クラス（格）評価 Stage 0（保存・計測専用。選定・スコア・
+# 信頼度・配分・ゲート・グレードには一切使わない）
+_CLASS_FW = str.maketrans("０１２３４５６７８９ＧＩｇｉ", "0123456789GIGI")
+
+
+def _class_norm(text):
+    return (text or "").translate(_CLASS_FW).upper()
+
+
+def class_rank_from_text(text):
+    """レース名や過去走の行テキストからクラス（格）の順序尺度を推定する。
+    戻り値は (rank, label)。判定できなければ (None, None)。
+    中央尺度: 新馬0 / 未勝利1 / 1勝2 / 2勝3 / 3勝4 / オープン・
+    リステッド5 / G3=6 / G2=7 / G1=8（旧表記 500万下=2, 1000万下=3,
+    1600万下=4）。地方尺度: C3=1, C2=2, C1=3, B3=4, B2=5, B1=6,
+    A3=7, A2=8, A1=9。中央の語が見つかれば中央尺度を優先する。
+    あくまでテキスト推定の Stage 0 で、誤判定がありうる前提で
+    計測にだけ使う。"""
+    t = _class_norm(text)
+    if not t:
+        return None, None
+    if re.search(r"G3|GIII", t):
+        return 6, "G3"
+    if re.search(r"G2|GII", t):
+        return 7, "G2"
+    if re.search(r"G1|GI(?!V)", t):
+        return 8, "G1"
+    if "リステッド" in t or "オープン" in t:
+        return 5, "オープン"
+    # 現行表記（○勝クラス）を旧表記（○万下）より先に判定する
+    if "3勝" in t:
+        return 4, "3勝クラス"
+    if "2勝" in t:
+        return 3, "2勝クラス"
+    if "1勝" in t:
+        return 2, "1勝クラス"
+    if "1600万" in t:
+        return 4, "3勝クラス"
+    if "1000万" in t:
+        return 3, "2勝クラス"
+    if "500万" in t:
+        return 2, "1勝クラス"
+    if "未勝利" in t:
+        return 1, "未勝利"
+    if "新馬" in t:
+        return 0, "新馬"
+    m = re.search(r"(?<![A-Z0-9])([ABC])([1-3])(?![0-9])", t)
+    if m:
+        base = {"A": 6, "B": 3, "C": 0}[m.group(1)]
+        return base + (4 - int(m.group(2))), f"{m.group(1)}{m.group(2)}級"
+    return None, None
+
+
+def compute_class_features(past_form):
+    """近走（新しい順）から前走クラスと近走ピーク（最高格）を推定する。
+    前走は recent_results の先頭行のみで判定し、読めなければ None。
+    ピークは判定できた近走の中の最大値。"""
+    results = (past_form or {}).get("recent_results") or []
+    prev_rank = prev_label = None
+    if results:
+        prev_rank, prev_label = class_rank_from_text(results[0].get("row") or "")
+    peak = None
+    for x in results:
+        r, _lab = class_rank_from_text(x.get("row") or "")
+        if r is not None and (peak is None or r > peak):
+            peak = r
+    return {"prev_class_rank": prev_rank, "prev_class_label": prev_label,
+            "peak_class_rank": peak}
+
+
 def frame_no_from_field(field_size, horse_no):
     """v34.2: 頭数と馬番から枠番を復元する（標準の枠組表）。
     8頭以下は馬番=枠番。9頭以上は外枠から順に複数頭を割り当てる。"""
@@ -1704,7 +2176,7 @@ def attach_probability_and_value(ranked):
             h["past_form_win_rate_recent_pct"] = None
 
 
-def parse_runners(soup, surface):
+def parse_runners(soup, surface, distance=None):
     table, rows = choose_shutuba_table(soup)
     if table is None:
         warn("出馬表テーブルが見つかりません")
@@ -1828,6 +2300,12 @@ def parse_runners(soup, surface):
                 "jockey_form": bool(jockey_form.get("available")),
             },
         }
+        # v34.15 Stage 0: hybrid 特徴量（時計指数・血統スコア）を付ける。
+        # 保存と参考表示のみで、スコア・順位・買い目には使わない。
+        attach_hybrid_features(runners[no], surface, distance)
+        # v34.17 Stage 0: クラス（格）特徴量。前走クラスと近走ピークを
+        # 保存するだけで、選定・スコアには使わない。
+        runners[no].update(compute_class_features(past_form))
     result = sorted(runners.values(), key=lambda x: x["horse_no"])
     diagnostic = {
         "table_found": True, "rows_found": len(rows), "valid_rows": valid,
@@ -2397,6 +2875,88 @@ def build_tickets(ranked, outsiders, verified):
     }]
 
 
+def build_kind_pattern_shadow(ranked, outsiders, verified, kind, runner_count):
+    """v34.17: 種別専用買い方の shadow 買い目（計測専用・本番不使用）。
+    現行パターンA/Bと同じ馬の組み合わせ・同じ総額のまま、配分だけを
+    種別に寄せた対照案を作り、精算まで並走させて現行と比較する。
+      - 中央・13頭以上 (jra_large_realloc): 3連複を全て外し、その分を
+        馬連2点とワイドへ再配分する（trio_trim の「外すだけ」に対し、
+        こちらは再配分の効果を測る）
+      - 中央・12頭以下 (jra_small_core): ワイド（保険）を削り、単勝と
+        3連複の軸へ集中する
+      - 地方 (nar_axis): 穴絡み（3連複の穴側・ワイド穴）を絞り、
+        3連複の軸と馬連（本命-対抗）へ寄せる
+    総額は現行と同額（穴あり=1,500円 / 穴なし=1,900円）に揃える。"""
+    if not verified or not ranked or len(ranked) < 3:
+        return []
+    a = ranked[0]["horse_no"]
+    b = ranked[1]["horse_no"]
+    c = ranked[2]["horse_no"]
+    d = ranked[3]["horse_no"] if len(ranked) >= 4 else None
+    out = outsiders[0]["horse_no"] if outsiders else None
+    if kind == "中央" and (runner_count or 0) >= 13:
+        bucket, variant = "中央・13頭以上", "jra_large_realloc"
+    elif kind == "中央":
+        bucket, variant = "中央・12頭以下", "jra_small_core"
+    elif kind == "地方":
+        bucket, variant = "地方", "nar_axis"
+    else:
+        return []
+    names = {"win": "単勝", "quinella": "馬連", "wide": "ワイド",
+             "trio": "3連複", "trifecta": "3連単"}
+
+    def item(typ, hs, stake):
+        return {
+            "type": typ, "horses": hs, "stake_yen": stake,
+            "label": (f"{names[typ]} "
+                      f"{'→'.join(map(str, hs)) if typ == 'trifecta' else '-'.join(map(str, hs))} "
+                      f"({stake}円)")}
+
+    if variant == "jra_large_realloc":
+        if out:
+            specs = [("win", [a], 200), ("quinella", [a, b], 400),
+                     ("quinella", [a, c], 400), ("wide", [a, out], 400),
+                     ("trifecta", [a, out, b], 100)]
+        elif d:
+            specs = [("win", [a], 500), ("quinella", [a, b], 500),
+                     ("quinella", [a, c], 500), ("wide", [a, d], 200),
+                     ("wide", [b, d], 200)]
+        else:
+            specs = [("win", [a], 500), ("quinella", [a, b], 700),
+                     ("quinella", [a, c], 700)]
+    elif variant == "jra_small_core":
+        if out:
+            specs = [("win", [a], 250), ("quinella", [a, b], 200),
+                     ("quinella", [a, c], 300), ("trio", [a, b, c], 450),
+                     ("trio", [a, b, out], 200),
+                     ("trifecta", [a, out, b], 100)]
+        else:
+            specs = [("win", [a], 600), ("quinella", [a, b], 300),
+                     ("quinella", [a, c], 300), ("trio", [a, b, c], 700)]
+    else:  # nar_axis
+        if out:
+            specs = [("win", [a], 200), ("quinella", [a, b], 300),
+                     ("quinella", [a, c], 200), ("trio", [a, b, c], 500),
+                     ("trio", [a, b, out], 100), ("wide", [a, out], 100),
+                     ("trifecta", [a, out, b], 100)]
+        else:
+            specs = [("win", [a], 600), ("quinella", [a, b], 300),
+                     ("quinella", [a, c], 300), ("trio", [a, b, c], 700)]
+    items = [item(t, hs, s) for t, hs, s in specs
+             if s > 0 and all(h is not None for h in hs)]
+    if not items:
+        return []
+    cost = sum(x["stake_yen"] for x in items)
+    return [{
+        "pattern_type": "B" if out else "A",
+        "pattern": f"種別shadow（{bucket}）",
+        "cost_yen": cost,
+        "lines": [x["label"] for x in items], "line_items": items,
+        "note": "v34.17 種別専用買い方 shadow。現行A/Bと同額の対照案で計測専用。",
+        "bucket": bucket, "variant": variant,
+    }]
+
+
 def combo_key(horses, ordered=False):
     return "-".join(map(str, horses if ordered else sorted(horses)))
 
@@ -2659,6 +3219,18 @@ def fetch_and_settle_result(race, source):
             # calculate_stats が夢枠・オカルトとは別に集計する）
             race["trifecta_challenge_settlement"] = settle_trifecta_challenge(
                 race.get("trifecta_challenge") or {}, finishes, payouts)
+            # v34.17: 種別専用買い方 shadow も本体と同じ精算経路
+            # （settle_tickets）で精算し、現行A/Bと並走比較できるように
+            # する。買い目が無いレースでは None のまま。
+            if race.get("kind_pattern_shadow"):
+                race["kind_pattern_shadow_settlement"] = settle_tickets(
+                    race.get("kind_pattern_shadow") or [], finishes, payouts)
+            # v34.16: pool shadow 計測用に、実際の3着内組み合わせの
+            # 3連複配当（100円あたり）を保存する。仮想ラインの払戻
+            # 計算に使う計測専用の値で、本体の精算には使わない。
+            # 配当表に該当組み合わせが無い場合は None（未取得を明示）。
+            _trio_p = (payouts.get("trio") or {}).get(combo_key(finishes[:3]))
+            race["trio_payout"] = int(_trio_p) if _trio_p else None
             race.update({
                 "result_finishes": finishes,
                 "payouts": payouts,
@@ -2695,7 +3267,7 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         name = title.split("|")[0].strip() if title else ""
     if not name:
         name = f"{venue}{rno}R" if venue and rno else "レース名未取得"
-    runners, diag = parse_runners(soup, surface)
+    runners, diag = parse_runners(soup, surface, distance)
     odds_page_diag = enrich_odds_from_odds_page(runners, rid, source)
     odds_count = sum(1 for h in runners if h.get("odds") is not None)
     diag["odds_count"] = odds_count
@@ -2838,6 +3410,37 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # v34.13: 3連単チャレンジ枠の買い目（固定3パターン・shadow計測専用。
     # 集計対象はおすすめ以上の本精算レースのみで、calculate_stats 側で絞る）
     trifecta_challenge = build_trifecta_challenge(ranked)
+    # v34.17: 種別専用買い方 shadow（中央13頭以上/中央12頭以下/地方）。
+    # 現行パターンA/Bと同じ総額で組み立て、精算まで並走計測する。
+    # 本番の買い目・配分には一切使わない。
+    kind_pattern_shadow = build_kind_pattern_shadow(
+        ranked, outsiders, verified, kind, count)
+    # v34.15: レース単位の hybrid メタ（使用したテーブル版と、全出走馬の
+    # 中で時計指数ベストが最大の馬）。特徴量の前方保存に使う計測専用で、
+    # 選定・スコア・買い目には一切使わない。
+    _ti_field = [h for h in ranked if h.get("time_index_best") is not None]
+    _ti_best_h = (max(_ti_field, key=lambda h: h["time_index_best"])
+                  if _ti_field else None)
+    hybrid_meta = {
+        "time_standards_ver": TIME_STANDARDS.get("built_at"),
+        "pedigree_stats_built_at": PEDIGREE_STATS.get("built_at"),
+        "time_best_horse_no": (_ti_best_h.get("horse_no")
+                               if _ti_best_h else None),
+        "time_best_value": (_ti_best_h.get("time_index_best")
+                            if _ti_best_h else None),
+    }
+    # v34.17 Stage 0: 今走のクラス（格）と各馬の降級/昇級フラグ。
+    # レース名から推定し、判定できない馬は None（未取得を明示）。
+    # 保存・計測専用で、選定・スコア・買い目には使わない。
+    _today_class_rank, _today_class_label = class_rank_from_text(name or "")
+    for _h in ranked:
+        _h["today_class_rank"] = _today_class_rank
+        _h["today_class_label"] = _today_class_label
+        _pc = _h.get("prev_class_rank")
+        if _pc is None or _today_class_rank is None:
+            _h["class_drop"] = None
+        else:
+            _h["class_drop"] = _today_class_rank < _pc
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -2873,6 +3476,11 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         # v34.13: 3連単チャレンジ枠（買い目と精算結果。shadow計測専用）
         "trifecta_challenge": trifecta_challenge,
         "trifecta_challenge_settlement": None,
+        # v34.17: 種別専用買い方 shadow（買い目と精算結果。計測専用）
+        "kind_pattern_shadow": kind_pattern_shadow,
+        "kind_pattern_shadow_settlement": None,
+        # v34.15: hybrid 特徴量のレース単位メタ（shadow計測専用）
+        "hybrid_features": hybrid_meta,
         "race_recommendation_reasons": reasons,
         "race_data_coverage": {
             "odds_pct": round(odds_coverage * 100, 1),
@@ -3359,12 +3967,54 @@ def update_snapshot(snapshots, race):
     snap_gate_reasons = race.get("gate_reasons")
     if snap_gate_reasons is None:
         snap_gate_reasons = old.get("gate_reasons") or []
+    # v34.16: pool shadow 計測用の「最終生成」保存（計測専用・選定には
+    # 使わない）。last_top6 は発走前の最終生成で固定し、精算した実行の
+    # 生成では上書きしない。公式買い目の大半が精算実行（発走後）の
+    # 生成で確定する現行方式では「発走前の最終候補」がどこにも
+    # 残らないため、その保存が前方計測の前提になる。
+    # 上書き規則:
+    #   - 未精算の生成: その生成の上位6頭・穴候補で毎回上書きする
+    #   - 発走時刻が判明し、現在時刻が発走を過ぎている生成: 上書きしない
+    #   - 精算済み（settlement_complete）の生成: 上書きしない
+    snap_last_top6 = old.get("last_top6")
+    snap_last_outsiders = old.get("last_outsiders")
+    if not race.get("settlement_complete"):
+        _pre_post = True
+        _pt = race.get("post_time")
+        if isinstance(_pt, str):
+            _ptm = re.match(r"^(\d{1,2}):(\d{2})$", _pt.strip())
+            if _ptm:
+                try:
+                    _sched = NOW.replace(hour=int(_ptm.group(1)),
+                                         minute=int(_ptm.group(2)),
+                                         second=0, microsecond=0)
+                    _pre_post = NOW < _sched
+                except ValueError:
+                    _pre_post = True
+        if _pre_post:
+            _ranked_now = race.get("horses") or []
+            if len(_ranked_now) >= 3:
+                snap_last_top6 = [
+                    {"horse_no": h.get("horse_no"), "rank": h.get("rank"),
+                     "score": h.get("score"),
+                     "form_score": h.get("form_score"),
+                     "market_score": h.get("market_score")}
+                    for h in _ranked_now[:6]
+                ]
+            if isinstance(race.get("outsiders"), list):
+                snap_last_outsiders = [
+                    h.get("horse_no") for h in race.get("outsiders")
+                    if isinstance(h, dict)]
     snapshot = {
         "race_id": rid, "date": race.get("date"), "kind": race.get("kind"),
         "course": race.get("course"), "race_no": race.get("race_no"),
         # v34.9: 場×時間帯のオカルト傾向集計のために発走時刻も保存する
         "post_time": race.get("post_time"),
         "name": race.get("name"), "cost": safe_int(race.get("race_cost"), 0),
+        # v34.17: 中央×芝/中央×ダートの分割集計のために馬場種別と
+        # 距離も保存する（過去分は未保存＝「不明」として扱い捏造しない）
+        "surface": race.get("surface") or old.get("surface"),
+        "distance_m": race.get("distance_m") or old.get("distance_m"),
         "pattern_type": ticket.get("pattern_type") or old.get("pattern_type") or (
             (old.get("frozen_prediction") or {}).get("tickets") or {}
         ).get("pattern_type"),
@@ -3389,7 +4039,25 @@ def update_snapshot(snapshots, race):
                  # v34.14: 馬IDと血統を前方保存する（将来の馬単位検証の鍵。
                  # 未解決の馬は None のまま＝未取得を明示する）
                  "horse_id": h.get("horse_id"),
-                 "sire": h.get("sire"), "damsire": h.get("damsire")}
+                 "sire": h.get("sire"), "damsire": h.get("damsire"),
+                 # v34.15: hybrid 特徴量（時計指数・血統スコア）を前方
+                 # 保存する。選定・スコアには使用していない計測専用の値で、
+                 # 未評価の馬は None のままにする
+                 "time_index_best": h.get("time_index_best"),
+                 "time_index_med": h.get("time_index_med"),
+                 "time_index_samples": h.get("time_index_samples"),
+                 "time_index_std_level": h.get("time_index_std_level"),
+                 "last3f_dev": h.get("last3f_dev"),
+                 "sire_score": h.get("sire_score"),
+                 "sire_score_win": h.get("sire_score_win"),
+                 "sire_score_n": h.get("sire_score_n"),
+                 "damsire_score": h.get("damsire_score"),
+                 # v34.17: クラス（格）Stage 0（計測専用。未判定は None）
+                 "prev_class_rank": h.get("prev_class_rank"),
+                 "prev_class_label": h.get("prev_class_label"),
+                 "peak_class_rank": h.get("peak_class_rank"),
+                 "today_class_rank": h.get("today_class_rank"),
+                 "class_drop": h.get("class_drop")}
                 for h in race.get("top5", [])
             ],
             "tickets": ticket,
@@ -3409,6 +4077,19 @@ def update_snapshot(snapshots, race):
         # v34.13: 3連単チャレンジ枠（買い目と精算結果を保存。shadow計測専用）
         "trifecta_challenge": race.get("trifecta_challenge") or old.get("trifecta_challenge") or {},
         "trifecta_challenge_settlement": race.get("trifecta_challenge_settlement") or old.get("trifecta_challenge_settlement"),
+        # v34.17: 種別専用買い方 shadow（買い目と精算結果を保存。計測専用）
+        "kind_pattern_shadow": race.get("kind_pattern_shadow") or old.get("kind_pattern_shadow") or [],
+        "kind_pattern_shadow_settlement": race.get("kind_pattern_shadow_settlement") or old.get("kind_pattern_shadow_settlement"),
+        # v34.15: hybrid 特徴量のレース単位メタ（テーブル版・全出走馬中の
+        # 時計指数1位）。shadow計測専用で選定には使わない
+        "hybrid_features": race.get("hybrid_features") or old.get("hybrid_features"),
+        # v34.16: pool shadow 計測用の最終生成保存（上書き規則は上記）と
+        # 実際の3着内組み合わせの3連複配当（精算時に保存。計測専用）
+        "last_top6": snap_last_top6,
+        "last_outsiders": snap_last_outsiders,
+        "trio_payout": (race.get("trio_payout")
+                        if race.get("trio_payout") is not None
+                        else old.get("trio_payout")),
         "odds_coverage": snap_odds_coverage,
         "bet_eligible": snap_bet_eligible,
         "gate_reasons": snap_gate_reasons,
@@ -3909,6 +4590,440 @@ def calculate_stats(snapshots):
         "best_payout_yen": df_best,
         "hit_races": df_hit_races[:20],
     }
+    # v34.15: hybrid shadow 計測（時計指数＝Phase A / 血統スコア＝Phase B）。
+    # frozen_prediction.top5 に前方保存された特徴量（34.15生成分から）だけを
+    # 対象に、精算結果との関係を本精算/shadow のトラック別に集計する。
+    # 特徴量は選定・スコア・配分には使用していない。設計書の判定基準どおり、
+    # 特徴量つきレースが200件貯まるまでは良し悪しの判定をしない。
+    def _hybrid_finish(x, horse_no):
+        rf = x.get("result_finishes") or []
+        if horse_no is None or len(rf) < 3:
+            return None
+        try:
+            return rf.index(horse_no) + 1
+        except ValueError:
+            return None
+
+    def _hybrid_rate(fins):
+        n = len(fins)
+        return {
+            "horses": n,
+            "win_rate_pct": (round(sum(1 for f in fins if f == 1) / n * 100, 1)
+                             if n else 0.0),
+            "top3_rate_pct": (round(sum(1 for f in fins if f <= 3) / n * 100, 1)
+                              if n else 0.0),
+        }
+
+    def _kind_surface_groups(rows):
+        """v34.17: レースを 中央×芝／中央×ダート／地方 に分ける。
+        surface 未保存の過去分は「不明」に寄せ、推測で埋めない。"""
+        groups = {}
+        for x in rows:
+            surf = x.get("surface") or ""
+            surf = ("芝" if "芝" in surf
+                    else ("ダート" if "ダート" in surf else "不明"))
+            key = f"{x.get('kind') or '不明'}×{surf}"
+            groups.setdefault(key, []).append(x)
+        return groups
+
+    def _hybrid_leader_rates(rows):
+        """時計指数リーダー／上がり3Fリーダーの着順率（コンパクト版）。
+        by_kind_surface の内訳と top5_last3f_leader に使う。"""
+        tb, tl, l3 = [], [], []
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            meta = x.get("hybrid_features") or {}
+            fb = meta.get("time_best_horse_no")
+            if fb is not None:
+                f = _hybrid_finish(x, fb)
+                if f is not None:
+                    tb.append(f)
+            tis = [h for h in top5 if isinstance(h, dict)
+                   and h.get("time_index_best") is not None]
+            if tis:
+                f = _hybrid_finish(
+                    x, max(tis, key=lambda h: h["time_index_best"]).get("horse_no"))
+                if f is not None:
+                    tl.append(f)
+            l3s = [h for h in top5 if isinstance(h, dict)
+                   and h.get("last3f_dev") is not None]
+            if l3s:
+                f = _hybrid_finish(
+                    x, max(l3s, key=lambda h: h["last3f_dev"]).get("horse_no"))
+                if f is not None:
+                    l3.append(f)
+        return {"races": len(rows), "field_time_best": _hybrid_rate(tb),
+                "top5_time_leader": _hybrid_rate(tl),
+                "top5_last3f_leader": _hybrid_rate(l3)}
+
+    def _class_drop_rates(rows):
+        """v34.17: 予想 top5 内の降級馬と非降級馬の着順率を比べる。"""
+        drop, keep = [], []
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            for h in top5:
+                if not isinstance(h, dict) or h.get("class_drop") is None:
+                    continue
+                f = _hybrid_finish(x, h.get("horse_no"))
+                if f is None:
+                    continue
+                (drop if h["class_drop"] else keep).append(f)
+        return {"drop": _hybrid_rate(drop), "no_drop": _hybrid_rate(keep),
+                "drop_horses": len(drop), "no_drop_horses": len(keep)}
+
+    def _hybrid_track(rows):
+        feat_races = 0
+        horses_ti = 0
+        horses_ss = 0
+        samples_dist = {}
+        field_best_fins = []
+        agree_fins = []
+        disagree_fins = []
+        leader_fins = []
+        sire_top3_fins = []
+        sire_scored = []  # (sire_score, finish, last_odds)
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            if not any(isinstance(h, dict) and "time_index_best" in h
+                       for h in top5):
+                continue
+            feat_races += 1
+            meta = x.get("hybrid_features") or {}
+            fb_no = meta.get("time_best_horse_no")
+            if fb_no is not None:
+                fin = _hybrid_finish(x, fb_no)
+                if fin is not None:
+                    field_best_fins.append(fin)
+                    rank1_no = (top5[0].get("horse_no")
+                                if top5 and isinstance(top5[0], dict) else None)
+                    (agree_fins if fb_no == rank1_no
+                     else disagree_fins).append(fin)
+            ti_horses = []
+            ss_horses = []
+            for h in top5:
+                if not isinstance(h, dict):
+                    continue
+                if h.get("time_index_samples"):
+                    horses_ti += 1
+                    skey = str(h["time_index_samples"])
+                    samples_dist[skey] = samples_dist.get(skey, 0) + 1
+                    if h.get("time_index_best") is not None:
+                        ti_horses.append(h)
+                if h.get("sire_score") is not None:
+                    horses_ss += 1
+                    ss_horses.append(h)
+                    fin = _hybrid_finish(x, h.get("horse_no"))
+                    if fin is not None:
+                        odds = (x.get("last_odds") or {}).get(
+                            str(h.get("horse_no")))
+                        sire_scored.append((h["sire_score"], fin, odds))
+            if ti_horses:
+                lead = max(ti_horses, key=lambda h: h["time_index_best"])
+                fin = _hybrid_finish(x, lead.get("horse_no"))
+                if fin is not None:
+                    leader_fins.append(fin)
+            ss_horses.sort(key=lambda h: -h["sire_score"])
+            for h in ss_horses[:3]:
+                fin = _hybrid_finish(x, h.get("horse_no"))
+                if fin is not None:
+                    sire_top3_fins.append(fin)
+        bands = {}
+        if len(sire_scored) >= 3:
+            sire_scored.sort(key=lambda t: -t[0])
+            n = len(sire_scored)
+            groups = {
+                "上位": sire_scored[:n // 3],
+                "中位": sire_scored[n // 3:2 * n // 3],
+                "下位": sire_scored[2 * n // 3:],
+            }
+            for gname, members in groups.items():
+                entry = _hybrid_rate([t[1] for t in members])
+                roi_stake = roi_ret = roi_n = 0
+                for _sc, fin, odds in members:
+                    if odds:
+                        roi_n += 1
+                        roi_stake += 100
+                        if fin == 1:
+                            roi_ret += int(float(odds) * 100)
+                entry["win_roi_pct"] = (
+                    round(roi_ret / roi_stake * 100, 1) if roi_stake else None)
+                entry["win_roi_horses"] = roi_n
+                bands[gname] = entry
+            bands["thresholds"] = {
+                "upper_min": sire_scored[n // 3 - 1][0],
+                "middle_min": sire_scored[2 * n // 3 - 1][0],
+            }
+        return {
+            "races_with_features": feat_races,
+            "top5_horses_with_time_index": horses_ti,
+            "top5_horses_with_sire_score": horses_ss,
+            "time_index_samples_dist": samples_dist,
+            "field_time_best": _hybrid_rate(field_best_fins),
+            "field_time_best_by_rank1_agreement": {
+                "agree": _hybrid_rate(agree_fins),
+                "disagree": _hybrid_rate(disagree_fins),
+            },
+            "top5_time_leader": _hybrid_rate(leader_fins),
+            "sire_score_top3_in_top5": _hybrid_rate(sire_top3_fins),
+            "sire_score_bands": bands,
+            # v34.17: 上がり3F（last3f_dev）とクラス（格）を計測対象に
+            # 追加し、中央×芝／中央×ダート／地方の内訳でも出す
+            "top5_last3f_leader": _hybrid_leader_rates(rows)["top5_last3f_leader"],
+            "class_drop_top5": _class_drop_rates(rows),
+            "by_kind_surface": {
+                bk: _hybrid_leader_rates(sub)
+                for bk, sub in _kind_surface_groups(rows).items()},
+        }
+
+    # v34.17: 種別専用買い方 shadow の集計。精算完了した shadow 買い目を
+    # バケット別に集め、同ーレースの現行A/B実績と並べて比較する。
+    # 本精算（main）とゲート外（gate_out）を分ける（中央13頭以上は
+    # 現行ゲートで常に gate_out 側に入るため、そちらの数字が本命）。
+    def _kps_agg(rows):
+        if not rows:
+            return {"races": 0}
+        sh_stake = sum(
+            safe_int(((x.get("kind_pattern_shadow") or [{}])[0]).get("cost_yen"), 0)
+            for x in rows)
+        sh_ret = sum(
+            safe_int((x.get("kind_pattern_shadow_settlement") or {}).get("all_bet_return"), 0)
+            for x in rows)
+        return {
+            "races": len(rows),
+            "variant": ((rows[0].get("kind_pattern_shadow") or [{}])[0]).get("variant"),
+            "shadow_stake_yen": sh_stake,
+            "shadow_return_yen": sh_ret,
+            "shadow_roi_pct": (round(sh_ret / sh_stake * 100, 1)
+                               if sh_stake else 0.0),
+            "actual_same_races": agg_simple(rows),
+        }
+
+    _kps_groups = {}
+    for x in settled_all:
+        _ks = x.get("kind_pattern_shadow_settlement") or {}
+        _kt = x.get("kind_pattern_shadow") or []
+        if not _kt or not _ks.get("settlement_complete"):
+            continue
+        if _ks.get("all_bet_return") is None:
+            continue
+        _kps_groups.setdefault(_kt[0].get("bucket") or "不明", []).append(x)
+    kind_pattern_shadow_stats = {
+        bk: {
+            "main": _kps_agg([x for x in rows
+                              if x.get("bet_eligible") is not False]),
+            "gate_out": _kps_agg([x for x in rows
+                                  if x.get("bet_eligible") is False]),
+        }
+        for bk, rows in sorted(_kps_groups.items())
+    }
+
+    hybrid_shadow = {
+        "main": _hybrid_track(settled),
+        "shadow": _hybrid_track(settled_shadow),
+        "note": ("時計指数と血統スコアは hybrid_features として前方保存した"
+                 "計測専用の特徴量で、本番の選定・スコア・信頼度・配分・"
+                 "ゲート・グレードには使用していない。特徴量つきレースが"
+                 "200件貯まるまで良し悪しの判定をしない。血統スコア帯域の"
+                 "参考ROIは post_odds と同じ別枠の考え方で、最終オッズ"
+                 "（last_odds）から算出した単勝の仮想成績。"),
+    }
+    # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）。
+    # 34.16 で保存を始めた last_top6（発走前の最終生成の上位6頭）と
+    # trio_payout（実際の3着内組み合わせの3連複配当）を使い、本精算の
+    # 同一レースについて「候補プールを広げていたら」を仮想再計算する。
+    # 本番の選定・買い目・配分には一切使用しない計測専用。
+    # 定義は遡及試算（candidate-pool-2026-11-06）と同一に揃える:
+    #   軸 = 単勝ラインの馬。パートナー = 全3連複ラインに共通する
+    #   軸以外の馬のうち馬番が最小のもの。追加ラインは {軸, パートナー, x}。
+    #   案C の x = 初回 top5 に入り・最終プール（全ラインの馬の和集合）に
+    #   残らず・最終順位6位以内の馬。案A6 の x = 最終順位6位以内の馬。
+    #   どちらも現行3連複プール内の馬と軸・パートナーは追加対象外。
+    #   追加型 = 追加ライン各 POOL_SHADOW_ADD_STAKE_YEN 円。
+    #   固定型 = 3連複総額をそのレースの現行実績総額に固定し、全ライン
+    #   等分（100円単位に切り捨て、端数は先頭ラインへ）。
+    #   仮想払戻は trio_payout（100円あたり）× 仮想ライン金額 / 100。
+    def pool_shadow_for(x):
+        lines = [ln for ln in (x.get("settled_lines") or [])
+                 if isinstance(ln, dict)]
+        win = [ln for ln in lines if ln.get("type") == "win"]
+        trios = [ln for ln in lines if ln.get("type") == "trio"]
+        if len(win) != 1 or not trios:
+            return None
+        finishes = x.get("result_finishes") or []
+        if len(finishes) < 3:
+            return None
+        div = safe_int(x.get("trio_payout"), 0)
+        if not div:
+            return "no_payout"
+        big_t = set(finishes[:3])
+        a = (win[0].get("horses") or [None])[0]
+        if a is None or not all(a in (ln.get("horses") or []) for ln in trios):
+            return None
+        common = set(trios[0].get("horses") or [])
+        for ln in trios[1:]:
+            common &= set(ln.get("horses") or [])
+        partners = sorted(common - {a})
+        if not partners:
+            return None
+        b = partners[0]
+        p_trio = set()
+        for ln in trios:
+            p_trio |= set(ln.get("horses") or [])
+        m_gen = set()
+        for ln in lines:
+            m_gen |= set(ln.get("horses") or [])
+        rank_of = {}
+        for e in (x.get("last_top6") or []):
+            if not isinstance(e, dict):
+                continue
+            try:
+                rank_of[int(e.get("horse_no"))] = e.get("rank")
+            except (TypeError, ValueError):
+                continue
+        base_lines = []
+        for ln in trios:
+            try:
+                base_lines.append((
+                    tuple(sorted(int(v) for v in (ln.get("horses") or []))),
+                    safe_int(ln.get("stake_yen"), 0)))
+            except (TypeError, ValueError):
+                return None
+        cur_stake = sum(s for _, s in base_lines)
+        cur_ret = sum(safe_int(ln.get("return_yen"), 0) for ln in trios)
+        cur_hit = any(ln.get("hit") is True for ln in trios)
+        frozen5 = []
+        for h in (x.get("frozen_prediction") or {}).get("top5") or []:
+            if not isinstance(h, dict):
+                continue
+            try:
+                frozen5.append(int(h.get("horse_no")))
+            except (TypeError, ValueError):
+                continue
+
+        def extras_for(strategy):
+            if strategy == "C":
+                cand = [no for no in frozen5
+                        if no not in m_gen
+                        and isinstance(rank_of.get(no), int)
+                        and rank_of[no] <= 6]
+            else:  # A6: 最終順位6位以内の全馬（順位の昇順）
+                cand = [no for no, r in sorted(
+                    rank_of.items(), key=lambda kv: kv[1])
+                    if isinstance(r, int) and r <= 6]
+            out = []
+            for no in cand:
+                if no in p_trio or no == a or no == b or no in out:
+                    continue
+                out.append(no)
+            return out
+
+        def variant(strategy, fixed):
+            extras = extras_for(strategy)
+            vlines = list(base_lines)
+            for no in extras:
+                vlines.append((tuple(sorted((a, b, no))),
+                               POOL_SHADOW_ADD_STAKE_YEN))
+            if fixed:
+                budget = cur_stake
+                k = len(vlines)
+                each = max(100, (budget // k) // 100 * 100)
+                stakes = [each] * k
+                stakes[0] += budget - each * k
+                vlines = [(c, s) for (c, _), s in zip(vlines, stakes)]
+            stake = sum(s for _, s in vlines)
+            ret = 0
+            hit = False
+            for combo, s in vlines:
+                if set(combo) == big_t:
+                    hit = True
+                    ret += (s // 100) * div
+            return {
+                "stake_yen": stake, "return_yen": ret,
+                "hit": hit, "cover": big_t <= (p_trio | set(extras)),
+                "added_lines": len(extras),
+                "new_hit": bool(hit and not cur_hit),
+                "e_loss_yen": (stake - ret) if (hit and ret < stake) else 0,
+            }
+
+        return {
+            "kind": x.get("kind"),
+            "grade_group": (
+                x.get("race_grade")
+                if x.get("race_grade") in ("超おすすめ", "注目レース")
+                else "その他"),
+            "current": {
+                "stake_yen": cur_stake, "return_yen": cur_ret,
+                "hit": cur_hit, "cover": big_t <= p_trio,
+                "added_lines": 0, "new_hit": False,
+                "e_loss_yen": ((cur_stake - cur_ret)
+                               if (cur_hit and cur_ret < cur_stake) else 0),
+            },
+            "plan_c_add": variant("C", False),
+            "plan_c_fixed": variant("C", True),
+            "plan_a6_add": variant("A6", False),
+            "plan_a6_fixed": variant("A6", True),
+        }
+
+    def pool_variant_agg(recs, key):
+        rows = [r[key] for r in recs]
+        n = len(rows)
+        stake = sum(r["stake_yen"] for r in rows)
+        ret = sum(r["return_yen"] for r in rows)
+        hits = sum(1 for r in rows if r["hit"])
+        covers = sum(1 for r in rows if r["cover"])
+        added = sum(r["added_lines"] for r in rows)
+        return {
+            "races": n, "hit_races": hits,
+            "hit_rate_pct": round(hits / n * 100, 1) if n else 0.0,
+            "stake_yen": stake, "return_yen": ret,
+            "profit_yen": ret - stake,
+            "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
+            "cover_races": covers,
+            "cover_rate_pct": round(covers / n * 100, 1) if n else 0.0,
+            "new_hit_races": sum(1 for r in rows if r["new_hit"]),
+            "added_lines": added,
+            "added_lines_per_race": round(added / n, 2) if n else 0.0,
+            "e_races": sum(1 for r in rows if r["e_loss_yen"] > 0),
+            "e_loss_yen": sum(r["e_loss_yen"] for r in rows),
+        }
+
+    def pool_track(recs):
+        return {k: pool_variant_agg(recs, k) for k in (
+            "current", "plan_c_add", "plan_c_fixed",
+            "plan_a6_add", "plan_a6_fixed")}
+
+    pool_recs = []
+    pool_no_payout = 0
+    for x in settled:
+        if str(x.get("date") or "") < POOL_SHADOW_START_DATE:
+            continue
+        if not x.get("last_top6"):
+            continue
+        try:
+            _pr = pool_shadow_for(x)
+        except (TypeError, ValueError, KeyError, IndexError,
+                AttributeError):
+            _pr = None
+        if _pr == "no_payout":
+            pool_no_payout += 1
+        elif _pr is not None:
+            pool_recs.append(_pr)
+    pool_shadow_stats = dict(pool_track(pool_recs))
+    pool_shadow_stats["by_kind"] = {
+        _kind: pool_track([r for r in pool_recs if r["kind"] == _kind])
+        for _kind in ("中央", "地方")}
+    pool_shadow_stats["by_grade"] = {
+        _g: pool_track([r for r in pool_recs if r["grade_group"] == _g])
+        for _g in ("超おすすめ", "注目レース", "その他")}
+    pool_shadow_stats["excluded_no_payout"] = pool_no_payout
+    pool_shadow_stats["start_date"] = POOL_SHADOW_START_DATE
+    pool_shadow_stats["note"] = (
+        "候補プール（案C 保険枠 / 案A6 最終6位まで）を広げた場合の仮想"
+        "成績を、本精算の同一レースで測る shadow 計測。本番の選定・"
+        "買い目・配分には使用していない。対象は開始日以降で last_top6"
+        "（発走前の最終生成の上位6頭）が保存された本精算レースのみ。"
+        "中央の標本が小さい間は参考値。判定は設計書のライン"
+        "（最低2週間かつ対象300レース等）に達するまで行わない。")
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -3943,6 +5058,16 @@ def calculate_stats(snapshots):
         "occult_track": occult_track,
         # v34.13: 3連単チャレンジ枠（shadow計測・前方計測のみ）
         "trifecta_challenge": trifecta_challenge_stats,
+        # v34.15: hybrid 特徴量（時計指数・血統スコア）の shadow 計測
+        "hybrid_shadow": hybrid_shadow,
+        # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）
+        "pool_shadow": pool_shadow_stats,
+        # v34.17: 本精算の 中央×芝／中央×ダート／地方 分割集計（報告専用）
+        "kind_surface_split": {
+            bk: agg_simple(sub)
+            for bk, sub in _kind_surface_groups(settled).items()},
+        # v34.17: 種別専用買い方 shadow（現行A/Bとの並走比較・計測専用）
+        "kind_pattern_shadow": kind_pattern_shadow_stats,
         "accounting_note": (
             "払戻確認済みの精算済みレースのみ集計。"
             "単勝と全券種の集計対象・金額は別管理。"
@@ -4022,6 +5147,9 @@ def main():
     PEDIGREE_CACHE = (
         history.get("pedigree_cache", {})
         if isinstance(history.get("pedigree_cache", {}), dict) else {})
+    # v34.15: hybrid 特徴量の基準テーブル（時計指数・血統スコア）を読み込む。
+    # 無ければ特徴量は全て None になり従来動作と同一になる
+    load_hybrid_tables()
     VENUE_FRAME_BIAS = compute_frame_bias(snapshots)
     # v34.9: 馬番オカルト指数と場×時間帯傾向を履歴から算出する
     # （表示・別枠集計専用。parse_race が occult_pick の判定にだけ使う）
@@ -4104,6 +5232,15 @@ def main():
             "pedigree_resolved_runners": sum(
                 1 for r in today_races + tomorrow_races
                 for h in r.get("horses", []) if h.get("sire")),
+            # v34.15: hybrid 特徴量（時計指数・血統スコア）の付与状況
+            "time_standards_ver": TIME_STANDARDS.get("built_at"),
+            "pedigree_stats_built_at": PEDIGREE_STATS.get("built_at"),
+            "time_index_available_runners": sum(
+                1 for r in today_races + tomorrow_races
+                for h in r.get("horses", []) if h.get("time_index_samples")),
+            "sire_score_available_runners": sum(
+                1 for r in today_races + tomorrow_races
+                for h in r.get("horses", []) if h.get("sire_score") is not None),
             "frame_bias": VENUE_FRAME_BIAS,
             "odds_available_runners": sum(
                 1 for r in today_races + tomorrow_races
