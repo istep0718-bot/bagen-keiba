@@ -1,10 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.20_EXPERT
+BAGEN KEIBA v34.21_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.21):
+- 血統加点（34.14）の影響集計（2026-11-09）で判明したボトルネック
+  への対処。生成時点で当日出走馬の父名解決率が 13.4%、翌日分は
+  0/641頭だった。原因は新規取得上限 24件/実行が当日の序盤レース
+  から消費され、翌日分まで回らない構造。回収率・的中率への効果
+  判定の前に、まず「測れる状態」を作ることが目的。
+- (1) 血統の前倒し取得（prefetch）: 生成パス（parse 内）の上限
+  MAX_NEW_PEDIGREE_FETCHES=24 は従来どおり維持し、生成後に
+  prefetch_pedigrees が専用枠（最大96件、総量上限120件）で
+  未解決馬の血統を先取りしてキャッシュを温める。優先順位は
+  今日の未生成レース（frozen 未作成）→ 明日の出走馬 → 今日の
+  生成済みレース。温めたキャッシュは history.json に保存され、
+  翌日分が当日分になって frozen が作られる初回生成で効く。
+  Actions の job 上限10分に対する安全弁として、実行開始から
+  420秒を超えたら prefetch を打ち切る。スコア計算・加点値・
+  対象リストには一切触れない。
+- (2) frozen への加点記録: score_runners が実際に適用した血統
+  加点を runner に pedigree_bonus（0.0/0.75/1.0）と
+  pedigree_bonus_kind（dirt/turf/None）として記録し、
+  frozen_prediction.all_horses に父名・母父名とあわせて保存する
+  （34.18 の all_horses には父・母父が未保存だった）。保存のみで
+  選定・スコア・精算には影響しない。
+- (3) data_quality_summary に prefetch 実績件数と当日出走馬の
+  父名解決率（分母つき）を追加。既存の pedigree_resolved_runners
+  （当日+翌日の合算・分母なし）とは重複しない形にした。
 
 改善点 (v34.20):
 - 金額の強弱 shadow を新設（ユーザー承認 2026-11-09。設計正本は
@@ -444,7 +470,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.20_EXPERT"
+ENGINE_VERSION = "BAGEN_34.21_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -457,6 +483,20 @@ PEOPLE_CACHE = {}
 MAX_NEW_PEDIGREE_FETCHES = 24
 PEDIGREE_FETCHED_THIS_RUN = 0
 PEDIGREE_CACHE = {}
+# v34.21: 血統の前倒し取得（prefetch）専用枠。生成パス（parse 内）の
+# 上限 MAX_NEW_PEDIGREE_FETCHES は従来どおり 24 のまま変えず、生成後に
+# 残りの未解決馬を prefetch_pedigrees が先取りする。1実行あたりの
+# 血統取得の総量上限は MAX_TOTAL_PEDIGREE_FETCHES とし、あわせて
+# 実行開始からの経過が PREFETCH_DEADLINE_SEC を超えたら打ち切る
+# （Actions の job 上限10分に対する安全弁）。根拠: 1取得は
+# db.netkeiba への GET 1回 + DELAY 0.35秒で約0.7〜1.4秒のため、
+# 総量120件でも追加所要は最大で約+2〜3分に収まる見込みで、
+# デッドライン側でも二重に保護する。
+MAX_PREFETCH_PEDIGREE_FETCHES = 96
+MAX_TOTAL_PEDIGREE_FETCHES = (
+    MAX_NEW_PEDIGREE_FETCHES + MAX_PREFETCH_PEDIGREE_FETCHES)
+PREFETCH_DEADLINE_SEC = 420
+PEDIGREE_PREFETCHED_THIS_RUN = 0
 # v34.15: hybrid 特徴量（時計指数・血統スコア）の基準テーブル。
 # review 環境でオフライン構築した JSON を読むだけで、bot 本体では
 # 再計算しない。ファイルが無ければ特徴量は全て None（従来動作）。
@@ -1628,11 +1668,14 @@ def parse_pedigree_page(page):
             "source": "db.netkeiba 血統ページの5代血統表（位置構造）から抽出"}
 
 
-def get_pedigree(horse_id):
+def get_pedigree(horse_id, limit=None):
     """v34.14: 馬IDから父・母父・母を解決する。血統は馬ごとに不変なので
     永続キャッシュ（PEDIGREE_CACHE）優先で、新規取得は実行あたり上限で
     保護する。ページ取得自体に失敗した場合はキャッシュせず次回再試行する
-    （取得できたが血統表が無い結果は不変としてキャッシュする）。"""
+    （取得できたが血統表が無い結果は不変としてキャッシュする）。
+    v34.21: limit で取得上限を差し替え可能にした（prefetch 専用枠用）。
+    省略時は従来どおり MAX_NEW_PEDIGREE_FETCHES で、生成パスの
+    呼び出しは無変更。"""
     global PEDIGREE_FETCHED_THIS_RUN
     empty = {"available": False, "sire": None, "damsire": None, "dam": None,
              "source": "血統未取得"}
@@ -1642,7 +1685,8 @@ def get_pedigree(horse_id):
     if isinstance(cached, dict) and cached.get("checked_at"):
         ped = cached.get("pedigree")
         return ped if isinstance(ped, dict) else empty
-    if PEDIGREE_FETCHED_THIS_RUN >= MAX_NEW_PEDIGREE_FETCHES:
+    cap = MAX_NEW_PEDIGREE_FETCHES if limit is None else limit
+    if PEDIGREE_FETCHED_THIS_RUN >= cap:
         return {**empty, "source": "無料実行時間保護のため今回の取得上限"}
     PEDIGREE_FETCHED_THIS_RUN += 1
     page = get_html(f"https://db.netkeiba.com/horse/ped/{horse_id}/")
@@ -1655,6 +1699,58 @@ def get_pedigree(horse_id):
     if ped.get("available") or "競走馬データ" in page:
         PEDIGREE_CACHE[horse_id] = {"checked_at": NOW.isoformat(), "pedigree": ped}
     return ped
+
+
+def prefetch_pedigrees(today_races, tomorrow_races, snapshots, start_monotonic):
+    """v34.21: 血統の前倒し取得。予想生成（parse）が終わった後に、
+    未解決の馬の血統を優先順位つきで先取りして PEDIGREE_CACHE を
+    温める。温めたキャッシュは history.json に保存され、次回以降の
+    生成（特に翌日分が当日分になって frozen が作られる初回生成）で
+    効く。生成がない実行でも parse 自体は毎回走るため、そのたびに
+    少しずつ前倒しが進む。
+    優先順位: (1) 今日の未生成レース（スナップショットに
+    frozen_prediction がまだ無いレース）の出走馬、(2) 明日の出走馬、
+    (3) 今日の生成済みレースの未解決馬。
+    キャッシュを埋めるだけで、スコア計算・加点・選定には影響しない。
+    戻り値はこの呼び出しで実際に行った新規取得の件数。"""
+    global PEDIGREE_PREFETCHED_THIS_RUN
+
+    def frozen_missing(race):
+        snap = snapshots.get(str(race.get("id"))) or {}
+        return not snap.get("frozen_prediction")
+
+    ordered_races = (
+        [r for r in today_races if frozen_missing(r)]
+        + list(tomorrow_races)
+        + [r for r in today_races if not frozen_missing(r)])
+    candidates = []
+    seen = set()
+    for race in ordered_races:
+        for h in race.get("horses", []) or []:
+            hid = h.get("horse_id")
+            if not hid or hid in seen:
+                continue
+            seen.add(hid)
+            cached = PEDIGREE_CACHE.get(hid)
+            if isinstance(cached, dict) and cached.get("checked_at"):
+                continue
+            candidates.append(hid)
+    done = 0
+    for hid in candidates:
+        if done >= MAX_PREFETCH_PEDIGREE_FETCHES:
+            break
+        if time.monotonic() - start_monotonic > PREFETCH_DEADLINE_SEC:
+            print(f"[INFO] pedigree prefetch: 実行時間保護のため "
+                  f"{done}件で打ち切り")
+            break
+        before = PEDIGREE_FETCHED_THIS_RUN
+        get_pedigree(hid, limit=MAX_TOTAL_PEDIGREE_FETCHES)
+        if PEDIGREE_FETCHED_THIS_RUN > before:
+            done += 1
+            PEDIGREE_PREFETCHED_THIS_RUN += 1
+    if done:
+        print(f"[INFO] pedigree prefetch: {done}件を前倒し取得")
+    return done
 
 
 # ============================================================
@@ -2521,6 +2617,11 @@ def score_runners(runners, surface, venue, going=None, weather=None):
             market_score += max(0.0, 5.0 - (int(pop) - 1) * 0.35)
         form_score = 0.0
         reasons = h.setdefault("reasons", [])
+        # v34.21: 血統加点の実績記録（frozen 保存専用）。加点そのものは
+        # 下の is_dirt_blood / is_power_blood 判定で従来どおり行い、
+        # ここでは初期値だけ置く（実際に適用した時点で上書きする）
+        h["pedigree_bonus"] = 0.0
+        h["pedigree_bonus_kind"] = None
         h["last3f_latest"] = None
         if form.get("available"):
             rows = form.get("recent_results", [])
@@ -2758,9 +2859,14 @@ def score_runners(runners, surface, venue, going=None, weather=None):
             reasons.append("減量騎手記号あり（参考+0.5点）")
         if surface == "ダート" and h.get("is_dirt_blood"):
             form_score += 1.0
+            # v34.21: 適用した加点を記録する（保存専用・計算は無変更）
+            h["pedigree_bonus"] = 1.0
+            h["pedigree_bonus_kind"] = "dirt"
             reasons.append("血統欄でダート向け候補を検出（参考+1点）")
         elif surface == "芝" and h.get("is_power_blood"):
             form_score += 0.75
+            h["pedigree_bonus"] = 0.75
+            h["pedigree_bonus_kind"] = "turf"
             reasons.append("血統欄で芝向け候補を検出（参考+0.75点）")
         wd = h.get("w_diff")
         if wd is not None and 8 <= wd <= 16:
@@ -4354,6 +4460,14 @@ def update_snapshot(snapshots, race):
                  "odds_free_rank": h.get("odds_free_rank"),
                  "odds": h.get("odds"), "popularity": h.get("popularity"),
                  "running_style": h.get("running_style"),
+                 # v34.21: 血統の前方保存。父・母父は 34.18 時点で
+                 # all_horses に未保存だったため追加（top5 には保存
+                 # 済み）。pedigree_bonus / pedigree_bonus_kind は
+                 # score_runners が実際に適用した加点値と種別で、
+                 # 未適用の馬は 0.0 / None。いずれも保存専用
+                 "sire": h.get("sire"), "damsire": h.get("damsire"),
+                 "pedigree_bonus": h.get("pedigree_bonus"),
+                 "pedigree_bonus_kind": h.get("pedigree_bonus_kind"),
                  "estimated_win_probability_pct":
                      h.get("estimated_win_probability_pct"),
                  "calibrated_win_probability_pct":
@@ -5669,6 +5783,8 @@ def backfill_settled_lines(snapshots):
 
 
 def main():
+    # v34.21: prefetch の実行時間保護（デッドライン判定）に使う起点
+    _run_start = time.monotonic()
     print(f"=== {ENGINE_VERSION} START ===")
     print(f"[INFO] JST now: {NOW.isoformat()}")
     history = load_history()
@@ -5715,6 +5831,10 @@ def main():
     print(f"[INFO] frame_bias venues={len(VENUE_FRAME_BIAS)} biased={biased}")
     today_races = fetch_races_for_date(TODAY, False)
     tomorrow_races = fetch_races_for_date(TOMORROW, True)
+    # v34.21: 血統の前倒し取得。生成で使われなかった取得枠を使い、
+    # 今日の未生成レース→明日の出走馬→今日の生成済みレースの順で
+    # キャッシュを温める（保存は下の history 保存で一緒に行われる）
+    prefetch_pedigrees(today_races, tomorrow_races, snapshots, _run_start)
     for race in today_races:
         update_snapshot(snapshots, race)
     cutoff = (NOW - timedelta(days=RETENTION_DAYS)).date()
@@ -5737,6 +5857,9 @@ def main():
     save_json(HISTORY, history)
     verified = sum(1 for r in today_races if r.get("runner_count_verified"))
     settled = sum(1 for r in today_races if r.get("settlement_complete"))
+    # v34.21: 当日出走馬の生成時点の父名解決率（data_quality 用）
+    _today_runners = [h for r in today_races for h in r.get("horses", [])]
+    _today_pedigree_resolved = sum(1 for h in _today_runners if h.get("sire"))
     status = "OK" if today_races or tomorrow_races else "NO_RACES"
     data = {
         "site": "BAGEN KEIBA",
@@ -5775,6 +5898,17 @@ def main():
             "pedigree_resolved_runners": sum(
                 1 for r in today_races + tomorrow_races
                 for h in r.get("horses", []) if h.get("sire")),
+            # v34.21: 前倒し取得の実績と、当日出走馬だけの父名解決率
+            # （既存の pedigree_resolved_runners は当日+翌日の合算で
+            # 分母が無いため、重複しない形で当日分を率つきで残す。
+            # 生成時点＝この実行の parse 時点の値で、prefetch で
+            # 温めた分は次回以降の生成に反映される）
+            "pedigree_prefetched_this_run": PEDIGREE_PREFETCHED_THIS_RUN,
+            "today_pedigree_resolved_runners": _today_pedigree_resolved,
+            "today_pedigree_total_runners": len(_today_runners),
+            "today_pedigree_resolution_rate": (
+                round(_today_pedigree_resolved / len(_today_runners), 4)
+                if _today_runners else None),
             # v34.15: hybrid 特徴量（時計指数・血統スコア）の付与状況
             "time_standards_ver": TIME_STANDARDS.get("built_at"),
             "pedigree_stats_built_at": PEDIGREE_STATS.get("built_at"),
