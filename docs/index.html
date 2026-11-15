@@ -699,7 +699,8 @@ function resCmpDetail(x) {
 /* ===== 各レースの買い目（比較パネル内・精算時の最終買い目） ===== */
 function resBetDetail(x) {
   const lines = Array.isArray(x.settled_lines) ? x.settled_lines : [];
-  if (!lines.length) return '<div class="bethead">買い目</div><div class="cmpnote">このレースは買い目が記録されていません。</div>';
+  if (!lines.length) return '<div class="bethead">買い目</div><div class="cmpnote">このレースは買い目が記録されていません。</div>' +
+    '<div class="cmpnote">※ 予想順位はその日最初の予想を固定したものです。買い目は発走前の最終判断で組み直されるため、予想と買い目の馬が異なることがあります。</div>';
   const names = {win: '単勝', quinella: '馬連', wide: 'ワイド', trio: '3連複', trifecta: '3連単', exacta: '馬単', place: '複勝'};
   const order = ['win', 'quinella', 'wide', 'trio', 'trifecta', 'exacta', 'place'];
   const groups = new Map();
@@ -725,7 +726,8 @@ function resBetDetail(x) {
     }
   }
   return '<div class="bethead">買い目（' + lines.length + '点）</div>' +
-    '<table class="bettable"><thead><tr><th>券種</th><th style="text-align:right">組み合わせ</th><th style="text-align:right">金額</th><th style="text-align:right">払戻</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    '<table class="bettable"><thead><tr><th>券種</th><th style="text-align:right">組み合わせ</th><th style="text-align:right">金額</th><th style="text-align:right">払戻</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div class="cmpnote">※ 予想順位はその日最初の予想を固定したものです。買い目は発走前の最終判断で組み直されるため、予想と買い目の馬が異なることがあります。</div>';
 }
 
 /* ===== 結果一覧（投資・回収・損益のみ） ===== */
