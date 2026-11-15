@@ -150,6 +150,23 @@ summary{cursor:pointer;color:#ecd28e;font-size:12px;font-weight:700;letter-spaci
 .qitem span{font-size:10px;color:var(--muted);letter-spacing:.5px}
 @media(min-width:700px){.metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.racebody{padding:16px}.racehead{padding:16px}.horsegrid{grid-template-columns:1fr 1fr;column-gap:20px}.qualitygrid{grid-template-columns:repeat(4,minmax(0,1fr))}main{padding:22px 16px 54px}h1{font-size:23px}}
 @media(max-width:360px){h1{font-size:17px}.metric strong{font-size:18px}.panel{padding:11px}.racebody{padding:11px}.tab,.filter,.btn{padding:7px 9px;font-size:11px}.hero-title{letter-spacing:3px}}
+/* 結果一覧：スマホでは横スクロールなし・行を低くするコンパクト表示 */
+.restable .resdate{white-space:nowrap}
+@media(max-width:560px){
+.respanel{padding:10px 8px}
+.restable{table-layout:fixed}
+.restable col.cd{width:11%}
+.restable col.cr{width:32%}
+.restable col.cs{width:13.5%}
+.restable col.cp{width:16%}
+.restable col.cb{width:14%}
+.restable th,.restable td{padding:5px 3px;font-size:11px}
+.restable th{font-size:10px;letter-spacing:.2px}
+.restable .resnum{font-size:10.5px}
+.restable .resracecell{line-height:1.4}
+.restable .resracecell .badge{white-space:nowrap;font-size:9px;padding:1px 5px;letter-spacing:0;margin-left:2px}
+.restable .cmpbtn{padding:2px 5px;font-size:10px}
+}
 @media(prefers-reduced-motion:reduce){h1,.hero-title,.hero-card::after{animation:none}main>section{animation:none}.race,.metric,.chart-card{transition:none}}
 .hero-grid{display:grid;gap:13px}
 .superday{font-weight:800;font-size:15px;margin:6px 2px 0;color:#e9c767}
@@ -401,9 +418,10 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <tbody id="venueBody"></tbody>
 </table></div>
 </div>
-<div class="panel">
+<div class="panel respanel">
 <div class="vchips" id="resVenueChips"></div>
-<div class="tablewrap"><table style="min-width:0">
+<div class="tablewrap"><table class="restable" style="min-width:0">
+<colgroup><col class="cd"><col class="cr"><col class="cs"><col class="cs"><col class="cp"><col class="cb"></colgroup>
 <thead><tr><th>日付</th><th>レース</th><th style="text-align:right">投資</th><th style="text-align:right">回収</th><th style="text-align:right">損益</th><th style="text-align:right">予想×結果</th></tr></thead>
 <tbody id="resBody"></tbody>
 </table></div>
@@ -690,7 +708,7 @@ function resCmpDetail(x) {
       '<td class="resnum">' + esc(h.no) + '</td><td>' + esc(h.name || '—') + '</td>' +
       '<td class="resnum fin">' + (f != null ? f + '着' : '—') + '</td>' + diff + '</tr>';
   }).join('');
-  let html = '<table class="cmptable"><thead><tr><th style="text-align:right">予想順位</th><th style="text-align:right">馬番</th><th>馬名</th><th style="text-align:right">結果</th><th style="text-align:right">ズレ</th></tr></thead><tbody>' + trs + '</tbody></table>';
+  let html = '<div class="bethead" style="margin-top:2px">予想×結果（その日最初の固定）</div><table class="cmptable"><thead><tr><th style="text-align:right">予想順位</th><th style="text-align:right">馬番</th><th>馬名</th><th style="text-align:right">結果</th><th style="text-align:right">ズレ</th></tr></thead><tbody>' + trs + '</tbody></table>';
   html += '<div class="cmpnote">ズレ＝予想順位−結果着順（＋は予想より好走）。緑の帯は3着以内。' +
     (top5only ? 'このレースは予想上位5頭のみ記録されています（3着以内に入った未予想の馬は予想「—」で追加表示）。' : '') + '</div>';
   return html + resBetDetail(x);
@@ -699,7 +717,7 @@ function resCmpDetail(x) {
 /* ===== 各レースの買い目（比較パネル内・精算時の最終買い目） ===== */
 function resBetDetail(x) {
   const lines = Array.isArray(x.settled_lines) ? x.settled_lines : [];
-  if (!lines.length) return '<div class="bethead">買い目</div><div class="cmpnote">このレースは買い目が記録されていません。</div>' +
+  if (!lines.length) return '<div class="bethead">買い目（発走前の最終判断）</div><div class="cmpnote">このレースは買い目が記録されていません。</div>' +
     '<div class="cmpnote">※ 予想順位はその日最初の予想を固定したものです。買い目は発走前の最終判断で組み直されるため、予想と買い目の馬が異なることがあります。</div>';
   const names = {win: '単勝', quinella: '馬連', wide: 'ワイド', trio: '3連複', trifecta: '3連単', exacta: '馬単', place: '複勝'};
   const order = ['win', 'quinella', 'wide', 'trio', 'trifecta', 'exacta', 'place'];
@@ -725,7 +743,7 @@ function resBetDetail(x) {
         '<td class="resnum">' + (hit ? '<span class="bethitmark">的中</span> <span class="betret">' + yen(Number(l.return_yen) || 0) + '</span>' : '—') + '</td></tr>';
     }
   }
-  return '<div class="bethead">買い目（' + lines.length + '点）</div>' +
+  return '<div class="bethead">買い目（発走前の最終判断・' + lines.length + '点）</div>' +
     '<table class="bettable"><thead><tr><th>券種</th><th style="text-align:right">組み合わせ</th><th style="text-align:right">金額</th><th style="text-align:right">払戻</th></tr></thead><tbody>' + rows + '</tbody></table>' +
     '<div class="cmpnote">※ 予想順位はその日最初の予想を固定したものです。買い目は発走前の最終判断で組み直されるため、予想と買い目の馬が異なることがあります。</div>';
 }
@@ -769,7 +787,7 @@ function renderResults() {
     const p = x.race_profit != null ? Number(x.race_profit) : (Number(x.all_bet_return) || 0) - (Number(x.cost) || 0);
     const d = String(x.date || '').slice(5).replace('-', '/');
     const open = RES_CMP_OPEN.has(x.race_id);
-    let html = '<tr><td>' + esc(d) + '</td><td>' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R' + resBadge(x) + '</td>' +
+    let html = '<tr><td class="resdate">' + esc(d) + '</td><td class="resracecell">' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R' + resBadge(x) + '</td>' +
       '<td class="resnum">' + yen(x.cost) + '</td><td class="resnum">' + yen(x.all_bet_return) + '</td>' +
       '<td class="resnum ' + (p > 0 ? 'green' : (p < 0 ? 'red' : '')) + '">' + (p > 0 ? '+' : '') + yen(p) + '</td>' +
       '<td class="resnum"><button type="button" class="cmpbtn' + (open ? ' active' : '') + '" data-cmp="' + esc(x.race_id) + '">比較' + (open ? ' ▴' : ' ▾') + '</button></td></tr>';
