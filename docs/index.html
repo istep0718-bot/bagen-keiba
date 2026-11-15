@@ -115,6 +115,17 @@ th{color:#d9bd72;font-weight:700;letter-spacing:.8px;font-size:10.5px}
 .vchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
 .vchip{border:1px solid rgba(127,127,127,.45);background:transparent;color:inherit;border-radius:999px;padding:4px 12px;font-size:12px;cursor:pointer}
 .vchip.active{background:#d9ab3c;border-color:#d9ab3c;color:#1d1503;font-weight:700}
+.cmpbtn{border:1px solid rgba(233,199,103,.45);background:rgba(17,27,44,.75);color:var(--gold-hi);border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font:inherit}
+.cmpbtn.active{background:#d9ab3c;border-color:#d9ab3c;color:#1d1503;font-weight:700}
+tr.cmprow>td{background:rgba(10,17,30,.65);padding:10px 8px 12px}
+.cmptable{min-width:0;font-size:11.5px}
+.cmptable th,.cmptable td{padding:5px 6px}
+.cmptable .fin{font-weight:800}
+.cmptable tr.top3 td{background:rgba(94,228,168,.07)}
+.cmpnote{margin-top:6px;color:var(--muted);font-size:10.5px}
+.diffup{color:var(--green);font-weight:700}
+.diffdn{color:var(--red)}
+.diffEq{color:var(--gold-hi);font-weight:700}
 tbody tr.vrow{cursor:pointer}
 tbody tr.vrow.active{background:rgba(217,171,60,.14)}
 .btn:disabled{opacity:.35;cursor:default}
@@ -386,7 +397,7 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <div class="panel">
 <div class="vchips" id="resVenueChips"></div>
 <div class="tablewrap"><table style="min-width:0">
-<thead><tr><th>日付</th><th>レース</th><th style="text-align:right">投資</th><th style="text-align:right">回収</th><th style="text-align:right">損益</th></tr></thead>
+<thead><tr><th>日付</th><th>レース</th><th style="text-align:right">投資</th><th style="text-align:right">回収</th><th style="text-align:right">損益</th><th style="text-align:right">予想×結果</th></tr></thead>
 <tbody id="resBody"></tbody>
 </table></div>
 <div class="respager">
@@ -635,6 +646,49 @@ function historyItems() {
   );
 }
 
+/* ===== 各レースの予想順位×結果順位の比較（結果一覧の行内タブ） ===== */
+const RES_CMP_OPEN = new Set();
+
+function resCmpDetail(x) {
+  const fp = x.frozen_prediction || {};
+  let pred = [];
+  let top5only = false;
+  if (Array.isArray(fp.horses) && fp.horses.length) {
+    pred = fp.horses.map(h => ({no: h.horse_no, name: h.horse || h.name || '', rank: h.rank}));
+  } else if (Array.isArray(fp.top5) && fp.top5.length) {
+    pred = fp.top5.map(h => ({no: h.horse_no, name: h.name || h.horse || '', rank: h.rank}));
+    top5only = true;
+  }
+  if (!pred.length) return '<div class="cmpnote">このレースは予想順位が記録されていません。</div>';
+  const rf = Array.isArray(x.result_finishes) ? x.result_finishes : [];
+  if (!rf.length) return '<div class="cmpnote">このレースは結果（着順）が記録されていません。</div>';
+  const fin = {};
+  rf.forEach((no, i) => { fin[no] = i + 1; });
+  const known = new Set(pred.map(h => String(h.no)));
+  const rows = pred.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+  /* 予想に無く3着以内に入った馬も追加表示（予想上位のみ記録のレースで見落としを見えるように） */
+  rf.slice(0, 3).forEach(no => {
+    if (!known.has(String(no))) rows.push({no: no, name: '', rank: null});
+  });
+  const trs = rows.map(h => {
+    const f = fin[h.no];
+    let diff = '<td class="resnum">—</td>';
+    if (h.rank != null && f != null) {
+      const df = h.rank - f;
+      if (df === 0) diff = '<td class="resnum diffEq">一致</td>';
+      else if (df > 0) diff = '<td class="resnum diffup">+' + df + ' 好走</td>';
+      else diff = '<td class="resnum diffdn">' + df + '</td>';
+    }
+    return '<tr' + (f != null && f <= 3 ? ' class="top3"' : '') + '><td class="resnum">' + (h.rank != null ? h.rank : '—') + '</td>' +
+      '<td class="resnum">' + esc(h.no) + '</td><td>' + esc(h.name || '—') + '</td>' +
+      '<td class="resnum fin">' + (f != null ? f + '着' : '—') + '</td>' + diff + '</tr>';
+  }).join('');
+  let html = '<table class="cmptable"><thead><tr><th style="text-align:right">予想順位</th><th style="text-align:right">馬番</th><th>馬名</th><th style="text-align:right">結果</th><th style="text-align:right">ズレ</th></tr></thead><tbody>' + trs + '</tbody></table>';
+  html += '<div class="cmpnote">ズレ＝予想順位−結果着順（＋は予想より好走）。緑の帯は3着以内。' +
+    (top5only ? 'このレースは予想上位5頭のみ記録されています（3着以内に入った未予想の馬は予想「—」で追加表示）。' : '') + '</div>';
+  return html;
+}
+
 /* ===== 結果一覧（投資・回収・損益のみ） ===== */
 let RES_PAGE = 1;
 const RES_PER_PAGE = 50;
@@ -673,10 +727,14 @@ function renderResults() {
   body.innerHTML = slice.length ? slice.map(x => {
     const p = x.race_profit != null ? Number(x.race_profit) : (Number(x.all_bet_return) || 0) - (Number(x.cost) || 0);
     const d = String(x.date || '').slice(5).replace('-', '/');
-    return '<tr><td>' + esc(d) + '</td><td>' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R' + resBadge(x) + '</td>' +
+    const open = RES_CMP_OPEN.has(x.race_id);
+    let html = '<tr><td>' + esc(d) + '</td><td>' + esc(x.course || '') + ' ' + esc(x.race_no) + 'R' + resBadge(x) + '</td>' +
       '<td class="resnum">' + yen(x.cost) + '</td><td class="resnum">' + yen(x.all_bet_return) + '</td>' +
-      '<td class="resnum ' + (p > 0 ? 'green' : (p < 0 ? 'red' : '')) + '">' + (p > 0 ? '+' : '') + yen(p) + '</td></tr>';
-  }).join('') : '<tr><td colspan="5">精算済みデータがありません</td></tr>';
+      '<td class="resnum ' + (p > 0 ? 'green' : (p < 0 ? 'red' : '')) + '">' + (p > 0 ? '+' : '') + yen(p) + '</td>' +
+      '<td class="resnum"><button type="button" class="cmpbtn' + (open ? ' active' : '') + '" data-cmp="' + esc(x.race_id) + '">比較' + (open ? ' ▴' : ' ▾') + '</button></td></tr>';
+    if (open) html += '<tr class="cmprow"><td colspan="6">' + resCmpDetail(x) + '</td></tr>';
+    return html;
+  }).join('') : '<tr><td colspan="6">精算済みデータがありません</td></tr>';
   const from = slice.length ? (RES_PAGE - 1) * RES_PER_PAGE + 1 : 0;
   const to = (RES_PAGE - 1) * RES_PER_PAGE + slice.length;
   $('resPageInfo').textContent = RES_PAGE + ' / ' + pages + ' ページ（' + from + '–' + to + '件 / 全' + total + '件）';
@@ -1536,6 +1594,8 @@ const venueBodyEl = $('venueBody');
 if (venueBodyEl) venueBodyEl.addEventListener('click', e => { const tr = e.target.closest('tr[data-venue]'); if (tr) setResVenue(tr.getAttribute('data-venue')); });
 const resVenueChipsEl = $('resVenueChips');
 if (resVenueChipsEl) resVenueChipsEl.addEventListener('click', e => { const b = e.target.closest('button[data-venue]'); if (b) setResVenue(b.getAttribute('data-venue')); });
+const resBodyEl = $('resBody');
+if (resBodyEl) resBodyEl.addEventListener('click', e => { const b = e.target.closest('button[data-cmp]'); if (!b) return; const id = b.getAttribute('data-cmp'); if (RES_CMP_OPEN.has(id)) RES_CMP_OPEN.delete(id); else RES_CMP_OPEN.add(id); renderResults(); });
 
 applyTab();
 
