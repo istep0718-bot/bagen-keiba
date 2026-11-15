@@ -126,6 +126,13 @@ tr.cmprow>td{background:rgba(10,17,30,.65);padding:10px 8px 12px}
 .diffup{color:var(--green);font-weight:700}
 .diffdn{color:var(--red)}
 .diffEq{color:var(--gold-hi);font-weight:700}
+.bethead{margin-top:12px;font-size:11.5px;font-weight:800;color:var(--gold-hi);letter-spacing:.04em}
+.bettable{min-width:0;font-size:11.5px}
+.bettable th,.bettable td{padding:5px 6px}
+.bettable tr.bethit td{background:rgba(94,228,168,.10)}
+.bettable tr.betmiss td{color:var(--muted)}
+.bethitmark{color:var(--gold-hi);font-weight:800}
+.betret{color:var(--green);font-weight:800}
 tbody tr.vrow{cursor:pointer}
 tbody tr.vrow.active{background:rgba(217,171,60,.14)}
 .btn:disabled{opacity:.35;cursor:default}
@@ -659,9 +666,9 @@ function resCmpDetail(x) {
     pred = fp.top5.map(h => ({no: h.horse_no, name: h.name || h.horse || '', rank: h.rank}));
     top5only = true;
   }
-  if (!pred.length) return '<div class="cmpnote">このレースは予想順位が記録されていません。</div>';
+  if (!pred.length) return '<div class="cmpnote">このレースは予想順位が記録されていません。</div>' + resBetDetail(x);
   const rf = Array.isArray(x.result_finishes) ? x.result_finishes : [];
-  if (!rf.length) return '<div class="cmpnote">このレースは結果（着順）が記録されていません。</div>';
+  if (!rf.length) return '<div class="cmpnote">このレースは結果（着順）が記録されていません。</div>' + resBetDetail(x);
   const fin = {};
   rf.forEach((no, i) => { fin[no] = i + 1; });
   const known = new Set(pred.map(h => String(h.no)));
@@ -686,7 +693,39 @@ function resCmpDetail(x) {
   let html = '<table class="cmptable"><thead><tr><th style="text-align:right">予想順位</th><th style="text-align:right">馬番</th><th>馬名</th><th style="text-align:right">結果</th><th style="text-align:right">ズレ</th></tr></thead><tbody>' + trs + '</tbody></table>';
   html += '<div class="cmpnote">ズレ＝予想順位−結果着順（＋は予想より好走）。緑の帯は3着以内。' +
     (top5only ? 'このレースは予想上位5頭のみ記録されています（3着以内に入った未予想の馬は予想「—」で追加表示）。' : '') + '</div>';
-  return html;
+  return html + resBetDetail(x);
+}
+
+/* ===== 各レースの買い目（比較パネル内・精算時の最終買い目） ===== */
+function resBetDetail(x) {
+  const lines = Array.isArray(x.settled_lines) ? x.settled_lines : [];
+  if (!lines.length) return '<div class="bethead">買い目</div><div class="cmpnote">このレースは買い目が記録されていません。</div>';
+  const names = {win: '単勝', quinella: '馬連', wide: 'ワイド', trio: '3連複', trifecta: '3連単', exacta: '馬単', place: '複勝'};
+  const order = ['win', 'quinella', 'wide', 'trio', 'trifecta', 'exacta', 'place'];
+  const groups = new Map();
+  for (const l of lines) {
+    const t = (l && l.type) || '';
+    if (!groups.has(t)) groups.set(t, []);
+    groups.get(t).push(l);
+  }
+  const types = [...groups.keys()].sort((a, b) => {
+    const ia = order.indexOf(a), ib = order.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  let rows = '';
+  for (const t of types) {
+    for (const l of groups.get(t)) {
+      const hs = Array.isArray(l.horses) ? l.horses : [];
+      const combo = hs.join((t === 'trifecta' || t === 'exacta') ? '→' : '-');
+      const hit = l.hit === true;
+      rows += '<tr class="' + (hit ? 'bethit' : 'betmiss') + '"><td>' + esc(names[t] || t) + '</td>' +
+        '<td class="resnum">' + esc(combo) + '</td>' +
+        '<td class="resnum">' + yen(Number(l.stake_yen) || 0) + '</td>' +
+        '<td class="resnum">' + (hit ? '<span class="bethitmark">的中</span> <span class="betret">' + yen(Number(l.return_yen) || 0) + '</span>' : '—') + '</td></tr>';
+    }
+  }
+  return '<div class="bethead">買い目（' + lines.length + '点）</div>' +
+    '<table class="bettable"><thead><tr><th>券種</th><th style="text-align:right">組み合わせ</th><th style="text-align:right">金額</th><th style="text-align:right">払戻</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 /* ===== 結果一覧（投資・回収・損益のみ） ===== */
