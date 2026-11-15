@@ -1,10 +1,10 @@
-
 name: BAGEN Keiba Data Update
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7,22,37,52 * * * *"
+    - cron: "12,27,42,57 * * * *"
 
 permissions:
   contents: write
@@ -36,6 +36,21 @@ jobs:
             pip install -r requirements.txt
           fi
 
+      - name: Settle results first (lightweight)
+        run: python bot.py --settle-only
+
+      - name: Commit settled results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.json docs/history.json
+          if git diff --cached --quiet; then
+            echo "No settlement changes to commit."
+          else
+            git commit -m "Settle BAGEN racing results"
+            git push
+          fi
+
       - name: Run BAGEN prediction engine
         run: python bot.py
 
@@ -44,17 +59,16 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-
           for filename in [
-              "docs/data.json",
-              "docs/history.json",
+            "docs/data.json",
+            "docs/history.json",
           ]:
-              path = Path(filename)
-              if not path.exists():
-                  raise SystemExit(f"Missing file: {filename}")
-              with path.open(encoding="utf-8") as f:
-                  json.load(f)
-              print(f"JSON OK: {filename}")
+            path = Path(filename)
+            if not path.exists():
+              raise SystemExit(f"Missing file: {filename}")
+            with path.open(encoding="utf-8") as f:
+              json.load(f)
+            print(f"JSON OK: {filename}")
           PY
 
       - name: Commit updated data
