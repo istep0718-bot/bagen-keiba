@@ -455,7 +455,7 @@ pedigree_cache を維持する。
 - 結果・払戻の照合を厳密化し、未確認の収支を確定扱いにしない
 - history.json / docs/data.json の既存構造を維持
 """
-import json, math, re, time, html as html_lib
+import json, math, re, sys, time, html as html_lib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -5996,5 +5996,167 @@ def main():
     print("=== FINISHED ===")
 
 
+def _settle_target_reached(race):
+    """settle-only の精算対象判定。通常実行の parse_race と同じ
+    「発走時刻+10分を過ぎたら終了扱い」に、保存済みの is_finished を
+    合わせたもの。発走時刻が取れないレースは対象にしない。"""
+    if race.get("is_finished"):
+        return True
+    post = race.get("post_time")
+    if not isinstance(post, str):
+        return False
+    try:
+        hh, mm = map(int, post.split(":"))
+        scheduled = NOW.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    except ValueError:
+        return False
+    return NOW >= scheduled + timedelta(minutes=10)
+
+
+def main_settle_only():
+    """v34.21 案3: 精算専用の軽量モード（--settle-only）。
+
+    通常実行が生成した docs/data.json の当日レース（買い目・各 shadow
+    買い目を含む完全な race dict）を入力に、終了した未精算レースの
+    結果取得と精算だけを行い、history.json / data.json を通常と同じ
+    形式で書き直す。予測の再生成・近走/人物/血統の取得・prefetch は
+    一切行わないため、通常実行（5〜9分）より大幅に短時間で終わる。
+    ワークフローでは通常実行の前にこのモードを走らせて先にコミット
+    することで、通常実行がタイムアウトしても結果反映だけは先行する。
+
+    state の扱い（通常実行と history.json を共有しても壊れない理由）:
+    - 読み込み→精算したレースのスナップショット更新→保存の順で、
+      通常実行と同じ経路（load_history / update_snapshot /
+      calculate_stats / save_json）を使う。save_json は tmp 経由の
+      原子的書き換え。
+    - キャッシュ類（horse_form_cache / people_cache / pedigree_cache）
+      は読み込んだ値をそのまま保持し、このモードでは上書きしない。
+    - update_snapshot の「精算済みを未精算で上書きしない」ガードが
+      そのまま効くため、通常実行側の精算結果を巻き戻すことはない。
+    - 未精算のまま update_snapshot すると、data.json 由来の古い
+      オッズで odds_snapshots に新しい時刻の点が追加されてしまう。
+      それを防ぐため、精算を試みたレースでは保存後に odds_snapshots
+      を精算前の値へ戻す（オッズ推移は通常実行の新規取得だけで作る）。
+    - backfill_settled_lines（GitHub 履歴からの補完）は軽量パスでは
+      行わない。通常実行が従来どおり担当する。
+    """
+    print(f"=== {ENGINE_VERSION} SETTLE-ONLY START ===")
+    print(f"[INFO] JST now: {NOW.isoformat()}")
+    history = load_history()
+    snapshots = history["snapshots"]
+    # v34.11: 通常実行と同じ会場名の自己修復（メモリ上のみ・軽量）
+    repair_snapshot_venues(snapshots)
+    existing = None
+    if OUT.exists():
+        try:
+            v = json.loads(OUT.read_text(encoding="utf-8"))
+            if isinstance(v, dict):
+                existing = v
+        except Exception as e:
+            warn("settle-only: data.json読み込み失敗のため精算対象なし: "
+                 + type(e).__name__)
+    today_races = []
+    tomorrow_races = []
+    if existing is not None:
+        if existing.get("race_date") == NOW.strftime("%Y-%m-%d"):
+            today_races = existing.get("races") or []
+            tomorrow_races = existing.get("tomorrow_races") or []
+        else:
+            print("[INFO] settle-only: data.json が当日分ではないため"
+                  "精算対象なし（通常実行の生成待ち）")
+    source_by_kind = {s["kind"]: s for s in SOURCES}
+    attempted = 0
+    settled_now = 0
+    for race in today_races:
+        if race.get("settlement_complete"):
+            continue
+        if not _settle_target_reached(race):
+            continue
+        source = source_by_kind.get(race.get("kind"))
+        if source is None:
+            continue
+        attempted += 1
+        try:
+            race = fetch_and_settle_result(race, source)
+        except Exception as e:
+            warn(f"{race.get('id')}: settle-only 結果精算例外 "
+                 + type(e).__name__)
+            continue
+        # 結果（着順）が取れたレースだけスナップショットへ反映する。
+        # 取れなかったレースの状態更新は通常実行の再生成に任せる。
+        if race.get("settlement_complete") or race.get("result_finishes"):
+            rid = str(race["id"])
+            _old_odds_snaps = (snapshots.get(rid) or {}).get("odds_snapshots")
+            update_snapshot(snapshots, race)
+            if not race.get("settlement_complete") and rid in snapshots:
+                snapshots[rid]["odds_snapshots"] = _old_odds_snaps or []
+            if race.get("settlement_complete"):
+                settled_now += 1
+    # 通常実行と同じ保持期間クリーンアップと集計で history を保存する
+    cutoff = (NOW - timedelta(days=RETENTION_DAYS)).date()
+    for rid, item in list(snapshots.items()):
+        try:
+            if datetime.strptime(item.get("date", ""), "%Y-%m-%d").date() < cutoff:
+                del snapshots[rid]
+        except (ValueError, TypeError):
+            pass
+    stats = calculate_stats(snapshots)
+    history.update({
+        "schema_version": 30,
+        "updated_at": NOW.isoformat(),
+        "stats": stats,
+        "snapshots": snapshots,
+    })
+    save_json(HISTORY, history)
+    if existing is not None:
+        verified = sum(1 for r in today_races if r.get("runner_count_verified"))
+        settled = sum(1 for r in today_races if r.get("settlement_complete"))
+        status = "OK" if today_races or tomorrow_races else "NO_RACES"
+        existing.update({
+            "generated_at": NOW.isoformat(),
+            "race_date": NOW.strftime("%Y-%m-%d"),
+            "status": status,
+            "races": today_races,
+            "tomorrow_races": tomorrow_races,
+            "tomorrow_race_count": len(tomorrow_races),
+            "tomorrow_recommended_count": sum(
+                1 for r in tomorrow_races if r.get("is_recommended")),
+            "runner_validation": {
+                **(existing.get("runner_validation") or {}),
+                "today_races": len(today_races),
+                "verified_races": verified,
+                "unverified_races": len(today_races) - verified,
+                "settled_races": settled,
+            },
+            "paper_betting": {
+                "mode": "paper_only",
+                "real_betting_enabled": False,
+                "stats": stats,
+                "history": sorted(
+                    (
+                        x for x in snapshots.values()
+                        if x.get("settlement_complete") is True
+                        and x.get("all_bet_return") is not None
+                        and x.get("race_profit") is not None
+                        and x.get("payout_confirmed", True)
+                    ),
+                    key=lambda x: (x.get("date", ""), x.get("race_id", "")),
+                    reverse=True
+                ),
+            },
+        })
+        save_json(OUT, existing)
+    print(f"{ENGINE_VERSION} SETTLE-ONLY | attempted={attempted} | "
+          f"settled_now={settled_now} | today={len(today_races)} | "
+          f"history={len(snapshots)}")
+    print(f"[INFO] warning_count={len(WARNINGS)}")
+    for msg in WARNINGS:
+        print("[DIAGNOSTIC]", msg)
+    print("=== SETTLE-ONLY FINISHED ===")
+
+
 if __name__ == "__main__":
-    main()
+    if "--settle-only" in sys.argv[1:]:
+        main_settle_only()
+    else:
+        main()
