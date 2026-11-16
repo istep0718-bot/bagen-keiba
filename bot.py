@@ -1,10 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.21_EXPERT
+BAGEN KEIBA v34.22_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.22):
+- HYBRID_SHADOW（選定 shadow）を新設（ユーザー承認 2026-11-17。
+  ChatGPT の次期検証計画を採用）。34.15〜34.18 で前方保存してきた
+  hybrid 特徴量（時計の絶対指数・血統スコア・クラス評価）を統合
+  スコア化し、本番とは別の買い目を shadow として並走させる。
+  本番 34.21 の選定・スコア・信頼度・配分A/B・ゲート・グレードは
+  完全凍結で一切変更しない（変更は shadow 追加と集計まわりのみ）。
+- 統合スコア（hybrid_components）: 主成分は時計指数（中央値優先・
+  偏差値−50）、血統スコア（父＋母父×0.5）、クラス評価（前走クラス
+  と近走ピークの今走クラスとの差×重み）。評価できるのは時計指数
+  または血統スコアを持つ馬のみで、評価済みが3頭未満のレースは
+  買い目を作らない。オッズなし純順位（odds_free_rank）は同点時の
+  比較軸としてのみ使い、校正確率は評価軸として既存の
+  probability_forward で別途測る（統合スコアには混ぜない）。
+  市場乖離は本命で発生0件のため主成分にせず、post_odds の
+  観測枠に留める。
+- 買い目は build_tickets に hybrid 順位を渡して現行パターンA/Bと
+  同一構造で組み立て、本体と同じ settle_tickets で精算し、
+  stats["hybrid_selection"] で本精算（main）とゲート外に分けて、
+  同一レースの本番・stake_shadow・alloc_d と4系統比較できる形で
+  集計する（回収率・損益・最大DD・的中率・中央/地方別・頭数別・
+  券種別）。計測開始は HYBRID_SHADOW_START_DATE（2026-11-17）
+  以降の生成分から。判定は結果確定済みの比較可能標本が
+  HYBRID_SHADOW_TARGET_SAMPLES（200件）に到達してから。
+- データ分離（40MB問題対策）: shadow 累計の軽量サマリを
+  docs/shadow_summary.json に分離保存する（系統別累計＋日次別）。
+  history.json（約66MB）や data.json を丸ごと取得しなくても
+  判定材料を取り出せるようにする。既存の保存形式は壊さない。
 
 改善点 (v34.21):
 - 血統加点（34.14）の影響集計（2026-11-09）で判明したボトルネック
@@ -466,11 +495,14 @@ ROOT = Path(__file__).resolve().parent
 DOCS = ROOT / "docs"
 OUT = DOCS / "data.json"
 HISTORY = DOCS / "history.json"
+# v34.22: shadow 累計の軽量サマリ（系統別・日次別）。判定材料を
+# history.json 本体から分離し、小さいファイルだけで取り出せるようにする
+SHADOW_SUMMARY = DOCS / "shadow_summary.json"
 JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.21_EXPERT"
+ENGINE_VERSION = "BAGEN_34.22_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -572,6 +604,11 @@ ALLOC_D_START_DATE = "2026-11-09"  # 前方計測の開始日（34.19生成分�
 # 決める（stake_shadow_tier）: 最強×4＝超おすすめ×中央、
 # 強×2＝超おすすめ、通常×1＝それ以外（注目レース等）。
 STAKE_SHADOW_START_DATE = "2026-11-09"  # 前方計測の開始日（34.20生成分から）
+# v34.22: HYBRID_SHADOW 選定 shadow（shadow計測専用。本番選定・配分・
+# ゲート・グレードには一切使わない）。主成分は時計指数・血統スコア・
+# クラス評価で、市場乖離は主成分にしない（post_odds の観測のみ）。
+HYBRID_SHADOW_START_DATE = "2026-11-17"  # 前方計測の開始日（34.22生成分から）
+HYBRID_SHADOW_TARGET_SAMPLES = 200      # 判定に必要な比較可能標本数（結果確定済み）
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -3302,6 +3339,107 @@ def build_stake_shadow_tickets(ranked, outsiders, verified, race_grade, kind):
     }]
 
 
+def hybrid_components(h):
+    """v34.22: HYBRID_SHADOW の統合スコア成分（計測専用・本番不使用）。
+    主成分は 34.15〜34.17 で前方保存した特徴量だけから作る:
+      - time_pts: 時計指数の偏差値換算（中央値 time_index_med を優先し、
+        無ければベスト。50 が基準タイム相当なので pts = 値 − 50）
+      - pedigree_pts: 血統スコア（父 sire_score ＋ 母父 damsire_score×0.5。
+        いずれも縮小済みの偏差ポイント）
+      - class_pts: クラス評価。前走クラスとの差×2.0 ＋ 近走ピークとの
+        差×1.0（格上挑戦・降級を今走クラス基準で符号化）
+    時計指数と血統スコアのどちらも無い馬は「未評価」として
+    hybrid_score=None にし、0 点とは書かない（特徴量 Stage 0 と同じ
+    正直さ）。校正確率・市場情報（オッズ・人気・市場乖離）は
+    統合スコアに混ぜない。"""
+    t = h.get("time_index_med")
+    if t is None:
+        t = h.get("time_index_best")
+    time_pts = (round(float(t) - 50.0, 2)
+                if isinstance(t, (int, float)) else None)
+    s, d = h.get("sire_score"), h.get("damsire_score")
+    if s is None and d is None:
+        pedigree_pts = None
+    else:
+        pedigree_pts = round(
+            (float(s) if isinstance(s, (int, float)) else 0.0)
+            + 0.5 * (float(d) if isinstance(d, (int, float)) else 0.0), 2)
+    today = h.get("today_class_rank")
+    prev = h.get("prev_class_rank")
+    peak = h.get("peak_class_rank")
+    if today is None or (prev is None and peak is None):
+        class_pts = None
+    else:
+        class_pts = 0.0
+        if prev is not None:
+            class_pts += 2.0 * (prev - today)
+        if peak is not None:
+            class_pts += 1.0 * (peak - today)
+        class_pts = round(class_pts, 2)
+    evaluated = time_pts is not None or pedigree_pts is not None
+    total = (round((time_pts or 0.0) + (pedigree_pts or 0.0)
+                   + (class_pts or 0.0), 2) if evaluated else None)
+    return {"time_pts": time_pts, "pedigree_pts": pedigree_pts,
+            "class_pts": class_pts, "hybrid_score": total,
+            "hybrid_evaluated": evaluated}
+
+
+def build_hybrid_shadow(ranked, verified):
+    """v34.22: HYBRID_SHADOW の買い目とメタ（計測専用・本番不使用）。
+    hybrid 統合スコアで全出走馬を並べ替え（評価済みを先、未評価は
+    odds_free_rank 順で後ろ）、現行パターンA/Bと同一構造の買い目を
+    build_tickets で組み立てる。穴候補の定義は本番の実オッズ帯
+    （10〜30倍）と同一にし、hybrid 順位の中で拾う。
+    評価済み（時計指数または血統スコアあり）が3頭未満のレースは
+    統合選定と呼べないため買い目を作らず、理由をメタに残す。
+    戻り値は (tickets, meta)。"""
+    meta = {"evaluated_horses": 0, "top": [], "reason": None}
+    if not verified or len(ranked) < 3:
+        meta["reason"] = "出走頭数未検証または3頭未満"
+        return [], meta
+    comps = {h["horse_no"]: hybrid_components(h) for h in ranked}
+    evaluated = [h for h in ranked
+                 if comps[h["horse_no"]]["hybrid_evaluated"]]
+    meta["evaluated_horses"] = len(evaluated)
+    if len(evaluated) < 3:
+        meta["reason"] = "特徴量で評価できる馬が3頭未満"
+        return [], meta
+
+    def _key(h):
+        c = comps[h["horse_no"]]
+        return (0 if c["hybrid_evaluated"] else 1,
+                -(c["hybrid_score"] or 0.0),
+                h.get("odds_free_rank") or 999,
+                h["horse_no"])
+
+    hranked = sorted(ranked, key=_key)
+    outsiders = [h for h in hranked
+                 if h.get("odds") is not None and 10 <= h["odds"] < 30]
+    tickets = build_tickets(hranked, outsiders, verified)
+    if not tickets:
+        meta["reason"] = "買い目を組み立てられなかった"
+        return [], meta
+    tickets[0]["pattern"] = (
+        f"HYBRID_SHADOW（時計・血統・クラス統合／"
+        f"パターン{tickets[0].get('pattern_type')}）")
+    tickets[0]["note"] = (
+        "v34.22 HYBRID_SHADOW。時計指数・血統スコア・クラス評価の"
+        "統合スコア順位で組み立てた shadow 買い目。買い目の構造と"
+        "総額は現行パターンA/Bと同一。本番の選定・配分には一切"
+        "使用しない計測専用で実購入禁止。")
+    meta["top"] = [
+        {"horse_no": h["horse_no"],
+         "hybrid_score": comps[h["horse_no"]]["hybrid_score"],
+         "time_pts": comps[h["horse_no"]]["time_pts"],
+         "pedigree_pts": comps[h["horse_no"]]["pedigree_pts"],
+         "class_pts": comps[h["horse_no"]]["class_pts"],
+         "odds_free_rank": h.get("odds_free_rank"),
+         "production_rank": h.get("rank")}
+        for h in hranked[:5]
+    ]
+    return tickets, meta
+
+
 def combo_key(horses, ordered=False):
     return "-".join(map(str, horses if ordered else sorted(horses)))
 
@@ -3582,6 +3720,12 @@ def fetch_and_settle_result(race, source):
             if race.get("stake_shadow"):
                 race["stake_shadow_settlement"] = settle_tickets(
                     race.get("stake_shadow") or [], finishes, payouts)
+            # v34.22: HYBRID_SHADOW も本体と同じ精算経路（settle_tickets）
+            # で精算し、本番・既存 shadow と同一レースで比較できるように
+            # する。買い目が無いレースでは None のまま。
+            if race.get("hybrid_shadow_tickets"):
+                race["hybrid_shadow_settlement"] = settle_tickets(
+                    race.get("hybrid_shadow_tickets") or [], finishes, payouts)
             # v34.16: pool shadow 計測用に、実際の3着内組み合わせの
             # 3連複配当（100円あたり）を保存する。仮想ラインの払戻
             # 計算に使う計測専用の値で、本体の精算には使わない。
@@ -3806,6 +3950,11 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
             _h["class_drop"] = None
         else:
             _h["class_drop"] = _today_class_rank < _pc
+    # v34.22: HYBRID_SHADOW の買い目（時計・血統・クラスの統合選定。
+    # クラス特徴量の付与が終わった後に組み立てる）。本番の買い目・
+    # 配分・選定には一切使わない。
+    hybrid_shadow_tickets, hybrid_shadow_meta = build_hybrid_shadow(
+        ranked, verified)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -3850,6 +3999,11 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         # v34.20: 金額の強弱 shadow（買い目と精算結果。計測専用）
         "stake_shadow": stake_shadow,
         "stake_shadow_settlement": None,
+        # v34.22: HYBRID_SHADOW（統合選定の買い目・成分メタ・精算結果。
+        # shadow計測専用で本番には一切使わない）
+        "hybrid_shadow_tickets": hybrid_shadow_tickets,
+        "hybrid_shadow_meta": hybrid_shadow_meta,
+        "hybrid_shadow_settlement": None,
         # v34.15: hybrid 特徴量のレース単位メタ（shadow計測専用）
         "hybrid_features": hybrid_meta,
         "race_recommendation_reasons": reasons,
@@ -4504,6 +4658,10 @@ def update_snapshot(snapshots, race):
         # v34.20: 金額の強弱 shadow（買い目と精算結果を保存。計測専用）
         "stake_shadow": race.get("stake_shadow") or old.get("stake_shadow") or [],
         "stake_shadow_settlement": race.get("stake_shadow_settlement") or old.get("stake_shadow_settlement"),
+        # v34.22: HYBRID_SHADOW（買い目・成分メタ・精算結果を保存。計測専用）
+        "hybrid_shadow_tickets": race.get("hybrid_shadow_tickets") or old.get("hybrid_shadow_tickets") or [],
+        "hybrid_shadow_meta": race.get("hybrid_shadow_meta") or old.get("hybrid_shadow_meta"),
+        "hybrid_shadow_settlement": race.get("hybrid_shadow_settlement") or old.get("hybrid_shadow_settlement"),
         # v34.15: hybrid 特徴量のレース単位メタ（テーブル版・全出走馬中の
         # 時計指数1位）。shadow計測専用で選定には使わない
         "hybrid_features": race.get("hybrid_features") or old.get("hybrid_features"),
@@ -5478,6 +5636,179 @@ def calculate_stats(snapshots):
                  "参考ROIは post_odds と同じ別枠の考え方で、最終オッズ"
                  "（last_odds）から算出した単勝の仮想成績。"),
     }
+
+    # v34.22: HYBRID_SHADOW（選定 shadow）の集計。対象は
+    # HYBRID_SHADOW_START_DATE 以降に hybrid_shadow_tickets が保存され
+    # 精算完了したレース。本精算（main）とゲート外（gate_out）に分け、
+    # 同一レースの本番実績と回収率・損益・最大DD・的中率で並走比較する。
+    # あわせて、4系統（本番／stake_shadow／alloc_d／HYBRID_SHADOW）の
+    # 精算が全て揃った同一レースだけの比較表も作る（11月下旬の判定用）。
+    def _shadow_curve_dd(rows, stake_fn, ret_fn):
+        ordered = sorted(rows, key=lambda x: (
+            str(x.get("date") or ""), str(x.get("post_time") or ""),
+            str(x.get("race_id") or "")))
+        cum = peak = dd = 0
+        for x in ordered:
+            cum += ret_fn(x) - stake_fn(x)
+            peak = max(peak, cum)
+            dd = max(dd, peak - cum)
+        return dd
+
+    def _sys_agg(rows, stake_fn, ret_fn):
+        if not rows:
+            return {"races": 0}
+        stake = sum(stake_fn(x) for x in rows)
+        ret = sum(ret_fn(x) for x in rows)
+        hits = sum(1 for x in rows if ret_fn(x) > 0)
+        return {
+            "races": len(rows), "hit_races": hits,
+            "hit_rate_pct": round(hits / len(rows) * 100, 1) if rows else 0.0,
+            "stake_yen": stake, "return_yen": ret,
+            "profit_yen": ret - stake, "roi_pct": (
+                round(ret / stake * 100, 1) if stake else 0.0),
+            "max_dd_yen": _shadow_curve_dd(rows, stake_fn, ret_fn),
+        }
+
+    def _main_stake(x):
+        return safe_int(x.get("cost"), 0)
+
+    def _main_ret(x):
+        return safe_int(x.get("all_bet_return"), 0)
+
+    def _tk_stake(key):
+        return lambda x: safe_int(
+            ((x.get(key) or [{}])[0]).get("cost_yen"), 0)
+
+    def _st_ret(skey):
+        return lambda x: safe_int(
+            (x.get(skey) or {}).get("all_bet_return"), 0)
+
+    def _shadow_settled_rows(rows, key, skey, start):
+        out = []
+        for x in rows:
+            if str(x.get("date") or "") < start:
+                continue
+            if not (x.get(key) or []):
+                continue
+            st = x.get(skey) or {}
+            if not st.get("settlement_complete"):
+                continue
+            if st.get("all_bet_return") is None:
+                continue
+            out.append(x)
+        return out
+
+    def _hybrid_bet_types(rows):
+        per = {}
+        for x in rows:
+            st = x.get("hybrid_shadow_settlement") or {}
+            for ln in st.get("settled_lines") or []:
+                if not isinstance(ln, dict):
+                    continue
+                e = per.setdefault(ln.get("type") or "?", {
+                    "lines": 0, "hit_lines": 0, "stake_yen": 0,
+                    "return_yen": 0})
+                e["lines"] += 1
+                e["hit_lines"] += 1 if ln.get("hit") is True else 0
+                e["stake_yen"] += safe_int(ln.get("stake_yen"), 0)
+                e["return_yen"] += safe_int(ln.get("return_yen"), 0)
+        for e in per.values():
+            e["roi_pct"] = (round(e["return_yen"] / e["stake_yen"] * 100, 1)
+                            if e["stake_yen"] else 0.0)
+            e["hit_rate_pct"] = (
+                round(e["hit_lines"] / e["lines"] * 100, 1)
+                if e["lines"] else 0.0)
+        return per
+
+    def _runner_band(x):
+        rc = x.get("runner_count")
+        if not isinstance(rc, int):
+            return "頭数不明"
+        if rc <= 8:
+            return "8頭以下"
+        if rc <= 12:
+            return "9-12頭"
+        return "13頭以上"
+
+    _hybrid_rows_all = _shadow_settled_rows(
+        settled_all, "hybrid_shadow_tickets", "hybrid_shadow_settlement",
+        HYBRID_SHADOW_START_DATE)
+    _hybrid_rows_main = [x for x in _hybrid_rows_all
+                         if x.get("bet_eligible") is not False]
+    _hybrid_rows_gate = [x for x in _hybrid_rows_all
+                         if x.get("bet_eligible") is False]
+
+    def _hybrid_track_sel(rows):
+        if not rows:
+            return {"races": 0}
+        return {
+            "hybrid": _sys_agg(rows, _tk_stake("hybrid_shadow_tickets"),
+                               _st_ret("hybrid_shadow_settlement")),
+            "actual_same_races": _sys_agg(rows, _main_stake, _main_ret),
+            "by_kind": {
+                k: {
+                    "hybrid": _sys_agg(
+                        [x for x in rows if x.get("kind") == k],
+                        _tk_stake("hybrid_shadow_tickets"),
+                        _st_ret("hybrid_shadow_settlement")),
+                    "actual_same_races": _sys_agg(
+                        [x for x in rows if x.get("kind") == k],
+                        _main_stake, _main_ret),
+                } for k in ("中央", "地方")
+            },
+            "by_runner_band": {
+                band: _sys_agg(
+                    [x for x in rows if _runner_band(x) == band],
+                    _tk_stake("hybrid_shadow_tickets"),
+                    _st_ret("hybrid_shadow_settlement"))
+                for band in ("8頭以下", "9-12頭", "13頭以上", "頭数不明")
+            },
+            "by_bet_type": _hybrid_bet_types(rows),
+        }
+
+    # 4系統の精算が全て揃った同一レース（本精算のみ）の比較表
+    _cmp_rows = [
+        x for x in _hybrid_rows_main
+        if _shadow_settled_rows([x], "stake_shadow",
+                                "stake_shadow_settlement",
+                                STAKE_SHADOW_START_DATE)
+        and _shadow_settled_rows([x], "alloc_d", "alloc_d_settlement",
+                                 ALLOC_D_START_DATE)
+    ]
+    hybrid_selection = {
+        "main": _hybrid_track_sel(_hybrid_rows_main),
+        "gate_out": _hybrid_track_sel(_hybrid_rows_gate),
+        "comparison_same_races": {
+            "races": len(_cmp_rows),
+            "main": _sys_agg(_cmp_rows, _main_stake, _main_ret),
+            "stake_shadow": _sys_agg(_cmp_rows, _tk_stake("stake_shadow"),
+                                     _st_ret("stake_shadow_settlement")),
+            "alloc_d": _sys_agg(_cmp_rows, _tk_stake("alloc_d"),
+                                _st_ret("alloc_d_settlement")),
+            "hybrid": _sys_agg(_cmp_rows, _tk_stake("hybrid_shadow_tickets"),
+                               _st_ret("hybrid_shadow_settlement")),
+        },
+        "samples": {
+            "generated_races": sum(
+                1 for x in items
+                if str(x.get("date") or "") >= HYBRID_SHADOW_START_DATE
+                and (x.get("hybrid_shadow_tickets") or [])),
+            "settled_comparable_main": len(_hybrid_rows_main),
+            "settled_comparable_gate_out": len(_hybrid_rows_gate),
+            "target": HYBRID_SHADOW_TARGET_SAMPLES,
+            "feature_races_with_features": (
+                hybrid_shadow["main"].get("races_with_features", 0)
+                + hybrid_shadow["shadow"].get("races_with_features", 0)),
+        },
+        "start_date": HYBRID_SHADOW_START_DATE,
+        "note": ("時計指数・血統スコア・クラス評価の統合スコアで選定した"
+                 " shadow 買い目（買い目構造・総額は現行パターンA/Bと同一）。"
+                 "本番の選定・配分には使用していない。市場乖離は主成分に"
+                 "含めず post_odds で観測のみ。判定は結果確定済みの"
+                 "比較可能標本（本精算）が target 件に到達してから、"
+                 "回収率改善幅と最大DDの両面で行う。対象は "
+                 + HYBRID_SHADOW_START_DATE + " 以降の生成分のみ。"),
+    }
     # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）。
     # 34.16 で保存を始めた last_top6（発走前の最終生成の上位6頭）と
     # trio_payout（実際の3着内組み合わせの3連複配当）を使い、本精算の
@@ -5715,6 +6046,8 @@ def calculate_stats(snapshots):
         "trifecta_challenge": trifecta_challenge_stats,
         # v34.15: hybrid 特徴量（時計指数・血統スコア）の shadow 計測
         "hybrid_shadow": hybrid_shadow,
+        # v34.22: HYBRID_SHADOW（統合選定 shadow・本番/既存shadowとの並走比較）
+        "hybrid_selection": hybrid_selection,
         # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）
         "pool_shadow": pool_shadow_stats,
         # v34.17: 本精算の 中央×芝／中央×ダート／地方 分割集計（報告専用）
@@ -5734,6 +6067,140 @@ def calculate_stats(snapshots):
             "post_odds はオッズ判明後の参考分析で、選定には使用していない。"),
     }
 
+
+
+def build_shadow_summary(snapshots, stats):
+    """v34.22: shadow 累計の軽量サマリ（docs/shadow_summary.json 用）。
+    history.json（約66MB）や data.json を丸ごと取得しなくても、判定に
+    必要な系統別累計（回収率・損益・最大DD）と日次集計だけを小さい
+    ファイルで取り出せるようにするための分離保存。包含条件は
+    calculate_stats と同一（払戻確認済みの精算完了レースのみ）。
+    既存の保存形式（全レース詳細）には一切触れない。"""
+    items = list(snapshots.values())
+    settled_all = [
+        x for x in items
+        if x.get("settlement_complete") is True
+        and x.get("all_bet_return") is not None
+        and x.get("race_profit") is not None
+        and x.get("payout_confirmed", True)
+    ]
+    main_rows = [x for x in settled_all if x.get("bet_eligible") is not False]
+
+    def _dd(rows, stake_fn, ret_fn):
+        ordered = sorted(rows, key=lambda x: (
+            str(x.get("date") or ""), str(x.get("post_time") or ""),
+            str(x.get("race_id") or "")))
+        cum = peak = dd = 0
+        for x in ordered:
+            cum += ret_fn(x) - stake_fn(x)
+            peak = max(peak, cum)
+            dd = max(dd, peak - cum)
+        return dd
+
+    def _agg(rows, stake_fn, ret_fn, with_dd=True):
+        if not rows:
+            return {"races": 0}
+        stake = sum(stake_fn(x) for x in rows)
+        ret = sum(ret_fn(x) for x in rows)
+        out = {
+            "races": len(rows),
+            "stake_yen": stake, "return_yen": ret,
+            "profit_yen": ret - stake,
+            "roi_pct": round(ret / stake * 100, 1) if stake else 0.0,
+        }
+        if with_dd:
+            out["max_dd_yen"] = _dd(rows, stake_fn, ret_fn)
+        return out
+
+    def _rows(key, skey, start, base):
+        out = []
+        for x in base:
+            if str(x.get("date") or "") < start:
+                continue
+            if not (x.get(key) or []):
+                continue
+            st = x.get(skey) or {}
+            if not st.get("settlement_complete"):
+                continue
+            if st.get("all_bet_return") is None:
+                continue
+            out.append(x)
+        return out
+
+    systems_def = {
+        "main": (main_rows,
+                 lambda x: safe_int(x.get("cost"), 0),
+                 lambda x: safe_int(x.get("all_bet_return"), 0)),
+        "stake_shadow": (
+            _rows("stake_shadow", "stake_shadow_settlement",
+                  STAKE_SHADOW_START_DATE, main_rows),
+            lambda x: safe_int(
+                ((x.get("stake_shadow") or [{}])[0]).get("cost_yen"), 0),
+            lambda x: safe_int(
+                (x.get("stake_shadow_settlement") or {}).get(
+                    "all_bet_return"), 0)),
+        "alloc_d": (
+            _rows("alloc_d", "alloc_d_settlement",
+                  ALLOC_D_START_DATE, main_rows),
+            lambda x: safe_int(
+                ((x.get("alloc_d") or [{}])[0]).get("cost_yen"), 0),
+            lambda x: safe_int(
+                (x.get("alloc_d_settlement") or {}).get(
+                    "all_bet_return"), 0)),
+        "hybrid_selection": (
+            _rows("hybrid_shadow_tickets", "hybrid_shadow_settlement",
+                  HYBRID_SHADOW_START_DATE, main_rows),
+            lambda x: safe_int(
+                ((x.get("hybrid_shadow_tickets") or [{}])[0]).get(
+                    "cost_yen"), 0),
+            lambda x: safe_int(
+                (x.get("hybrid_shadow_settlement") or {}).get(
+                    "all_bet_return"), 0)),
+    }
+    systems = {}
+    daily = {}
+    for name, (rows, sf, rf) in systems_def.items():
+        systems[name] = _agg(rows, sf, rf)
+        for x in rows:
+            d = str(x.get("date") or "")
+            e = daily.setdefault(d, {}).setdefault(
+                name, {"races": 0, "stake_yen": 0, "return_yen": 0})
+            e["races"] += 1
+            e["stake_yen"] += sf(x)
+            e["return_yen"] += rf(x)
+    for day in daily.values():
+        for e in day.values():
+            e["roi_pct"] = (round(e["return_yen"] / e["stake_yen"] * 100, 1)
+                            if e["stake_yen"] else 0.0)
+    hs = (stats or {}).get("hybrid_selection") or {}
+    samples = hs.get("samples") or {}
+    return {
+        "generated_at": NOW.isoformat(),
+        "engine_version": ENGINE_VERSION,
+        "systems": systems,
+        "daily": dict(sorted(daily.items())),
+        "samples": {
+            "hybrid_selection_generated": samples.get("generated_races", 0),
+            "hybrid_selection_settled_comparable_main": samples.get(
+                "settled_comparable_main", 0),
+            "hybrid_selection_target": HYBRID_SHADOW_TARGET_SAMPLES,
+            "hybrid_feature_races_with_features": samples.get(
+                "feature_races_with_features", 0),
+        },
+        "note": ("判定用の軽量サマリ。包含条件は calculate_stats と同一"
+                 "（払戻確認済みの精算完了レースのみ）。系統別累計は"
+                 "各 shadow の計測開始日以降・本精算レースが対象。"
+                 "全レース詳細は従来どおり history.json / data.json に保存。"),
+    }
+
+
+def write_shadow_summary(snapshots, stats):
+    """v34.22: 軽量サマリの書き出し。失敗しても本処理は止めない。"""
+    try:
+        save_json(SHADOW_SUMMARY, build_shadow_summary(snapshots, stats))
+        print("[INFO] shadow_summary.json を書き出しました")
+    except Exception as e:
+        warn(f"shadow_summary 書き出し失敗: {type(e).__name__}")
 
 
 # v34.4: settled_lines が保存されていなかった期間（2026-10-28〜31）の埋め戻し。
@@ -5855,6 +6322,8 @@ def main():
         "pedigree_cache": PEDIGREE_CACHE,
     })
     save_json(HISTORY, history)
+    # v34.22: shadow 累計の軽量サマリを分離保存（判定用・小さいファイル）
+    write_shadow_summary(snapshots, stats)
     verified = sum(1 for r in today_races if r.get("runner_count_verified"))
     settled = sum(1 for r in today_races if r.get("settlement_complete"))
     # v34.21: 当日出走馬の生成時点の父名解決率（data_quality 用）
@@ -6108,6 +6577,8 @@ def main_settle_only():
         "snapshots": snapshots,
     })
     save_json(HISTORY, history)
+    # v34.22: shadow 累計の軽量サマリを分離保存（判定用・小さいファイル）
+    write_shadow_summary(snapshots, stats)
     if existing is not None:
         verified = sum(1 for r in today_races if r.get("runner_count_verified"))
         settled = sum(1 for r in today_races if r.get("settlement_complete"))
