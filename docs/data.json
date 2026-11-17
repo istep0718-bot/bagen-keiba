@@ -1,7 +1,7 @@
 {
   "site": "BAGEN KEIBA",
   "engine_version": "BAGEN_34.21_EXPERT",
-  "generated_at": "2026-11-17T08:31:11.591749+09:00",
+  "generated_at": "2026-11-17T09:01:03.785774+09:00",
   "race_date": "2026-11-17",
   "status": "OK",
   "warnings": [
@@ -455637,6 +455637,38 @@
           }
         },
         "note": "時計指数と血統スコアは hybrid_features として前方保存した計測専用の特徴量で、本番の選定・スコア・信頼度・配分・ゲート・グレードには使用していない。特徴量つきレースが200件貯まるまで良し悪しの判定をしない。血統スコア帯域の参考ROIは post_odds と同じ別枠の考え方で、最終オッズ（last_odds）から算出した単勝の仮想成績。"
+      },
+      "hybrid_selection": {
+        "main": {
+          "races": 0
+        },
+        "gate_out": {
+          "races": 0
+        },
+        "comparison_same_races": {
+          "races": 0,
+          "main": {
+            "races": 0
+          },
+          "stake_shadow": {
+            "races": 0
+          },
+          "alloc_d": {
+            "races": 0
+          },
+          "hybrid": {
+            "races": 0
+          }
+        },
+        "samples": {
+          "generated_races": 0,
+          "settled_comparable_main": 0,
+          "settled_comparable_gate_out": 0,
+          "target": 200,
+          "feature_races_with_features": 357
+        },
+        "start_date": "2026-11-17",
+        "note": "時計指数・血統スコア・クラス評価の統合スコアで選定した shadow 買い目（買い目構造・総額は現行パターンA/Bと同一）。本番の選定・配分には使用していない。市場乖離は主成分に含めず post_odds で観測のみ。判定は結果確定済みの比較可能標本（本精算）が target 件に到達してから、回収率改善幅と最大DDの両面で行う。対象は 2026-11-17 以降の生成分のみ。"
       },
       "pool_shadow": {
         "current": {
