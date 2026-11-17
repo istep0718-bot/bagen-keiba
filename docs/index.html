@@ -216,6 +216,16 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 .tabbar::-webkit-scrollbar{display:none}
 .ptab{flex:1 0 auto;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-soft);background:rgba(17,27,44,.75);border-radius:11px;padding:9px 13px;font-size:12.5px;letter-spacing:.6px;color:var(--text);cursor:pointer;font:inherit;transition:border-color .2s,background .2s,color .2s,box-shadow .2s;-webkit-tap-highlight-color:rgba(233,199,103,.25)}
 .ptab.active{border-color:rgba(255,243,196,.7);background:linear-gradient(135deg,#ffedb0,#d9ab3c);color:#1d1503;font-weight:800;box-shadow:0 4px 16px rgba(233,199,103,.35)}
+/* 裏モード */
+.uratable td,.uratable th{white-space:nowrap}
+.uratable .sysname{font-weight:800}
+.uratable .plus{color:var(--green);font-weight:800}
+.uratable .minus{color:var(--red);font-weight:800}
+.urabar{height:14px;background:rgba(255,255,255,.08);border-radius:7px;overflow:hidden}
+.urabar>div{height:100%;border-radius:7px}
+.uralegend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px;font-size:12px}
+.uralegend .chip{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.urasvg{width:100%;height:auto;display:block}
 .tabbadge{display:inline-grid;place-items:center;min-width:19px;height:19px;padding:0 5px;margin-left:6px;border-radius:999px;background:#d94050;color:#fff;font-weight:900;font-size:10.5px;line-height:1;box-shadow:0 2px 8px rgba(217,64,80,.5);font-variant-numeric:tabular-nums}
 .searchrow{margin:11px 0 4px}
 .searchbox{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:rgba(10,16,28,.75);border-radius:12px;padding:0 6px 0 12px;transition:border-color .2s,box-shadow .2s}
@@ -243,6 +253,7 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <button class="ptab" type="button" data-tab="super">超おすすめ<span class="tabbadge" id="superTabBadge" style="display:none">0</span></button>
 <button class="ptab" type="button" data-tab="races">レース</button>
 <button class="ptab" type="button" data-tab="results">結果一覧</button>
+<button class="ptab" type="button" data-tab="ura">裏モード</button>
 <button class="ptab" type="button" data-tab="quality">データ状況</button>
 </nav>
 </header>
@@ -431,6 +442,28 @@ ul.reasons li{margin:2.5px 0;overflow-wrap:anywhere}
 <button class="btn" id="resNext" type="button">次へ →</button>
 </div>
 <p class="small" style="margin-top:8px">精算完了レースのみ・新しい順・1ページ50件</p>
+</div>
+</section>
+
+<section data-panel="ura" style="display:none">
+<div class="sectionhead"><h2>裏モード（shadow計測）</h2><span class="small" id="uraUpdated">—</span></div>
+<p class="small">裏で計測専用に回している系統の成績です。本番の選定・配分には使っていません。いずれも紙上検証（ペーパー）です。</p>
+<div class="panel">
+<div class="tablewrap"><table class="uratable" style="min-width:0">
+<thead><tr><th>系統</th><th style="text-align:right">レース</th><th style="text-align:right">投資</th><th style="text-align:right">払戻</th><th style="text-align:right">損益</th><th style="text-align:right">回収率</th><th style="text-align:right">最大DD</th></tr></thead>
+<tbody id="uraBody"></tbody>
+</table></div>
+<p class="small" id="uraTableNote" style="margin-top:8px"></p>
+</div>
+<div class="sectionhead"><h2>回収率の比較</h2><span class="small">100%＝損益ゼロのライン</span></div>
+<div class="panel"><div id="uraRoiChart"></div></div>
+<div class="sectionhead"><h2>HYBRID_SHADOW 標本の進捗</h2><span class="small">比較可能標本（精算済み）／目標200件</span></div>
+<div class="panel"><div id="uraHybrid"></div></div>
+<div class="sectionhead"><h2>累積損益の推移</h2><span class="small">日次・精算履歴から集計</span></div>
+<div class="panel">
+<div id="uraLineChart"></div>
+<div class="uralegend" id="uraLegend"></div>
+<p class="small" id="uraNote" style="margin-top:8px"></p>
 </div>
 </section>
 
@@ -988,6 +1021,7 @@ function switchTab(tab) {
   applyTab();
   if (tab === 'top') { chartRetryCount = 0; maybeRenderCharts(); }
   if (tab === 'results') renderResults();
+  if (tab === 'ura') renderUra();
 }
 
 /* Chart.js は非表示コンテナ内で初期化するとサイズが崩れるための保険:
@@ -997,6 +1031,177 @@ function maybeRenderCharts() {
   if (ACTIVE_TAB !== 'top') return;
   if (typeof Chart !== 'undefined' && typeof renderCharts === 'function') { chartRetryCount = 0; renderCharts(); }
   else if (chartRetryCount < 75) { chartRetryCount++; setTimeout(maybeRenderCharts, 80); }
+}
+
+/* ===== 裏モード（shadow計測） ===== */
+const URA_SYS = [
+  {key:'prod',   name:'本番（34.22）',   color:'#e9c767'},
+  {key:'stake',  name:'stake_shadow',   color:'#5ee4a8'},
+  {key:'alloc',  name:'alloc_d',        color:'#6cb4ff'},
+  {key:'hybrid', name:'HYBRID_SHADOW',  color:'#ff9f68'}
+];
+
+function uraSettleStake(s) {
+  if (!s || !Array.isArray(s.settled_lines)) return 0;
+  return s.settled_lines.reduce((a, l) => a + (Number(l && l.stake_yen) || 0), 0);
+}
+
+/* 精算履歴から系統別の「日次累積損益」と「最大DD（レース順）」を作る。
+   対象は裏系統と同一条件（ゲート内＝bet_eligible の精算済みレース）。
+   stake/alloc/hybrid の累計は stats の公表値と一致することを確認済み。 */
+function uraSeries() {
+  const hist = Array.isArray(DATA && DATA.paper_betting && DATA.paper_betting.history) ? DATA.paper_betting.history : [];
+  const fields = {stake:'stake_shadow_settlement', alloc:'alloc_d_settlement', hybrid:'hybrid_shadow_settlement'};
+  const races = {prod:[], stake:[], alloc:[], hybrid:[]};
+  for (const x of hist) {
+    if (!x || x.bet_eligible !== true || !x.settlement_complete) continue;
+    races.prod.push({date:x.date, time:String(x.post_time || ''), profit:Number(x.race_profit) || 0});
+    for (const k of Object.keys(fields)) {
+      const s = x[fields[k]];
+      if (s && s.settlement_complete && uraSettleStake(s) > 0) {
+        races[k].push({date:x.date, time:String(x.post_time || ''), profit:Number(s.race_profit) || 0});
+      }
+    }
+  }
+  const out = {dates:[], daily:{}, dd:{}, total:{}};
+  const dateSet = new Set();
+  for (const k of Object.keys(races)) {
+    races[k].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
+    let cum = 0, peak = 0, dd = 0;
+    const perDay = new Map();
+    for (const r of races[k]) {
+      cum += r.profit;
+      if (cum > peak) peak = cum;
+      if (peak - cum > dd) dd = peak - cum;
+      perDay.set(r.date, cum);
+      dateSet.add(r.date);
+    }
+    out.daily[k] = perDay;
+    out.dd[k] = dd;
+    out.total[k] = cum;
+  }
+  out.dates = [...dateSet].sort();
+  return out;
+}
+
+function uraLineChartSvg(series) {
+  const W = 720, H = 300, PL = 64, PR = 10, PT = 12, PB = 26;
+  const dates = series.dates;
+  if (!dates.length) return '<p class="small">推移データがまだありません。</p>';
+  let lo = 0, hi = 0;
+  for (const sys of URA_SYS) {
+    for (const v of series.daily[sys.key].values()) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  }
+  if (hi === lo) { hi = lo + 1; }
+  const pad = (hi - lo) * 0.08; hi += pad; lo -= pad;
+  const xi = d => PL + (dates.length === 1 ? (W - PL - PR) / 2 : (dates.indexOf(d) / (dates.length - 1)) * (W - PL - PR));
+  const y = v => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
+  let s = '<svg class="urasvg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="累積損益の推移グラフ">';
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = lo + (hi - lo) * i / ticks;
+    const yy = y(v);
+    s += '<line x1="' + PL + '" y1="' + yy + '" x2="' + (W - PR) + '" y2="' + yy + '" stroke="rgba(255,255,255,.10)" stroke-width="1"/>';
+    s += '<text x="' + (PL - 6) + '" y="' + (yy + 4) + '" fill="#9fb0c9" font-size="11" text-anchor="end">' + Math.round(v / 1000) + 'k</text>';
+  }
+  s += '<line x1="' + PL + '" y1="' + y(0) + '" x2="' + (W - PR) + '" y2="' + y(0) + '" stroke="rgba(255,255,255,.4)" stroke-width="1"/>';
+  const labelDates = [...new Set([dates[0], dates[Math.floor(dates.length / 2)], dates[dates.length - 1]])];
+  for (const d of labelDates) {
+    s += '<text x="' + xi(d) + '" y="' + (H - 6) + '" fill="#9fb0c9" font-size="11" text-anchor="middle">' + esc(String(d).slice(5).replace('-', '/')) + '</text>';
+  }
+  for (const sys of URA_SYS) {
+    const perDay = series.daily[sys.key];
+    if (!perDay.size) continue;
+    const days = [...perDay.keys()].sort();
+    let pts = days.map(d => xi(d).toFixed(1) + ',' + y(perDay.get(d)).toFixed(1));
+    const firstDay = days[0];
+    if (dates.indexOf(firstDay) > 0) {
+      const prev = dates[dates.indexOf(firstDay) - 1];
+      pts = [xi(prev).toFixed(1) + ',' + y(0).toFixed(1)].concat(pts);
+    } else {
+      pts = [xi(firstDay).toFixed(1) + ',' + y(0).toFixed(1)].concat(pts);
+    }
+    if (pts.length === 1 || days.length === 1) {
+      s += '<circle cx="' + xi(days[days.length - 1]) + '" cy="' + y(perDay.get(days[days.length - 1])) + '" r="4.5" fill="' + sys.color + '"/>';
+    }
+    s += '<polyline fill="none" stroke="' + sys.color + '" stroke-width="2.2" stroke-linejoin="round" points="' + pts.join(' ') + '"/>';
+    const lastD = days[days.length - 1];
+    s += '<circle cx="' + xi(lastD) + '" cy="' + y(perDay.get(lastD)) + '" r="3.2" fill="' + sys.color + '"/>';
+  }
+  s += '</svg>';
+  return s;
+}
+
+function renderUra() {
+  const body = $('uraBody');
+  if (!body) return;
+  const pb = (DATA && DATA.paper_betting) || {};
+  const st = pb.stats || {};
+  const series = uraSeries();
+  $('uraUpdated').textContent = '更新 ' + (DATA.generated_at || '時刻不明');
+
+  const ss = st.stake_shadow || {};
+  const ad = (st.alloc_d || {}).main || {};
+  const adOut = (st.alloc_d || {}).gate_out || {};
+  const hy = ((st.hybrid_selection || {}).main || {}).hybrid || {};
+  const hyBand = ((st.hybrid_selection || {}).main || {}).by_runner_band || {};
+  const hyFeat = ((st.hybrid_shadow || {}).main || {});
+
+  const rows = [
+    {name:'本番（34.22）', color:'#e9c767', races:st.all_bet_settled_races, stake:st.all_bet_stake_yen, ret:st.all_bet_return_yen,
+     profit:(has(st.all_bet_return_yen) && has(st.all_bet_stake_yen)) ? st.all_bet_return_yen - st.all_bet_stake_yen : null,
+     roi:st.all_bet_roi_pct, dd:series.dd.prod, ddNote:'※'},
+    {name:'stake_shadow（配分）', color:'#5ee4a8', races:ss.races, stake:ss.shadow_stake_yen, ret:ss.shadow_return_yen,
+     profit:ss.shadow_profit_yen, roi:ss.shadow_roi_pct, dd:ss.shadow_max_dd_yen, ddNote:''},
+    {name:'alloc_d（配分）', color:'#6cb4ff', races:ad.races, stake:ad.shadow_stake_yen, ret:ad.shadow_return_yen,
+     profit:ad.shadow_profit_yen, roi:ad.shadow_roi_pct, dd:series.dd.alloc, ddNote:''},
+    {name:'HYBRID_SHADOW', color:'#ff9f68', races:hy.races, stake:hy.stake_yen, ret:hy.return_yen,
+     profit:hy.profit_yen, roi:hy.roi_pct, dd:hy.max_dd_yen, ddNote:''}
+  ];
+  body.innerHTML = rows.map(r => {
+    const pcls = Number(r.profit) > 0 ? 'plus' : (Number(r.profit) < 0 ? 'minus' : '');
+    return '<tr><td class="sysname"><span class="chip" style="display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:' + r.color + '"></span>' + esc(r.name) + '</td>' +
+      '<td style="text-align:right">' + num(r.races) + '</td>' +
+      '<td style="text-align:right">' + yen(r.stake) + '</td>' +
+      '<td style="text-align:right">' + yen(r.ret) + '</td>' +
+      '<td style="text-align:right" class="' + pcls + '">' + (has(r.profit) ? (Number(r.profit) > 0 ? '+' : '') + yen(r.profit) : '—') + '</td>' +
+      '<td style="text-align:right">' + pct(r.roi) + '</td>' +
+      '<td style="text-align:right">' + yen(r.dd) + (r.ddNote || '') + '</td></tr>';
+  }).join('');
+  $('uraTableNote').textContent = '※本番の最大DDは、裏系統と同一条件（ゲート内の精算済みレース）の履歴から算出。その他の数値は集計（stats）の公表値。alloc_d の最大DDは履歴の累積曲線から算出（算出方法は公表値のある系統で一致を確認済み）。' +
+    (has(adOut.roi_pct) ? ' 参考：alloc_d のゲート外は ' + num(adOut.races) + 'レース・回収率 ' + pct(adOut.shadow_roi_pct) + '。' : '');
+
+  /* 回収率バー */
+  const maxRoi = Math.max(160, ...rows.map(r => Number(r.roi) || 0));
+  $('uraRoiChart').innerHTML = rows.map(r => {
+    const v = Number(r.roi) || 0;
+    const w = Math.max(0, Math.min(100, v / maxRoi * 100));
+    const line = (100 / maxRoi * 100).toFixed(1);
+    return '<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>' + esc(r.name) + '</span><b>' + pct(r.roi) + '</b></div>' +
+      '<div class="urabar" style="position:relative"><div style="width:' + w.toFixed(1) + '%;background:' + r.color + '"></div>' +
+      '<span style="position:absolute;top:-2px;bottom:-2px;left:' + line + '%;width:2px;background:#fff;opacity:.75"></span></div></div>';
+  }).join('');
+
+  /* HYBRID 進捗 */
+  const target = 200;
+  const cur = Number(hy.races) || 0;
+  const pw = Math.max(0, Math.min(100, cur / target * 100));
+  const band = hyBand['9-12頭'] || {};
+  $('uraHybrid').innerHTML =
+    '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span>比較可能標本（精算済み）</span><b>' + num(cur) + ' / ' + target + '件（' + pw.toFixed(1) + '%）</b></div>' +
+    '<div class="urabar"><div style="width:' + pw.toFixed(1) + '%;background:#ff9f68"></div></div>' +
+    '<p class="small" style="margin-top:8px">HYBRID_SHADOW は時計の絶対指数＋血統スコア＋クラス評価で選定する計測専用系統（34.22から計測開始）。' +
+    (has(hy.hit_rate_pct) ? ' 現在の的中率 ' + pct(hy.hit_rate_pct) + '（' + num(hy.hit_races) + '/' + num(hy.races) + '）。' : '') +
+    (has(band.roi_pct) ? ' 頭数帯 9-12頭の回収率 ' + pct(band.roi_pct) + '（' + num(band.races) + 'レース）。' : '') +
+    (has(hyFeat.races_with_features) ? ' 特徴量つき精算済みレースは ' + num(hyFeat.races_with_features) + '件。' : '') +
+    ' 昇格の判定は11月下旬に、標本200件を目安として行う。</p>';
+
+  /* 累積損益グラフ */
+  $('uraLineChart').innerHTML = uraLineChartSvg(series);
+  $('uraLegend').innerHTML = URA_SYS.map(sys =>
+    '<span><span class="chip" style="background:' + sys.color + '"></span>' + esc(sys.name) + ' ' + (series.total[sys.key] > 0 ? '+' : '') + yen(series.total[sys.key]) + '</span>'
+  ).join('');
+  $('uraNote').textContent = '推移は精算履歴から日次集計（ゲート内の精算済みレースが対象）。本番の線は裏系統と同一条件での実績で、上の累計表（全券種集計）とは対象範囲が異なります。HYBRID_SHADOW は 2026-11-17 に計測を開始したため、まだ点が1つだけです。';
 }
 
 /* ===== レース検索 ===== */
