@@ -1,10 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BAGEN KEIBA v34.22_EXPERT
+BAGEN KEIBA v34.23_EXPERT
 無料GitHub Actions向け・紙上検証専用。実際の馬券購入・口座接続は行わない。
 history.json の snapshots / stats / horse_form_cache / people_cache /
 pedigree_cache を維持する。
+
+改善点 (v34.23):
+- v35監査の A1（前方保存）のみを実施（ユーザー承認 2026-11-18）。
+  選定・スコア・信頼度・配分・ゲート・グレードは 34.22 から完全
+  凍結で一切変更しない（変更はスナップショット保存キーの追加と
+  バージョン文字列のみ）。
+- (1) engine_version の刻印: update_snapshot がスナップショットに
+  「そのスナップショットを最初に生成した ENGINE_VERSION」を保存
+  する（prediction_created_at と同じ初回固定方式）。従来はレース
+  単位の版が履歴に無く、版別の成績分離ができなかった。
+- (2) going（馬場状態）／weather（天候）の前方保存: 生成時の
+  race dict には parse_race が実キー "going"/"weather" で格納して
+  いたのに update_snapshot の保存キーに無く、過去分の馬場別集計
+  が永久に作れなかった。今回から保存する。今回の生成で未取得
+  （"未取得"）の場合は既存スナップショットの取得済みの値を保持し、
+  "未取得" で上書きしない。
+- いずれも保存専用で、calculate_stats 等の集計には使わない。
+  旧スナップショット（新キー無し）を読んでも壊れない。
 
 改善点 (v34.22):
 - HYBRID_SHADOW（選定 shadow）を新設（ユーザー承認 2026-11-17。
@@ -502,7 +520,7 @@ JST = timezone(timedelta(hours=9))
 NOW = datetime.now(JST)
 TODAY = NOW.strftime("%Y%m%d")
 TOMORROW = (NOW + timedelta(days=1)).strftime("%Y%m%d")
-ENGINE_VERSION = "BAGEN_34.22_EXPERT"
+ENGINE_VERSION = "BAGEN_34.23_EXPERT"
 MAX_NEW_FORM_FETCHES = 24
 FORM_FETCHED_THIS_RUN = 0
 HORSE_FORM_CACHE = {}
@@ -4492,6 +4510,17 @@ def update_snapshot(snapshots, race):
     snap_gate_reasons = race.get("gate_reasons")
     if snap_gate_reasons is None:
         snap_gate_reasons = old.get("gate_reasons") or []
+    # v34.23: 馬場状態・天候の前方保存（監査 A1）。race dict の実キーは
+    # parse_race が格納する "going"/"weather"（値の形式は going=
+    # 良/稍重/重/不良、weather=晴/曇/雨/小雨/雪/小雪。未取得時はどちらも
+    # "未取得"）。今回の生成で未取得なら既存スナップショットの取得済み
+    # の値を保持し、"未取得" で上書きしない。保存専用で集計には使わない。
+    snap_going = race.get("going")
+    if not snap_going or snap_going == "未取得":
+        snap_going = old.get("going") or snap_going
+    snap_weather = race.get("weather")
+    if not snap_weather or snap_weather == "未取得":
+        snap_weather = old.get("weather") or snap_weather
     # v34.16: pool shadow 計測用の「最終生成」保存（計測専用・選定には
     # 使わない）。last_top6 は発走前の最終生成で固定し、精算した実行の
     # 生成では上書きしない。公式買い目の大半が精算実行（発走後）の
@@ -4553,6 +4582,12 @@ def update_snapshot(snapshots, race):
         # 距離も保存する（過去分は未保存＝「不明」として扱い捏造しない）
         "surface": race.get("surface") or old.get("surface"),
         "distance_m": race.get("distance_m") or old.get("distance_m"),
+        # v34.23: A1 前方保存。生成したエンジン版の刻印（初回生成の版を
+        # 固定し、再生成・精算で上書きしない）と、馬場状態・天候の保存。
+        # いずれも保存専用で集計には使わない
+        "engine_version": old.get("engine_version") or ENGINE_VERSION,
+        "going": snap_going,
+        "weather": snap_weather,
         "pattern_type": ticket.get("pattern_type") or old.get("pattern_type") or (
             (old.get("frozen_prediction") or {}).get("tickets") or {}
         ).get("pattern_type"),
