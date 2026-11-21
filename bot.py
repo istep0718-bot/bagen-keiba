@@ -501,6 +501,16 @@ pedigree_cache を維持する。
 - 穴・大穴の根拠を「近走成績ベース」と「実オッズベース」に分離して表示
 - 結果・払戻の照合を厳密化し、未確認の収支を確定扱いにしない
 - history.json / docs/data.json の既存構造を維持
+
+第1次シャドウ検証 (34.23 計測追加・ENGINE_VERSION は無変更):
+- P1 持ちタイム一致度の投資額調整 (T0/T1/T2) と P2 選定分解
+  (A: 本番軸+本番相手 / B: 本番軸+hybrid相手 / C: hybrid軸+本番相手 /
+  D: hybrid軸+hybrid相手) を stats["phase1_experiments"] に
+  遡及/前方を分離して集計する
+- P2 の B/C 買い目は phase1_sel_tickets として前方保存し、本体と
+  同じ精算経路で精算する。P4 血統は固定閾値 3.87 で前方再現性を測る
+- いずれも計測専用で、本番の予測順位・買い目・投資配分・ゲート・
+  グレードには一切使用しない
 """
 import json, math, re, sys, time, html as html_lib
 from datetime import datetime, timedelta, timezone
@@ -627,6 +637,14 @@ STAKE_SHADOW_START_DATE = "2026-11-09"  # 前方計測の開始日（34.20生成
 # クラス評価で、市場乖離は主成分にしない（post_odds の観測のみ）。
 HYBRID_SHADOW_START_DATE = "2026-11-17"  # 前方計測の開始日（34.22生成分から）
 HYBRID_SHADOW_TARGET_SAMPLES = 200      # 判定に必要な比較可能標本数（結果確定済み）
+# 第1次シャドウ検証（34.23 計測追加・モデル無変更）: ChatGPT 助言に
+# 基づく検証基盤。本番の予測順位・買い目・投資配分には一切使わない。
+# P1 持ちタイム一致度 (T0/T1/T2)・P2 選定分解 (A/B/C/D) の前方計測は
+# この日付のレースから開始し、それ以前は遡及 (retro) として分離する。
+PHASE1_START_DATE = "2026-11-22"  # 前方計測の開始日（第1次検証から）
+# P4 血統再検証: 遡及データの3分位で得た上位バンド境界 (sire_score
+# 3.87) を固定値として前方再現性を見るための閾値。再計算で動かさない。
+PHASE1_SIRE_FORWARD_MIN = 3.87
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -3458,6 +3476,73 @@ def build_hybrid_shadow(ranked, verified):
     return tickets, meta
 
 
+def hybrid_ranked_list(ranked):
+    """build_hybrid_shadow と同一キーで並べ替えた hybrid 順位を返す
+    （第1次検証 P2 の相手・軸の差し替え用。計測専用・本番不使用）。
+    build_hybrid_shadow の meta.top と先頭順序が一致することは
+    単体テストで担保する。"""
+    comps = {h["horse_no"]: hybrid_components(h) for h in ranked}
+
+    def _key(h):
+        c = comps[h["horse_no"]]
+        return (0 if c["hybrid_evaluated"] else 1,
+                -(c["hybrid_score"] or 0.0),
+                h.get("odds_free_rank") or 999,
+                h["horse_no"])
+
+    return sorted(ranked, key=_key)
+
+
+def build_phase1_sel_shadow(ranked, outsiders, verified):
+    """第1次検証 P2（選定分解）: B/C の shadow 買い目を作る。
+      B: 本番軸 (本番1位) + hybrid 相手 (hybrid 順位の2番手以降)
+      C: hybrid 軸 (hybrid 1位) + 本番相手 (本番順位の2番手以降)
+    買い目の構造・総額は build_tickets に委ね、本番 (A) / hybrid (D)
+    と同一にする。穴候補は B では hybrid 側の定義 (hybrid 順位内で
+    実オッズ10〜30倍、build_hybrid_shadow と同一)、C では本番の
+    outsiders をそのまま使う。hybrid 買い目が作れないレース
+    (特徴量で評価できる馬が3頭未満) では B/C も作らない。
+    本番の選定・買い目・配分には一切使用しない計測専用。"""
+    if not verified or len(ranked) < 3:
+        return {}
+    comps = {h["horse_no"]: hybrid_components(h) for h in ranked}
+    evaluated = [h for h in ranked
+                 if comps[h["horse_no"]]["hybrid_evaluated"]]
+    if len(evaluated) < 3:
+        return {}
+    hranked = hybrid_ranked_list(ranked)
+    prod_axis = ranked[0]["horse_no"]
+    hyb_axis = hranked[0]["horse_no"]
+    merged_b = [ranked[0]] + [h for h in hranked
+                               if h["horse_no"] != prod_axis]
+    outsiders_b = [h for h in hranked
+                   if h.get("odds") is not None and 10 <= h["odds"] < 30]
+    merged_c = [hranked[0]] + [h for h in ranked
+                               if h["horse_no"] != hyb_axis]
+    out = {}
+    tb = build_tickets(merged_b, outsiders_b, verified)
+    if tb:
+        tb[0]["pattern"] = (
+            f"PHASE1_B（本番軸+hybrid相手／"
+            f"パターン{tb[0].get('pattern_type')}）")
+        tb[0]["note"] = (
+            "第1次検証 P2 の shadow 買い目。軸は本番1位、相手は "
+            "hybrid 統合順位で組み立てた。構造と総額は現行パターン"
+            "A/B と同一。本番には一切使用しない計測専用。")
+        out["B"] = tb
+    tc = build_tickets(merged_c, outsiders, verified)
+    if tc:
+        tc[0]["pattern"] = (
+            f"PHASE1_C（hybrid軸+本番相手／"
+            f"パターン{tc[0].get('pattern_type')}）")
+        tc[0]["note"] = (
+            "第1次検証 P2 の shadow 買い目。軸は hybrid 統合1位、"
+            "相手は本番順位で組み立てた。構造と総額は現行パターン"
+            "A/B と同一。本番には一切使用しない計測専用。")
+        out["C"] = tc
+    return out
+
+
 def combo_key(horses, ordered=False):
     return "-".join(map(str, horses if ordered else sorted(horses)))
 
@@ -3744,6 +3829,13 @@ def fetch_and_settle_result(race, source):
             if race.get("hybrid_shadow_tickets"):
                 race["hybrid_shadow_settlement"] = settle_tickets(
                     race.get("hybrid_shadow_tickets") or [], finishes, payouts)
+            # 第1次検証 P2: B/C も本体と同じ精算経路 (settle_tickets)
+            # で精算し、A/D と同一レースで比較できるようにする。
+            if race.get("phase1_sel_tickets"):
+                race["phase1_sel_settlement"] = {
+                    k: settle_tickets(v or [], finishes, payouts)
+                    for k, v in (race.get("phase1_sel_tickets") or {}).items()
+                    if v}
             # v34.16: pool shadow 計測用に、実際の3着内組み合わせの
             # 3連複配当（100円あたり）を保存する。仮想ラインの払戻
             # 計算に使う計測専用の値で、本体の精算には使わない。
@@ -3973,6 +4065,8 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
     # 配分・選定には一切使わない。
     hybrid_shadow_tickets, hybrid_shadow_meta = build_hybrid_shadow(
         ranked, verified)
+    # 第1次検証 P2: 選定分解 shadow の B/C 買い目（計測専用・本番不使用）
+    phase1_sel_tickets = build_phase1_sel_shadow(ranked, outsiders, verified)
     return {
         "id": str(rid), "date": date_iso, "kind": kind, "category": source["category"],
         "race_no": rno, "name": name, "course": venue or "競馬場未取得",
@@ -4022,6 +4116,9 @@ def parse_race(page, rid, source, date_iso, is_tomorrow):
         "hybrid_shadow_tickets": hybrid_shadow_tickets,
         "hybrid_shadow_meta": hybrid_shadow_meta,
         "hybrid_shadow_settlement": None,
+        # 第1次検証 P2: 選定分解 shadow（B/C 買い目。計測専用）
+        "phase1_sel_tickets": phase1_sel_tickets,
+        "phase1_sel_settlement": None,
         # v34.15: hybrid 特徴量のレース単位メタ（shadow計測専用）
         "hybrid_features": hybrid_meta,
         "race_recommendation_reasons": reasons,
@@ -4697,6 +4794,9 @@ def update_snapshot(snapshots, race):
         "hybrid_shadow_tickets": race.get("hybrid_shadow_tickets") or old.get("hybrid_shadow_tickets") or [],
         "hybrid_shadow_meta": race.get("hybrid_shadow_meta") or old.get("hybrid_shadow_meta"),
         "hybrid_shadow_settlement": race.get("hybrid_shadow_settlement") or old.get("hybrid_shadow_settlement"),
+        # 第1次検証 P2: 選定分解 shadow（買い目と精算結果。計測専用）
+        "phase1_sel_tickets": race.get("phase1_sel_tickets") or old.get("phase1_sel_tickets") or {},
+        "phase1_sel_settlement": race.get("phase1_sel_settlement") or old.get("phase1_sel_settlement"),
         # v34.15: hybrid 特徴量のレース単位メタ（テーブル版・全出走馬中の
         # 時計指数1位）。shadow計測専用で選定には使わない
         "hybrid_features": race.get("hybrid_features") or old.get("hybrid_features"),
@@ -6041,6 +6141,419 @@ def calculate_stats(snapshots):
         "（発走前の最終生成の上位6頭）が保存された本精算レースのみ。"
         "中央の標本が小さい間は参考値。判定は設計書のライン"
         "（最低2週間かつ対象300レース等）に達するまで行わない。")
+    # ===== 第1次シャドウ検証（34.23 計測追加・モデル無変更）=====
+    # P1 持ちタイム一致度 / P2 選定分解 / P4 血統固定閾値の前方再現性。
+    # 全て精算済みスナップショットからの読み取り専用集計で、本番の
+    # 予測・買い目・配分には一切影響しない。遡及 (PHASE1_START_DATE
+    # より前) と前方 (開始日以降) を分離し、合算しない。実験の記録は
+    # スナップショット (frozen_prediction / 各 shadow 買い目と精算) が
+    # レース単位の原記録で、ここはその集計ビューにあたる。
+    import hashlib as _hashlib
+
+    def _p1_agreement(x):
+        """_hybrid_track と同一ゲート・同一の一致定義。"""
+        top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+        if not any(isinstance(h, dict) and "time_index_best" in h
+                   for h in top5):
+            return None
+        fb = (x.get("hybrid_features") or {}).get("time_best_horse_no")
+        if fb is None or _hybrid_finish(x, fb) is None:
+            return None
+        rank1 = (top5[0].get("horse_no")
+                 if top5 and isinstance(top5[0], dict) else None)
+        return "agree" if fb == rank1 else "disagree"
+
+    def _roi_ci95(rows, stake_fn, ret_fn):
+        """回収率の95%信頼区間（比率推定のデルタ法による近似）。"""
+        n = len(rows)
+        if n < 2:
+            return None
+        stakes = [float(stake_fn(x)) for x in rows]
+        rets = [float(ret_fn(x)) for x in rows]
+        ts = sum(stakes)
+        if ts <= 0:
+            return None
+        r = sum(rets) / ts
+        mean_s = ts / n
+        var = (sum((rv - r * sv) ** 2 for sv, rv in zip(stakes, rets))
+               / (n - 1)) / (n * mean_s * mean_s)
+        se = math.sqrt(var) * 100
+        return [round(r * 100 - 1.96 * se, 1), round(r * 100 + 1.96 * se, 1)]
+
+    def _paired_diff_ci(rows, base_fn, alt_fn):
+        """同一レースの損益差 (alt - base) の平均と95%信頼区間。"""
+        diffs = [alt_fn(x) - base_fn(x) for x in rows]
+        n = len(diffs)
+        if n < 2:
+            return {"races": n, "mean_diff_yen": None, "ci95": None}
+        mean = sum(diffs) / n
+        sd = math.sqrt(sum((d - mean) ** 2 for d in diffs) / (n - 1))
+        se = sd / math.sqrt(n)
+        return {"races": n, "mean_diff_yen": round(mean, 1),
+                "ci95": [round(mean - 1.96 * se, 1),
+                         round(mean + 1.96 * se, 1)]}
+
+    def _wilson_ci95(wins, n):
+        if not n:
+            return None
+        z = 1.96
+        p = wins / n
+        den = 1 + z * z / n
+        center = (p + z * z / (2 * n)) / den
+        half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+        return [round((center - half) * 100, 1),
+                round((center + half) * 100, 1)]
+
+    def _era_of(x):
+        return ("forward" if str(x.get("date") or "") >= PHASE1_START_DATE
+                else "retro")
+
+    settled_retro = [x for x in settled if _era_of(x) == "retro"]
+    settled_fwd = [x for x in settled if _era_of(x) == "forward"]
+    _fwd_dates = sorted(str(x.get("date")) for x in settled_fwd
+                        if x.get("date"))
+    _fwd_days = 0
+    if _fwd_dates:
+        _d0 = datetime.strptime(PHASE1_START_DATE, "%Y-%m-%d")
+        _d1 = datetime.strptime(_fwd_dates[-1], "%Y-%m-%d")
+        _fwd_days = (_d1 - _d0).days + 1
+
+    def _verdict(n, days):
+        if n < 300 or days < 14:
+            return ("判断保留（標本不足: 対象300レース・最低2週間の"
+                    "条件に未達）")
+        return ("判定材料充足（採用はペア比較の統計的改善・最大DD・"
+                "別期間での再現を確認した後）")
+
+    # ---- P1: 持ちタイム一致度 (T0/T1/T2) ----
+    def _p1_block(rows):
+        groups = {"agree": [], "disagree": []}
+        for x in rows:
+            g = _p1_agreement(x)
+            if g:
+                groups[g].append(x)
+        all_rows = groups["agree"] + groups["disagree"]
+        if not all_rows:
+            return {"target_races": 0}
+
+        def gblock(grows):
+            if not grows:
+                return {"races": 0}
+            b = _sys_agg(grows, _main_stake, _main_ret)
+            top5_of = lambda x: (x.get("frozen_prediction") or {}).get(
+                "top5") or []
+            r1_fins = [_hybrid_finish(
+                x, (top5_of(x)[0].get("horse_no") if top5_of(x) else None))
+                for x in grows]
+            b["rank1_rates"] = _hybrid_rate(
+                [f for f in r1_fins if f is not None])
+            fb_fins = [_hybrid_finish(
+                x, (x.get("hybrid_features") or {}).get(
+                    "time_best_horse_no")) for x in grows]
+            b["time_best_rates"] = _hybrid_rate(
+                [f for f in fb_fins if f is not None])
+            b["avg_payout_yen"] = (
+                round(b["return_yen"] / b["hit_races"])
+                if b["hit_races"] else 0)
+            return b
+
+        def scaled(factor):
+            def sf(x):
+                return _main_stake(x) * (
+                    factor if _p1_agreement(x) == "disagree" else 1.0)
+
+            def rf(x):
+                return _main_ret(x) * (
+                    factor if _p1_agreement(x) == "disagree" else 1.0)
+            return sf, rf
+
+        patterns = {}
+        for name, fac in (("T0", 1.0), ("T1", 0.75), ("T2", 0.50)):
+            sf, rf = scaled(fac)
+            b = _sys_agg(all_rows, sf, rf)
+            for k in ("stake_yen", "return_yen", "profit_yen", "max_dd_yen"):
+                b[k] = round(b[k])
+            b["avg_payout_yen"] = (
+                round(b["return_yen"] / b["hit_races"])
+                if b["hit_races"] else 0)
+            b["roi_ci95_pct"] = _roi_ci95(all_rows, sf, rf)
+            patterns[name] = b
+
+        def profit_main(x):
+            return _main_ret(x) - _main_stake(x)
+
+        paired = {}
+        for name, fac in (("T1", 0.75), ("T2", 0.50)):
+            sf, rf = scaled(fac)
+            paired[name] = _paired_diff_ci(
+                groups["disagree"], profit_main,
+                lambda x, sf=sf, rf=rf: rf(x) - sf(x))
+        return {"target_races": len(all_rows),
+                "groups": {g: gblock(r) for g, r in groups.items()},
+                "patterns": patterns, "paired_diff_vs_T0": paired}
+
+    _p1_retro = _p1_block(settled_retro)
+    _p1_fwd = _p1_block(settled_fwd)
+    _p1_eval = {"sample_races_forward": _p1_fwd.get("target_races", 0),
+                "measurement_days_forward": _fwd_days,
+                "verdict": _verdict(_p1_fwd.get("target_races", 0),
+                                    _fwd_days)}
+    if _p1_fwd.get("patterns"):
+        for _k in ("T1", "T2"):
+            _p1_eval[_k] = {
+                "roi_diff_pt_vs_T0": round(
+                    _p1_fwd["patterns"][_k]["roi_pct"]
+                    - _p1_fwd["patterns"]["T0"]["roi_pct"], 1),
+                "max_dd_yen": _p1_fwd["patterns"][_k]["max_dd_yen"],
+                "dd_not_worse_than_T0": (
+                    _p1_fwd["patterns"][_k]["max_dd_yen"]
+                    <= _p1_fwd["patterns"]["T0"]["max_dd_yen"]),
+            }
+
+    # ---- P2: 選定分解 (馬レベル + 買い目 A/B/C/D) ----
+    def _p2_horse_block(rows):
+        ax_p, ax_h, cov_p, cov_h, win_p, win_h = [], [], [], [], [], []
+        used = 0
+        for x in rows:
+            meta_top = (x.get("hybrid_shadow_meta") or {}).get("top") or []
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            rf = x.get("result_finishes") or []
+            hs = x.get("hybrid_shadow_settlement") or {}
+            if (not meta_top or not top5 or len(rf) < 3
+                    or not hs.get("settlement_complete")):
+                continue
+            used += 1
+            fa = _hybrid_finish(x, top5[0].get("horse_no"))
+            fb = _hybrid_finish(x, meta_top[0].get("horse_no"))
+            if fa is not None:
+                ax_p.append(fa)
+            if fb is not None:
+                ax_h.append(fb)
+            top3 = rf[:3]
+            pp = [h.get("horse_no") for h in top5[1:4]]
+            hp = [h.get("horse_no") for h in meta_top[1:4]]
+            cov_p.append(len([h for h in pp if h in top3]))
+            cov_h.append(len([h for h in hp if h in top3]))
+            win_p.append(1 if rf[0] in pp else 0)
+            win_h.append(1 if rf[0] in hp else 0)
+        if not used:
+            return {"races": 0}
+        return {
+            "races": used,
+            "axis": {"production": _hybrid_rate(ax_p),
+                     "hybrid": _hybrid_rate(ax_h)},
+            "partners_top2_4": {
+                "mean_actual_top3_covered": {
+                    "production": (round(sum(cov_p) / len(cov_p), 3)
+                                   if cov_p else None),
+                    "hybrid": (round(sum(cov_h) / len(cov_h), 3)
+                               if cov_h else None)},
+                "winner_in_partners_rate_pct": {
+                    "production": (round(sum(win_p) / len(win_p) * 100, 1)
+                                   if win_p else None),
+                    "hybrid": (round(sum(win_h) / len(win_h) * 100, 1)
+                               if win_h else None)},
+            },
+        }
+
+    def _p2_ticket_block(rows):
+        paired = []
+        for x in rows:
+            st = x.get("phase1_sel_settlement") or {}
+            hs = x.get("hybrid_shadow_settlement") or {}
+            if not (st.get("B") or {}).get("settlement_complete"):
+                continue
+            if not (st.get("C") or {}).get("settlement_complete"):
+                continue
+            if not hs.get("settlement_complete"):
+                continue
+            paired.append(x)
+        if not paired:
+            return {"paired_races": 0}
+
+        def tk_stake(key):
+            return lambda x: safe_int(
+                ((x.get("phase1_sel_tickets") or {}).get(key)
+                 or [{}])[0].get("cost_yen"), 0)
+
+        def tk_ret(key):
+            return lambda x: safe_int(
+                ((x.get("phase1_sel_settlement") or {}).get(key)
+                 or {}).get("all_bet_return"), 0)
+
+        fns = {
+            "A": (_main_stake, _main_ret),
+            "B": (tk_stake("B"), tk_ret("B")),
+            "C": (tk_stake("C"), tk_ret("C")),
+            "D": (_tk_stake("hybrid_shadow_tickets"),
+                  _st_ret("hybrid_shadow_settlement")),
+        }
+        pats = {}
+        for k, (sf, rf) in fns.items():
+            b = _sys_agg(paired, sf, rf)
+            b["avg_payout_yen"] = (
+                round(b["return_yen"] / b["hit_races"])
+                if b["hit_races"] else 0)
+            b["roi_ci95_pct"] = _roi_ci95(paired, sf, rf)
+            pats[k] = b
+
+        def profit_of(k):
+            sf, rf = fns[k]
+            return lambda x: rf(x) - sf(x)
+
+        diffs = {}
+        for k in ("B", "C", "D"):
+            d = _paired_diff_ci(paired, profit_of("A"), profit_of(k))
+            d["roi_diff_pt"] = round(pats[k]["roi_pct"]
+                                     - pats["A"]["roi_pct"], 1)
+            d["dd_not_worse_than_A"] = (
+                pats[k]["max_dd_yen"] <= pats["A"]["max_dd_yen"])
+            diffs[k] = d
+        return {"paired_races": len(paired), "patterns": pats,
+                "paired_diff_vs_A": diffs}
+
+    _p2_tickets_fwd = _p2_ticket_block(settled_fwd)
+    _p2_eval = {
+        "paired_races_forward": _p2_tickets_fwd.get("paired_races", 0),
+        "measurement_days_forward": _fwd_days,
+        "verdict": _verdict(_p2_tickets_fwd.get("paired_races", 0),
+                            _fwd_days)}
+    if _p2_tickets_fwd.get("paired_diff_vs_A"):
+        _p2_eval["per_pattern"] = _p2_tickets_fwd["paired_diff_vs_A"]
+
+    # ---- P4: 血統固定閾値の前方再現性 ----
+    def _p4_block(rows):
+        horses = []
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            if not any(isinstance(h, dict) and "time_index_best" in h
+                       for h in top5):
+                continue
+            for h in top5:
+                if not isinstance(h, dict):
+                    continue
+                sc = h.get("sire_score")
+                if sc is None or sc < PHASE1_SIRE_FORWARD_MIN:
+                    continue
+                fin = _hybrid_finish(x, h.get("horse_no"))
+                if fin is None:
+                    continue
+                odds = (x.get("last_odds") or {}).get(str(h.get("horse_no")))
+                horses.append((fin, odds))
+        wins = sum(1 for f, _o in horses if f == 1)
+        stake = ret = n_odds = 0
+        for fin, odds in horses:
+            if odds:
+                n_odds += 1
+                stake += 100
+                if fin == 1:
+                    ret += int(float(odds) * 100)
+        return {
+            "horses": len(horses), "wins": wins,
+            "win_rate_pct": (round(wins / len(horses) * 100, 1)
+                             if horses else 0.0),
+            "win_rate_wilson_ci95_pct": _wilson_ci95(wins, len(horses)),
+            "horses_with_odds": n_odds,
+            "win_roi_pct": (round(ret / stake * 100, 1) if stake else None),
+        }
+
+    _p1_config = {
+        "framework": "PHASE1_EXP_V1",
+        "start_date": PHASE1_START_DATE,
+        "P1": {"factors": {"T0": 1.0, "T1": 0.75, "T2": 0.50},
+               "agreement": ("hybrid_features.time_best_horse_no =="
+                             " frozen_prediction.top5[0].horse_no")},
+        "P2": {"patterns": ["A", "B", "C", "D"],
+               "B": "production axis + hybrid partners",
+               "C": "hybrid axis + production partners",
+               "paired_only": True},
+        "P4": {"sire_forward_min": PHASE1_SIRE_FORWARD_MIN},
+    }
+    _config_hash = _hashlib.sha1(json.dumps(
+        _p1_config, sort_keys=True, ensure_ascii=False
+    ).encode("utf-8")).hexdigest()
+
+    phase1_stats = {
+        "framework": "PHASE1_EXP_V1",
+        "model_version": ENGINE_VERSION,
+        "forward_start_date": PHASE1_START_DATE,
+        "experiment_end": max(
+            (str(x.get("date")) for x in settled if x.get("date")),
+            default=None),
+        "configuration_hash": _config_hash,
+        "configuration": _p1_config,
+        "adoption_criteria": {
+            "roi_improvement_target_pt": 5.0,
+            "min_races": 300,
+            "min_days": 14,
+            "requirements": [
+                "本番比で回収率+5ポイント以上",
+                "同一レースのペア比較で統計的な改善を確認",
+                "最大DDが本番より悪化しない",
+                "別期間でも改善傾向が再現する",
+                "標本不足の場合は採用せず判断保留",
+                "複数実験の多重検定に配慮し、単独の有意性で採用しない",
+            ],
+        },
+        "experiments": {
+            "P1_time_agreement": {
+                "experiment_id": "P1_TIME_AGREEMENT",
+                "definition": (
+                    "一致 = 持ちタイム最速馬が本番1位と同一。不一致群"
+                    "のみ投資額を T1=×0.75 / T2=×0.50 に縮小する"
+                    "（買い目・順位は不変、払戻は金額に線形連動）。"
+                    "T0 は本番そのもの。"),
+                "retro": _p1_retro,
+                "forward": _p1_fwd,
+                "evaluation_forward": _p1_eval,
+            },
+            "P2_selection_decomposition": {
+                "experiment_id": "P2_SELECTION_DECOMP",
+                "definition": (
+                    "A=本番軸+本番相手 / B=本番軸+hybrid相手 / "
+                    "C=hybrid軸+本番相手 / D=hybrid軸+hybrid相手。"
+                    "買い目構造・総額は build_tickets で統一し、"
+                    "A/B/C/D 全てが精算済みの同一レースのみを"
+                    "ペア比較する。馬レベル分解は hybrid メタが"
+                    "ある全レースで軸と相手を分けて測る。"),
+                "horse_level": {
+                    "retro": _p2_horse_block(settled_retro),
+                    "forward": _p2_horse_block(settled_fwd)},
+                "tickets_paired_forward": _p2_tickets_fwd,
+                "ad_reference": {
+                    "retro": _hybrid_track_sel(
+                        [x for x in _hybrid_rows_main
+                         if _era_of(x) == "retro"]),
+                    "forward": _hybrid_track_sel(
+                        [x for x in _hybrid_rows_main
+                         if _era_of(x) == "forward"])},
+                "evaluation_forward": _p2_eval,
+            },
+            "P4_sire_fixed_threshold": {
+                "experiment_id": "P4_SIRE_FIXED_THRESHOLD",
+                "definition": (
+                    "本番 top5 内で sire_score >= 3.87（遡及分析の"
+                    "3分位・上位バンド境界を固定値化）の馬の単勝"
+                    "成績。境界値 3.87 の同点は全て含めるため、遡及"
+                    "参考値は 262 頭で、3分位バンドそのもの"
+                    "（259頭・回収率114.2%）とは一致しない。retro は"
+                    "同じデータから作った in-sample 参考値で、"
+                    "再現性の判定は forward のみで行う。"),
+                "retro_insample_reference": _p4_block(settled_retro),
+                "forward": _p4_block(settled_fwd),
+            },
+        },
+        "note": (
+            "第1次シャドウ検証の集計。P1/P2/P4 はいずれも計測専用で、"
+            "本番 34.23 の予測・買い目・配分には使用していない。"
+            "レース単位の原記録は history.json のスナップショット"
+            "（frozen_prediction と各 shadow 買い目・精算）にあり、"
+            "本セクションは experiment_id / configuration_hash で"
+            "版管理された集計ビュー。遡及と前方は分離し合算しない。"
+            "P3（券種配分）は settled_lines から集計時に導出できる"
+            "設計とし、P6（post-odds ゲート）は予測エンジンとは"
+            "別工程の購入判断シャドウとして設計のみ（設計書参照）。"),
+    }
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -6083,6 +6596,8 @@ def calculate_stats(snapshots):
         "hybrid_shadow": hybrid_shadow,
         # v34.22: HYBRID_SHADOW（統合選定 shadow・本番/既存shadowとの並走比較）
         "hybrid_selection": hybrid_selection,
+        # 第1次シャドウ検証（P1/P2/P4・遡及/前方分離の集計ビュー）
+        "phase1_experiments": phase1_stats,
         # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）
         "pool_shadow": pool_shadow_stats,
         # v34.17: 本精算の 中央×芝／中央×ダート／地方 分割集計（報告専用）
