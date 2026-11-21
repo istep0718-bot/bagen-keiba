@@ -1433808,7 +1433808,7 @@
       "prediction_created_at": "2026-11-22T04:47:50.340311+09:00"
     }
   },
-  "updated_at": "2026-11-22T08:01:20.365521+09:00",
+  "updated_at": "2026-11-22T08:31:03.313410+09:00",
   "stats": {
     "races_seen": 1507,
     "races_settled": 942,
@@ -1435718,6 +1435718,387 @@
       },
       "start_date": "2026-11-17",
       "note": "時計指数・血統スコア・クラス評価の統合スコアで選定した shadow 買い目（買い目構造・総額は現行パターンA/Bと同一）。本番の選定・配分には使用していない。市場乖離は主成分に含めず post_odds で観測のみ。判定は結果確定済みの比較可能標本（本精算）が target 件に到達してから、回収率改善幅と最大DDの両面で行う。対象は 2026-11-17 以降の生成分のみ。"
+    },
+    "phase1_experiments": {
+      "framework": "PHASE1_EXP_V1",
+      "model_version": "BAGEN_34.23_EXPERT",
+      "forward_start_date": "2026-11-22",
+      "experiment_end": "2026-11-21",
+      "configuration_hash": "323d239cc0482946f4d66600876d04996af60532",
+      "configuration": {
+        "framework": "PHASE1_EXP_V1",
+        "start_date": "2026-11-22",
+        "P1": {
+          "factors": {
+            "T0": 1.0,
+            "T1": 0.75,
+            "T2": 0.5
+          },
+          "agreement": "hybrid_features.time_best_horse_no == frozen_prediction.top5[0].horse_no"
+        },
+        "P2": {
+          "patterns": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "B": "production axis + hybrid partners",
+          "C": "hybrid axis + production partners",
+          "paired_only": true
+        },
+        "P4": {
+          "sire_forward_min": 3.87
+        }
+      },
+      "adoption_criteria": {
+        "roi_improvement_target_pt": 5.0,
+        "min_races": 300,
+        "min_days": 14,
+        "requirements": [
+          "本番比で回収率+5ポイント以上",
+          "同一レースのペア比較で統計的な改善を確認",
+          "最大DDが本番より悪化しない",
+          "別期間でも改善傾向が再現する",
+          "標本不足の場合は採用せず判断保留",
+          "複数実験の多重検定に配慮し、単独の有意性で採用しない"
+        ]
+      },
+      "experiments": {
+        "P1_time_agreement": {
+          "experiment_id": "P1_TIME_AGREEMENT",
+          "definition": "一致 = 持ちタイム最速馬が本番1位と同一。不一致群のみ投資額を T1=×0.75 / T2=×0.50 に縮小する（買い目・順位は不変、払戻は金額に線形連動）。T0 は本番そのもの。",
+          "retro": {
+            "target_races": 206,
+            "groups": {
+              "agree": {
+                "races": 64,
+                "hit_races": 43,
+                "hit_rate_pct": 67.2,
+                "stake_yen": 100000,
+                "return_yen": 74330,
+                "profit_yen": -25670,
+                "roi_pct": 74.3,
+                "max_dd_yen": 32130,
+                "rank1_rates": {
+                  "horses": 64,
+                  "win_rate_pct": 48.4,
+                  "top3_rate_pct": 75.0
+                },
+                "time_best_rates": {
+                  "horses": 64,
+                  "win_rate_pct": 48.4,
+                  "top3_rate_pct": 75.0
+                },
+                "avg_payout_yen": 1729
+              },
+              "disagree": {
+                "races": 142,
+                "hit_races": 86,
+                "hit_rate_pct": 60.6,
+                "stake_yen": 220200,
+                "return_yen": 153980,
+                "profit_yen": -66220,
+                "roi_pct": 69.9,
+                "max_dd_yen": 73740,
+                "rank1_rates": {
+                  "horses": 142,
+                  "win_rate_pct": 23.9,
+                  "top3_rate_pct": 70.4
+                },
+                "time_best_rates": {
+                  "horses": 142,
+                  "win_rate_pct": 16.2,
+                  "top3_rate_pct": 48.6
+                },
+                "avg_payout_yen": 1790
+              }
+            },
+            "patterns": {
+              "T0": {
+                "races": 206,
+                "hit_races": 129,
+                "hit_rate_pct": 62.6,
+                "stake_yen": 320200,
+                "return_yen": 228310,
+                "profit_yen": -91890,
+                "roi_pct": 71.3,
+                "max_dd_yen": 100860,
+                "avg_payout_yen": 1770,
+                "roi_ci95_pct": [
+                  52.6,
+                  90.0
+                ]
+              },
+              "T1": {
+                "races": 206,
+                "hit_races": 129,
+                "hit_rate_pct": 62.6,
+                "stake_yen": 265150,
+                "return_yen": 189815,
+                "profit_yen": -75335,
+                "roi_pct": 71.6,
+                "max_dd_yen": 82968,
+                "avg_payout_yen": 1471,
+                "roi_ci95_pct": [
+                  53.0,
+                  90.2
+                ]
+              },
+              "T2": {
+                "races": 206,
+                "hit_races": 129,
+                "hit_rate_pct": 62.6,
+                "stake_yen": 210100,
+                "return_yen": 151320,
+                "profit_yen": -58780,
+                "roi_pct": 72.0,
+                "max_dd_yen": 65075,
+                "avg_payout_yen": 1173,
+                "roi_ci95_pct": [
+                  52.9,
+                  91.1
+                ]
+              }
+            },
+            "paired_diff_vs_T0": {
+              "T1": {
+                "races": 142,
+                "mean_diff_yen": 116.6,
+                "ci95": [
+                  26.5,
+                  206.6
+                ]
+              },
+              "T2": {
+                "races": 142,
+                "mean_diff_yen": 233.2,
+                "ci95": [
+                  53.1,
+                  413.2
+                ]
+              }
+            }
+          },
+          "forward": {
+            "target_races": 0
+          },
+          "evaluation_forward": {
+            "sample_races_forward": 0,
+            "measurement_days_forward": 0,
+            "verdict": "判断保留（標本不足: 対象300レース・最低2週間の条件に未達）"
+          }
+        },
+        "P2_selection_decomposition": {
+          "experiment_id": "P2_SELECTION_DECOMP",
+          "definition": "A=本番軸+本番相手 / B=本番軸+hybrid相手 / C=hybrid軸+本番相手 / D=hybrid軸+hybrid相手。買い目構造・総額は build_tickets で統一し、A/B/C/D 全てが精算済みの同一レースのみをペア比較する。馬レベル分解は hybrid メタがある全レースで軸と相手を分けて測る。",
+          "horse_level": {
+            "retro": {
+              "races": 101,
+              "axis": {
+                "production": {
+                  "horses": 101,
+                  "win_rate_pct": 35.6,
+                  "top3_rate_pct": 73.3
+                },
+                "hybrid": {
+                  "horses": 100,
+                  "win_rate_pct": 24.0,
+                  "top3_rate_pct": 56.0
+                }
+              },
+              "partners_top2_4": {
+                "mean_actual_top3_covered": {
+                  "production": 1.257,
+                  "hybrid": 1.089
+                },
+                "winner_in_partners_rate_pct": {
+                  "production": 44.6,
+                  "hybrid": 32.7
+                }
+              }
+            },
+            "forward": {
+              "races": 0
+            }
+          },
+          "tickets_paired_forward": {
+            "paired_races": 0
+          },
+          "ad_reference": {
+            "retro": {
+              "hybrid": {
+                "races": 101,
+                "hit_races": 37,
+                "hit_rate_pct": 36.6,
+                "stake_yen": 161100,
+                "return_yen": 84770,
+                "profit_yen": -76330,
+                "roi_pct": 52.6,
+                "max_dd_yen": 103780
+              },
+              "actual_same_races": {
+                "races": 101,
+                "hit_races": 63,
+                "hit_rate_pct": 62.4,
+                "stake_yen": 158700,
+                "return_yen": 98790,
+                "profit_yen": -59910,
+                "roi_pct": 62.2,
+                "max_dd_yen": 67590
+              },
+              "by_kind": {
+                "中央": {
+                  "hybrid": {
+                    "races": 3,
+                    "hit_races": 2,
+                    "hit_rate_pct": 66.7,
+                    "stake_yen": 4500,
+                    "return_yen": 1810,
+                    "profit_yen": -2690,
+                    "roi_pct": 40.2,
+                    "max_dd_yen": 2690
+                  },
+                  "actual_same_races": {
+                    "races": 3,
+                    "hit_races": 1,
+                    "hit_rate_pct": 33.3,
+                    "stake_yen": 4500,
+                    "return_yen": 580,
+                    "profit_yen": -3920,
+                    "roi_pct": 12.9,
+                    "max_dd_yen": 3920
+                  }
+                },
+                "地方": {
+                  "hybrid": {
+                    "races": 98,
+                    "hit_races": 35,
+                    "hit_rate_pct": 35.7,
+                    "stake_yen": 156600,
+                    "return_yen": 82960,
+                    "profit_yen": -73640,
+                    "roi_pct": 53.0,
+                    "max_dd_yen": 101090
+                  },
+                  "actual_same_races": {
+                    "races": 98,
+                    "hit_races": 62,
+                    "hit_rate_pct": 63.3,
+                    "stake_yen": 154200,
+                    "return_yen": 98210,
+                    "profit_yen": -55990,
+                    "roi_pct": 63.7,
+                    "max_dd_yen": 63670
+                  }
+                }
+              },
+              "by_runner_band": {
+                "8頭以下": {
+                  "races": 13,
+                  "hit_races": 6,
+                  "hit_rate_pct": 46.2,
+                  "stake_yen": 20700,
+                  "return_yen": 4600,
+                  "profit_yen": -16100,
+                  "roi_pct": 22.2,
+                  "max_dd_yen": 16100
+                },
+                "9-12頭": {
+                  "races": 88,
+                  "hit_races": 31,
+                  "hit_rate_pct": 35.2,
+                  "stake_yen": 140400,
+                  "return_yen": 80170,
+                  "profit_yen": -60230,
+                  "roi_pct": 57.1,
+                  "max_dd_yen": 87680
+                },
+                "13頭以上": {
+                  "races": 0
+                },
+                "頭数不明": {
+                  "races": 0
+                }
+              },
+              "by_bet_type": {
+                "win": {
+                  "lines": 101,
+                  "hit_lines": 24,
+                  "stake_yen": 27400,
+                  "return_yen": 18250,
+                  "roi_pct": 66.6,
+                  "hit_rate_pct": 23.8
+                },
+                "quinella": {
+                  "lines": 202,
+                  "hit_lines": 17,
+                  "stake_yen": 52900,
+                  "return_yen": 25100,
+                  "roi_pct": 47.4,
+                  "hit_rate_pct": 8.4
+                },
+                "trio": {
+                  "lines": 178,
+                  "hit_lines": 4,
+                  "stake_yen": 60600,
+                  "return_yen": 12740,
+                  "roi_pct": 21.0,
+                  "hit_rate_pct": 2.2
+                },
+                "wide": {
+                  "lines": 125,
+                  "hit_lines": 20,
+                  "stake_yen": 12500,
+                  "return_yen": 9790,
+                  "roi_pct": 78.3,
+                  "hit_rate_pct": 16.0
+                },
+                "trifecta": {
+                  "lines": 77,
+                  "hit_lines": 1,
+                  "stake_yen": 7700,
+                  "return_yen": 18890,
+                  "roi_pct": 245.3,
+                  "hit_rate_pct": 1.3
+                }
+              }
+            },
+            "forward": {
+              "races": 0
+            }
+          },
+          "evaluation_forward": {
+            "paired_races_forward": 0,
+            "measurement_days_forward": 0,
+            "verdict": "判断保留（標本不足: 対象300レース・最低2週間の条件に未達）"
+          }
+        },
+        "P4_sire_fixed_threshold": {
+          "experiment_id": "P4_SIRE_FIXED_THRESHOLD",
+          "definition": "本番 top5 内で sire_score >= 3.87（遡及分析の3分位・上位バンド境界を固定値化）の馬の単勝成績。境界値 3.87 の同点は全て含めるため、遡及参考値は 262 頭で、3分位バンドそのもの（259頭・回収率114.2%）とは一致しない。retro は同じデータから作った in-sample 参考値で、再現性の判定は forward のみで行う。",
+          "retro_insample_reference": {
+            "horses": 262,
+            "wins": 58,
+            "win_rate_pct": 22.1,
+            "win_rate_wilson_ci95_pct": [
+              17.5,
+              27.5
+            ],
+            "horses_with_odds": 262,
+            "win_roi_pct": 113.3
+          },
+          "forward": {
+            "horses": 0,
+            "wins": 0,
+            "win_rate_pct": 0.0,
+            "win_rate_wilson_ci95_pct": null,
+            "horses_with_odds": 0,
+            "win_roi_pct": null
+          }
+        }
+      },
+      "note": "第1次シャドウ検証の集計。P1/P2/P4 はいずれも計測専用で、本番 34.23 の予測・買い目・配分には使用していない。レース単位の原記録は history.json のスナップショット（frozen_prediction と各 shadow 買い目・精算）にあり、本セクションは experiment_id / configuration_hash で版管理された集計ビュー。遡及と前方は分離し合算しない。P3（券種配分）は settled_lines から集計時に導出できる設計とし、P6（post-odds ゲート）は予測エンジンとは別工程の購入判断シャドウとして設計のみ（設計書参照）。"
     },
     "pool_shadow": {
       "current": {
