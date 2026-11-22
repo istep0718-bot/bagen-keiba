@@ -511,6 +511,15 @@ pedigree_cache を維持する。
   同じ精算経路で精算する。P4 血統は固定閾値 3.87 で前方再現性を測る
 - いずれも計測専用で、本番の予測順位・買い目・投資配分・ゲート・
   グレードには一切使用しない
+
+第2次シャドウ検証 (34.23 計測追加・ENGINE_VERSION は無変更):
+- P2 軸分析 (本番軸/hybrid軸の一致・正解の4分類)、P6 post-odds
+  購入判断ゲート (判断時点オッズで人気帯を分け P6-0/-25/-50 と
+  別実験 P6-SKIP を同一レースで比較)、P3 券種配分 (3連複の段階的
+  縮小と馬連・ワイドへの振替)、P1 リスク改善型ゲート、P4 評価拡張
+  (予測能力/収益能力の分離) を stats["phase2_experiments"] に
+  遡及/前方を分離して集計する。全て精算済みスナップショットからの
+  集計時導出で、第1次の集計値にも本番にも一切影響しない
 """
 import json, math, re, sys, time, html as html_lib
 from datetime import datetime, timedelta, timezone
@@ -645,6 +654,30 @@ PHASE1_START_DATE = "2026-11-22"  # 前方計測の開始日（第1次検証か�
 # P4 血統再検証: 遡及データの3分位で得た上位バンド境界 (sire_score
 # 3.87) を固定値として前方再現性を見るための閾値。再計算で動かさない。
 PHASE1_SIRE_FORWARD_MIN = 3.87
+# 第2次シャドウ検証（34.23 計測追加・モデル無変更）: P2 軸分析 /
+# P6 post-odds 購入判断ゲート / P3 券種配分 / P1 リスク改善型ゲート /
+# P4 評価拡張。前方計測の開始日は第1次と同日 (2026-11-22)。両実験とも
+# 集計時にスナップショット (odds_snapshots / settled_lines) から導出
+# する方式で、原記録は本番コードが従来から記録してきたものを使う。
+PHASE2_START_DATE = "2026-11-22"  # 前方計測の開始日（第2次検証）
+# P3: 3連複ラインの金額係数。現行の3連複比率は A=31.6% / B=40.0% で
+# あり、ChatGPT 設計の「75%」は実測と異なるため、現行を75とした
+# 相対段階 (75→50→25) として係数化する。削減分は馬連・ワイドへ
+# 現行金額比で振り替えて総額を固定する。
+PHASE2_P3_TRIO_FACTORS = {"A": 1.0, "B": 50.0 / 75.0, "C": 25.0 / 75.0}
+# P6: 人気帯 (A=1人気 / B=2-3人気 / C=4-5人気 / D=6人気以下) ごとの
+# 投資係数。P6-25 / P6-50 は軸4番人気以下 (C・D) の減額。見送り方式は
+# 別実験 P6-SKIP (D のみ 0) として分離する。
+PHASE2_P6_FACTORS = {
+    "P6-0": {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0},
+    "P6-25": {"A": 1.0, "B": 1.0, "C": 0.75, "D": 0.75},
+    "P6-50": {"A": 1.0, "B": 1.0, "C": 0.50, "D": 0.50},
+}
+PHASE2_P6_SKIP_FACTORS = {"A": 1.0, "B": 1.0, "C": 1.0, "D": 0.0}
+# P1 リスク改善型ゲートの仮基準（収益改善型とは別系統で判定する）
+PHASE2_RISK_GATE = {"min_races": 300, "min_days": 14,
+                    "roi_diff_floor_pt": -1.0,
+                    "dd_improvement_min_pct": 20.0}
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -6554,6 +6587,753 @@ def calculate_stats(snapshots):
             "設計とし、P6（post-odds ゲート）は予測エンジンとは"
             "別工程の購入判断シャドウとして設計のみ（設計書参照）。"),
     }
+
+    # ===== 第2次シャドウ検証（34.23 計測追加・モデル無変更）=====
+    # P2 軸分析 / P6 post-odds 購入判断ゲート / P3 券種配分 /
+    # P1 リスク改善型ゲート / P4 評価拡張。第1次と同じく精算済み
+    # スナップショットからの読み取り専用集計で、本番と第1次の
+    # 集計値には一切影響しない。era は PHASE2_START_DATE で分離し、
+    # 合算しない。採用判定は forward のみで行う。
+    def _era2_of(x):
+        return ("forward" if str(x.get("date") or "") >= PHASE2_START_DATE
+                else "retro")
+
+    settled2_retro = [x for x in settled if _era2_of(x) == "retro"]
+    settled2_fwd = [x for x in settled if _era2_of(x) == "forward"]
+    _fwd2_dates = sorted(str(x.get("date")) for x in settled2_fwd
+                         if x.get("date"))
+    _fwd2_days = 0
+    if _fwd2_dates:
+        _d0 = datetime.strptime(PHASE2_START_DATE, "%Y-%m-%d")
+        _d1 = datetime.strptime(_fwd2_dates[-1], "%Y-%m-%d")
+        _fwd2_days = (_d1 - _d0).days + 1
+
+    def _rec_agg(recs, stake_fn, ret_fn):
+        """レコード (dict に元スナップショット x を内包) 用の集計。
+        最大DD は _sys_agg と同じく (date, post_time, race_id) 順。"""
+        if not recs:
+            return {"races": 0}
+        stake = sum(stake_fn(r) for r in recs)
+        ret = sum(ret_fn(r) for r in recs)
+        hits = sum(1 for r in recs if ret_fn(r) > 0)
+        ordered = sorted(recs, key=lambda r: (
+            str(r["x"].get("date") or ""),
+            str(r["x"].get("post_time") or ""),
+            str(r["x"].get("race_id") or "")))
+        cum = peak = dd = 0.0
+        for r in ordered:
+            cum += ret_fn(r) - stake_fn(r)
+            peak = max(peak, cum)
+            dd = max(dd, peak - cum)
+        return {"races": len(recs), "hit_races": hits,
+                "hit_rate_pct": round(hits / len(recs) * 100, 1),
+                "stake_yen": round(stake), "return_yen": round(ret),
+                "profit_yen": round(ret - stake),
+                "roi_pct": (round(ret / stake * 100, 1) if stake else 0.0),
+                "max_dd_yen": round(dd)}
+
+    def _axis_win_roi(pairs):
+        """(着順, 単勝オッズ) の列から100円単勝換算の回収率を出す。"""
+        stake = ret = n = 0
+        for fin, odds in pairs:
+            if odds:
+                n += 1
+                stake += 100
+                if fin == 1:
+                    ret += int(float(odds) * 100)
+        return {"horses_with_odds": n,
+                "win_roi_pct": (round(ret / stake * 100, 1)
+                                if stake else None)}
+
+    # ---- P2 追加分析: 軸の一致/正解 4分類 ----
+    def _p2_axis_recs(rows):
+        recs = []
+        for x in rows:
+            meta_top = (x.get("hybrid_shadow_meta") or {}).get("top") or []
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            rf = x.get("result_finishes") or []
+            hs = x.get("hybrid_shadow_settlement") or {}
+            if (not meta_top or not top5 or len(rf) < 3
+                    or not hs.get("settlement_complete")):
+                continue
+            pa = top5[0].get("horse_no")
+            ha = meta_top[0].get("horse_no")
+            fp = _hybrid_finish(x, pa)
+            fh = _hybrid_finish(x, ha)
+            if fp is None or fh is None:
+                continue
+            lo = x.get("last_odds") or {}
+            lp = x.get("last_popularity") or {}
+            recs.append({
+                "x": x, "prod_axis": pa, "hyb_axis": ha,
+                "prod_fin": fp, "hyb_fin": fh,
+                "prod_odds": lo.get(str(pa)), "hyb_odds": lo.get(str(ha)),
+                "prod_pop": (x.get("post_odds") or {}).get("popularity"),
+                "hyb_pop": lp.get(str(ha)),
+            })
+        return recs
+
+    def _p2_axis_block(rows):
+        recs = _p2_axis_recs(rows)
+        if not recs:
+            return {"races": 0}
+
+        def axis_stats(rs, fin_key, odds_key):
+            b = _hybrid_rate([r[fin_key] for r in rs])
+            b.update(_axis_win_roi(
+                [(r[fin_key], r[odds_key]) for r in rs]))
+            return b
+
+        def cls_win(r):
+            if r["prod_axis"] == r["hyb_axis"]:
+                return "agree_win" if r["prod_fin"] == 1 else "agree_notwin"
+            if r["prod_fin"] == 1:
+                return "prod_only_win"
+            if r["hyb_fin"] == 1:
+                return "hyb_only_win"
+            return "both_notwin"
+
+        def cls_top3(r):
+            p3 = r["prod_fin"] <= 3
+            h3 = r["hyb_fin"] <= 3
+            if r["prod_axis"] == r["hyb_axis"]:
+                return "agree_top3" if p3 else "agree_notop3"
+            if p3 and h3:
+                return "both_top3"
+            if p3:
+                return "prod_only_top3"
+            if h3:
+                return "hyb_only_top3"
+            return "both_notop3"
+
+        groups = {}
+        for name in ("agree_win", "agree_notwin", "prod_only_win",
+                     "hyb_only_win", "both_notwin"):
+            rs = [r for r in recs if cls_win(r) == name]
+            if not rs:
+                groups[name] = {"races": 0}
+                continue
+            groups[name] = {
+                "races": len(rs),
+                "production_axis": axis_stats(rs, "prod_fin", "prod_odds"),
+                "hybrid_axis": axis_stats(rs, "hyb_fin", "hyb_odds"),
+            }
+        top3_counts = {}
+        for name in ("agree_top3", "agree_notop3", "both_top3",
+                     "prod_only_top3", "hyb_only_top3", "both_notop3"):
+            top3_counts[name] = sum(1 for r in recs if cls_top3(r) == name)
+
+        def by_pop(rs, pop_key, fin_key, odds_key):
+            out = {}
+            for band in ("1人気", "2-3人気", "4-5人気", "6人気以下", "不明"):
+                sub = [r for r in rs
+                       if _p6_band_label(r[pop_key]) == band]
+                if sub:
+                    out[band] = axis_stats(sub, fin_key, odds_key)
+            return out
+
+        return {
+            "races": len(recs),
+            "axis_agreement_races": sum(
+                1 for r in recs if r["prod_axis"] == r["hyb_axis"]),
+            "production_axis": dict(
+                axis_stats(recs, "prod_fin", "prod_odds"),
+                by_popularity=by_pop(recs, "prod_pop",
+                                     "prod_fin", "prod_odds")),
+            "hybrid_axis": dict(
+                axis_stats(recs, "hyb_fin", "hyb_odds"),
+                by_popularity=by_pop(recs, "hyb_pop",
+                                     "hyb_fin", "hyb_odds")),
+            "win_classification": groups,
+            "top3_classification_counts": top3_counts,
+        }
+
+    # ---- P6: post-odds 購入判断ゲート ----
+    def _p6_band_label(pop):
+        if pop is None:
+            return "不明"
+        if pop <= 1:
+            return "1人気"
+        if pop <= 3:
+            return "2-3人気"
+        if pop <= 5:
+            return "4-5人気"
+        return "6人気以下"
+
+    def _p6_band_of_pop(pop):
+        if pop is None:
+            return None
+        if pop <= 1:
+            return "A"
+        if pop <= 3:
+            return "B"
+        if pop <= 5:
+            return "C"
+        return "D"
+
+    def _p6_decision(x):
+        """購入判断時点のオッズ: odds_snapshots のうちレース日当日の
+        発走時刻より前で最後の観測点から、軸 (本番1位) の人気を復元
+        する。最終オッズは未来情報混入になるため使わない。観測点が
+        無い・発走時刻が無い場合は None (対象外として数える)。"""
+        top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+        if not top5 or not isinstance(top5[0], dict):
+            return None
+        axis = top5[0].get("horse_no")
+        date = str(x.get("date") or "")
+        m = re.match(r"^(\d{1,2}):(\d{2})$",
+                     str(x.get("post_time") or "").strip())
+        if axis is None or not m or len(date) != 10:
+            return None
+        try:
+            post_dt = datetime.strptime(date, "%Y-%m-%d").replace(
+                hour=int(m.group(1)), minute=int(m.group(2)), tzinfo=JST)
+        except ValueError:
+            return None
+        best = None
+        for s in x.get("odds_snapshots") or []:
+            if not isinstance(s, dict) or not s.get("at"):
+                continue
+            try:
+                at = datetime.fromisoformat(str(s["at"]))
+            except ValueError:
+                continue
+            if at.tzinfo is None:
+                at = at.replace(tzinfo=JST)
+            if at >= post_dt or at.strftime("%Y-%m-%d") != date:
+                continue
+            odds_map = s.get("odds") or {}
+            ao = odds_map.get(str(axis))
+            if not isinstance(ao, (int, float)):
+                continue
+            if best is None or at > best[0]:
+                best = (at, float(ao), odds_map)
+        if best is None:
+            return None
+        at, ao, odds_map = best
+        pop = _popularity_rank(ao, list(odds_map.values()))
+        band = _p6_band_of_pop(pop)
+        if band is None:
+            return None
+        return {"band": band, "popularity": pop, "axis_win_odds": ao,
+                "odds_observed_at": at.isoformat(), "axis": axis}
+
+    def _p6_block(rows):
+        recs = []
+        excluded = 0
+        for x in rows:
+            dec = _p6_decision(x)
+            if dec is None:
+                excluded += 1
+                continue
+            fin = _hybrid_finish(x, dec["axis"])
+            recs.append({"x": x, "band": dec["band"],
+                         "popularity": dec["popularity"],
+                         "odds_observed_at": dec["odds_observed_at"],
+                         "axis_fin": fin, "kind": x.get("kind") or "不明",
+                         "course": x.get("course") or "不明"})
+        out = {"target_races": len(recs),
+               "excluded_no_decision_odds": excluded}
+        if not recs:
+            return out
+
+        def variant(factors):
+            sf = lambda r: _main_stake(r["x"]) * factors[r["band"]]
+            rf = lambda r: _main_ret(r["x"]) * factors[r["band"]]
+            b = _rec_agg(recs, sf, rf)
+            b["avg_payout_yen"] = (round(b["return_yen"] / b["races"])
+                                   if b["races"] else 0)
+            b["roi_ci95_pct"] = _roi_ci95(
+                [r["x"] for r in recs],
+                lambda x: _main_stake(x) * factors[
+                    next(r["band"] for r in recs if r["x"] is x)],
+                lambda x: _main_ret(x) * factors[
+                    next(r["band"] for r in recs if r["x"] is x)])
+            return b
+
+        variants = {k: variant(f) for k, f in PHASE2_P6_FACTORS.items()}
+        base_profit = lambda r: _main_ret(r["x"]) - _main_stake(r["x"])
+        diffs = {}
+        for k in ("P6-25", "P6-50"):
+            f = PHASE2_P6_FACTORS[k]
+            alt_profit = (lambda r, f=f: (
+                _main_ret(r["x"]) - _main_stake(r["x"])) * f[r["band"]])
+            d = _paired_diff_ci(recs, base_profit, alt_profit)
+            d["roi_diff_pt_vs_P6-0"] = round(
+                variants[k]["roi_pct"] - variants["P6-0"]["roi_pct"], 1)
+            d["dd_not_worse_than_P6-0"] = (
+                variants[k]["max_dd_yen"] <= variants["P6-0"]["max_dd_yen"])
+            diffs[k] = d
+        skip = variant(PHASE2_P6_SKIP_FACTORS)
+        skip_diff = _paired_diff_ci(
+            recs, base_profit,
+            lambda r: (_main_ret(r["x"]) - _main_stake(r["x"]))
+            * PHASE2_P6_SKIP_FACTORS[r["band"]])
+        skip_diff["roi_diff_pt_vs_P6-0"] = round(
+            skip["roi_pct"] - variants["P6-0"]["roi_pct"], 1)
+
+        by_band = {}
+        for band, label in (("A", "1人気"), ("B", "2-3人気"),
+                            ("C", "4-5人気"), ("D", "6人気以下")):
+            sub = [r for r in recs if r["band"] == band]
+            if not sub:
+                by_band[band] = {"races": 0}
+                continue
+            b = _rec_agg(sub, lambda r: _main_stake(r["x"]),
+                         lambda r: _main_ret(r["x"]))
+            fins = [r["axis_fin"] for r in sub if r["axis_fin"] is not None]
+            b["axis"] = _hybrid_rate(fins)
+            by_band[band] = b
+        by_kind = {}
+        for kind in ("中央", "地方"):
+            sub = [r for r in recs if r["kind"] == kind]
+            if sub:
+                by_kind[kind] = {
+                    k: _rec_agg(
+                        sub,
+                        lambda r, f=PHASE2_P6_FACTORS[k]: (
+                            _main_stake(r["x"]) * f[r["band"]]),
+                        lambda r, f=PHASE2_P6_FACTORS[k]: (
+                            _main_ret(r["x"]) * f[r["band"]]))
+                    for k in PHASE2_P6_FACTORS}
+        axis_fins = [r["axis_fin"] for r in recs
+                     if r["axis_fin"] is not None]
+        courses = {}
+        for r in recs:
+            courses[r["course"]] = courses.get(r["course"], 0) + 1
+        out.update({
+            "variants": variants,
+            "paired_diff_vs_P6-0": diffs,
+            "skip_experiment": {"factors": PHASE2_P6_SKIP_FACTORS,
+                                "block": skip,
+                                "paired_diff_vs_P6-0": skip_diff},
+            "by_popularity_band": by_band,
+            "by_kind": by_kind,
+            "axis_rates": _hybrid_rate(axis_fins),
+            "course_counts": dict(sorted(
+                courses.items(), key=lambda kv: -kv[1])),
+        })
+        return out
+
+    _p6_retro = _p6_block(settled2_retro)
+    _p6_fwd = _p6_block(settled2_fwd)
+    _p6_eval = {
+        "sample_races_forward": _p6_fwd.get("target_races", 0),
+        "measurement_days_forward": _fwd2_days,
+        "gate_type": "profit",
+        "verdict": _verdict(_p6_fwd.get("target_races", 0), _fwd2_days)}
+    if _p6_fwd.get("paired_diff_vs_P6-0"):
+        _p6_eval["per_variant"] = _p6_fwd["paired_diff_vs_P6-0"]
+
+    # ---- P3: 券種配分 (3連複の段階的縮小) ----
+    def _p3_rec(x):
+        lines = [ln for ln in (x.get("settled_lines") or [])
+                 if isinstance(ln, dict)]
+        if not lines:
+            return None
+        tot = sum(safe_int(ln.get("stake_yen"), 0) for ln in lines)
+        trio = [ln for ln in lines if ln.get("type") == "trio"]
+        if tot <= 0 or not trio:
+            return None
+        recip = [ln for ln in lines
+                 if ln.get("type") in ("quinella", "wide")]
+        other = [ln for ln in lines
+                 if ln.get("type") not in ("trio", "quinella", "wide")]
+        agg = lambda ls: (sum(safe_int(ln.get("stake_yen"), 0) for ln in ls),
+                          sum(safe_int(ln.get("return_yen"), 0)
+                              for ln in ls))
+        t_s, t_r = agg(trio)
+        r_s, r_r = agg(recip)
+        o_s, o_r = agg(other)
+        return {"x": x, "total": tot, "trio_stake": t_s,
+                "trio_ret": t_r, "recip_stake": r_s, "recip_ret": r_r,
+                "other_stake": o_s, "other_ret": o_r,
+                "pattern": pattern_of(x)}
+
+    def _p3_variant(rec, factor):
+        """3連複を factor 倍し、削減分を馬連・ワイドへ現行金額比で
+        振り替える (総額固定)。振替先が無い場合は現行のまま。"""
+        t_new = rec["trio_stake"] * factor
+        freed = rec["trio_stake"] - t_new
+        if freed > 0 and rec["recip_stake"] > 0:
+            r_new = rec["recip_stake"] + freed
+            r_ret = rec["recip_ret"] * (r_new / rec["recip_stake"])
+            t_ret = (rec["trio_ret"] * (t_new / rec["trio_stake"])
+                     if rec["trio_stake"] else 0.0)
+            return (t_new + r_new + rec["other_stake"],
+                    t_ret + r_ret + rec["other_ret"], t_new)
+        return (float(rec["total"]),
+                float(rec["trio_ret"] + rec["recip_ret"]
+                      + rec["other_ret"]),
+                float(rec["trio_stake"]))
+
+    def _p3_block(rows):
+        recs = [r for r in (_p3_rec(x) for x in rows) if r is not None]
+        out = {"target_races": len(recs)}
+        if not recs:
+            return out
+        variants = {}
+        for name, fac in PHASE2_P3_TRIO_FACTORS.items():
+            sf = lambda r, fac=fac: _p3_variant(r, fac)[0]
+            rf = lambda r, fac=fac: _p3_variant(r, fac)[1]
+            b = _rec_agg(recs, sf, rf)
+            trio_share = (sum(_p3_variant(r, fac)[2] for r in recs)
+                          / sum(sf(r) for r in recs) * 100
+                          if recs else 0.0)
+            b["trio_share_pct"] = round(trio_share, 1)
+            b["roi_ci95_pct"] = _roi_ci95(
+                [r["x"] for r in recs],
+                lambda x: _p3_variant(
+                    next(r for r in recs if r["x"] is x), fac)[0],
+                lambda x: _p3_variant(
+                    next(r for r in recs if r["x"] is x), fac)[1])
+            variants[name] = b
+        base_profit = lambda r: _p3_variant(r, 1.0)[1] - _p3_variant(r, 1.0)[0]
+        diffs = {}
+        for name in ("B", "C"):
+            fac = PHASE2_P3_TRIO_FACTORS[name]
+            d = _paired_diff_ci(
+                recs, base_profit,
+                lambda r, fac=fac: (_p3_variant(r, fac)[1]
+                                    - _p3_variant(r, fac)[0]))
+            d["roi_diff_pt_vs_A"] = round(
+                variants[name]["roi_pct"] - variants["A"]["roi_pct"], 1)
+            d["dd_not_worse_than_A"] = (
+                variants[name]["max_dd_yen"] <= variants["A"]["max_dd_yen"])
+            diffs[name] = d
+        by_pattern = {}
+        for pat in ("A", "B"):
+            sub = [r for r in recs if r["pattern"] == pat]
+            if sub:
+                by_pattern[pat] = {
+                    name: _rec_agg(
+                        sub,
+                        lambda r, fac=fac: _p3_variant(r, fac)[0],
+                        lambda r, fac=fac: _p3_variant(r, fac)[1])
+                    for name, fac in PHASE2_P3_TRIO_FACTORS.items()}
+        by_kind = {}
+        for kind in ("中央", "地方"):
+            sub = [r for r in recs if (r["x"].get("kind") or "不明") == kind]
+            if sub:
+                by_kind[kind] = {
+                    name: _rec_agg(
+                        sub,
+                        lambda r, fac=fac: _p3_variant(r, fac)[0],
+                        lambda r, fac=fac: _p3_variant(r, fac)[1])
+                    for name, fac in PHASE2_P3_TRIO_FACTORS.items()}
+        courses = {}
+        for r in recs:
+            c = r["x"].get("course") or "不明"
+            courses[c] = courses.get(c, 0) + 1
+        out.update({"variants": variants, "paired_diff_vs_A": diffs,
+                    "by_pattern": by_pattern, "by_kind": by_kind,
+                    "course_counts": dict(sorted(
+                        courses.items(), key=lambda kv: -kv[1]))})
+        return out
+
+    _p3_retro = _p3_block(settled2_retro)
+    _p3_fwd = _p3_block(settled2_fwd)
+    _p3_eval = {
+        "sample_races_forward": _p3_fwd.get("target_races", 0),
+        "measurement_days_forward": _fwd2_days,
+        "gate_type": "profit",
+        "verdict": _verdict(_p3_fwd.get("target_races", 0), _fwd2_days)}
+    if _p3_fwd.get("paired_diff_vs_A"):
+        _p3_eval["per_variant"] = _p3_fwd["paired_diff_vs_A"]
+
+    # ---- P1: リスク改善型ゲート (第1次の前方集計を再利用) ----
+    def _p1_dd_for(rows, factor):
+        """時系列順の最大DD (T0 は factor=1.0 で全行、T1/T2 は
+        不一致群のみ factor を掛けた損益曲線)。"""
+        ordered = sorted(rows, key=lambda x: (
+            str(x.get("date") or ""), str(x.get("post_time") or ""),
+            str(x.get("race_id") or "")))
+        cum = peak = dd = 0.0
+        for x in ordered:
+            f = factor if _p1_agreement(x) == "disagree" else 1.0
+            cum += (_main_ret(x) - _main_stake(x)) * f
+            peak = max(peak, cum)
+            dd = max(dd, peak - cum)
+        return dd
+
+    _p1_risk = {"gate_type": "risk"}
+    _p1_target_fwd = [x for x in settled_fwd
+                      if _p1_agreement(x) is not None]
+    if _p1_fwd.get("patterns"):
+        pats = _p1_fwd["patterns"]
+        halves = {}
+        if len(_p1_target_fwd) >= 2:
+            ordered = sorted(_p1_target_fwd, key=lambda x: (
+                str(x.get("date") or ""), str(x.get("post_time") or ""),
+                str(x.get("race_id") or "")))
+            mid = len(ordered) // 2
+            halves = {"first": ordered[:mid], "second": ordered[mid:]}
+        risk_variants = {}
+        for name, fac in (("T1", 0.75), ("T2", 0.50)):
+            t0 = pats["T0"]
+            tk = pats[name]
+            dd_imp = ((t0["max_dd_yen"] - tk["max_dd_yen"])
+                      / t0["max_dd_yen"] * 100 if t0["max_dd_yen"] else 0.0)
+            roi_diff = (_p1_eval.get(name) or {}).get("roi_diff_pt_vs_T0")
+            ci = ((_p1_fwd.get("paired_diff_vs_T0") or {}).get(name)
+                  or {}).get("ci95")
+            ev_ok = (ci is None or ci[1] >= 0)
+            half_imp = {}
+            both_halves = None
+            if halves:
+                both_halves = True
+                for hname, hrows in halves.items():
+                    d0 = _p1_dd_for(hrows, 1.0)
+                    dk = _p1_dd_for(hrows, fac)
+                    imp = ((d0 - dk) / d0 * 100 if d0 else 0.0)
+                    half_imp[hname] = {
+                        "races": len(hrows), "T0_max_dd_yen": round(d0),
+                        "variant_max_dd_yen": round(dk),
+                        "dd_improvement_pct": round(imp, 1)}
+                    if dk > d0:
+                        both_halves = False
+            checks = {
+                "races_ge_300": _p1_fwd.get("target_races", 0)
+                >= PHASE2_RISK_GATE["min_races"],
+                "days_ge_14": _fwd_days >= PHASE2_RISK_GATE["min_days"],
+                "roi_diff_within_floor": (
+                    roi_diff is not None
+                    and roi_diff >= PHASE2_RISK_GATE["roi_diff_floor_pt"]),
+                "dd_improvement_ge_min": (
+                    dd_imp >= PHASE2_RISK_GATE["dd_improvement_min_pct"]),
+                "dd_improvement_both_halves": bool(both_halves),
+                "ev_not_clearly_worse": bool(ev_ok),
+            }
+            if not checks["races_ge_300"] or not checks["days_ge_14"]:
+                verdict = ("判断保留（標本不足: 対象300レース・最低2週間の"
+                           "条件に未達）")
+            elif all(checks.values()):
+                verdict = "リスク改善型ゲート通過（仮基準）"
+            else:
+                verdict = "リスク改善型ゲート未達（仮基準）"
+            risk_variants[name] = {
+                "roi_diff_pt_vs_T0": roi_diff,
+                "max_dd_yen": tk["max_dd_yen"],
+                "dd_improvement_pct_vs_T0": round(dd_imp, 1),
+                "max_dd_per_million_stake": (
+                    round(tk["max_dd_yen"] / tk["stake_yen"] * 1000000)
+                    if tk["stake_yen"] else None),
+                "paired_diff_ci95_vs_T0": ci,
+                "ev_not_clearly_worse": bool(ev_ok),
+                "half_split_dd": half_imp,
+                "checks": checks,
+                "verdict": verdict,
+            }
+        _p1_risk.update({
+            "sample_races_forward": _p1_fwd.get("target_races", 0),
+            "measurement_days_forward": _fwd_days,
+            "T0_reference": {
+                "max_dd_yen": pats["T0"]["max_dd_yen"],
+                "max_dd_per_million_stake": (
+                    round(pats["T0"]["max_dd_yen"] / pats["T0"]["stake_yen"]
+                          * 1000000) if pats["T0"]["stake_yen"] else None),
+                "roi_pct": pats["T0"]["roi_pct"]},
+            "variants": risk_variants,
+            "profit_gate_reference": _p1_eval,
+        })
+
+    # ---- P4: 評価拡張 (予測能力/収益能力の分離) ----
+    def _p4x_block(rows):
+        horses = []
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            if not any(isinstance(h, dict) and "time_index_best" in h
+                       for h in top5):
+                continue
+            for h in top5:
+                if not isinstance(h, dict):
+                    continue
+                sc = h.get("sire_score")
+                if sc is None:
+                    continue
+                fin = _hybrid_finish(x, h.get("horse_no"))
+                if fin is None:
+                    continue
+                odds = (x.get("last_odds") or {}).get(str(h.get("horse_no")))
+                pop = (x.get("last_popularity") or {}).get(
+                    str(h.get("horse_no")))
+                horses.append({"score": sc, "fin": fin, "odds": odds,
+                               "pop": pop, "kind": x.get("kind") or "不明",
+                               "upper": sc >= PHASE1_SIRE_FORWARD_MIN})
+        if not horses:
+            return {"horses": 0}
+
+        def band_block(hs):
+            wins = sum(1 for h in hs if h["fin"] == 1)
+            b = {"horses": len(hs), "wins": wins,
+                 "win_rate_pct": (round(wins / len(hs) * 100, 1)
+                                  if hs else 0.0),
+                 "win_rate_wilson_ci95_pct": _wilson_ci95(wins, len(hs)),
+                 "top3_rate_pct": (
+                     round(sum(1 for h in hs if h["fin"] <= 3)
+                           / len(hs) * 100, 1) if hs else 0.0)}
+            b.update(_axis_win_roi([(h["fin"], h["odds"]) for h in hs]))
+            return b
+
+        upper = [h for h in horses if h["upper"]]
+        non_upper = [h for h in horses if not h["upper"]]
+        by_kind = {}
+        for kind in ("中央", "地方"):
+            sub_u = [h for h in upper if h["kind"] == kind]
+            sub_n = [h for h in non_upper if h["kind"] == kind]
+            if sub_u or sub_n:
+                by_kind[kind] = {"upper": band_block(sub_u),
+                                 "non_upper": band_block(sub_n)}
+        by_pop = {}
+        for band in ("1人気", "2-3人気", "4-5人気", "6人気以下", "不明"):
+            sub = [h for h in upper if _p6_band_label(h["pop"]) == band]
+            if sub:
+                by_pop[band] = band_block(sub)
+        by_odds = {}
+        for band in ODDS_BANDS:
+            sub = [h for h in upper
+                   if odds_band({"win_odds": h["odds"]}) == band]
+            if sub:
+                by_odds[band] = band_block(sub)
+        return {"horses": len(horses), "upper": band_block(upper),
+                "non_upper": band_block(non_upper),
+                "upper_by_kind": {k: v["upper"] for k, v in by_kind.items()},
+                "by_kind": by_kind, "upper_by_popularity": by_pop,
+                "upper_by_odds_band": by_odds}
+
+    _p2_config = {
+        "framework": "PHASE2_EXP_V1",
+        "start_date": PHASE2_START_DATE,
+        "P2": {"gate": ("phase1 horse-level と同一 (hybrid meta / "
+                        "frozen top5 / 着順 / hybrid 精算が揃う本精算)"),
+               "win_classification": ["agree_win", "agree_notwin",
+                                      "prod_only_win", "hyb_only_win",
+                                      "both_notwin"]},
+        "P6": {"factors": PHASE2_P6_FACTORS,
+               "skip_factors": PHASE2_P6_SKIP_FACTORS,
+               "odds_point": ("last odds_snapshots entry on race date "
+                              "before post_time (購入判断時点)"),
+               "bands": {"A": "1人気", "B": "2-3人気", "C": "4-5人気",
+                         "D": "6人気以下"}},
+        "P3": {"trio_factors": PHASE2_P3_TRIO_FACTORS,
+               "redistribution": ("freed trio amount to quinella/wide "
+                                  "lines pro-rata by current stakes; "
+                                  "total stake fixed per race")},
+        "P1_risk_gate": PHASE2_RISK_GATE,
+        "P4": {"sire_forward_min": PHASE1_SIRE_FORWARD_MIN},
+    }
+    _config2_hash = _hashlib.sha1(json.dumps(
+        _p2_config, sort_keys=True, ensure_ascii=False
+    ).encode("utf-8")).hexdigest()
+
+    phase2_stats = {
+        "framework": "PHASE2_EXP_V1",
+        "model_version": ENGINE_VERSION,
+        "forward_start_date": PHASE2_START_DATE,
+        "experiment_end": max(
+            (str(x.get("date")) for x in settled if x.get("date")),
+            default=None),
+        "configuration_hash": _config2_hash,
+        "configuration": _p2_config,
+        "adoption_framework": {
+            "profit_gate": {
+                "applies_to": ["P2", "P3", "P4", "P6"],
+                "min_races": 300, "min_days": 14,
+                "roi_improvement_target_pt": 5.0,
+                "requirements": [
+                    "本番比で回収率+5ポイント以上",
+                    "同一レースのペア比較で統計的な改善を確認",
+                    "最大DDが本番より悪化しない",
+                    "別期間でも改善傾向が再現する",
+                    "標本不足の場合は採用せず判断保留",
+                    "複数実験の多重検定に配慮し、単独の有意性で採用しない",
+                ]},
+            "risk_gate": {
+                "applies_to": ["P1"],
+                "criteria": PHASE2_RISK_GATE,
+                "requirements": [
+                    "前方300レース以上・14日以上",
+                    "回収率が本番比-1pt以内 (非劣性の暫定許容幅)",
+                    "最大DDが本番比20%以上改善",
+                    "別期間 (前半/後半) でもDD改善を再現",
+                    "期待値の明確な悪化がない (ペア差95%CI上限が0未満でない)",
+                ]},
+        },
+        "experiments": {
+            "P2_axis_analysis": {
+                "experiment_id": "P2_AXIS_ANALYSIS",
+                "definition": (
+                    "本番軸 (frozen top5[0]) と hybrid軸 (hybrid メタ"
+                    " top[0]) の一致/正解を4分類し、各群の軸勝率・"
+                    "複勝率・単勝回収率と人気帯別成績を出す。母集団は"
+                    "第1次の馬レベル分解と同一ゲート。単勝回収率の"
+                    "オッズは last_odds (最終生成時点) の参考値。"),
+                "retro": _p2_axis_block(settled2_retro),
+                "forward": _p2_axis_block(settled2_fwd),
+            },
+            "P6_post_odds_gate": {
+                "experiment_id": "P6_POST_ODDS_GATE",
+                "definition": (
+                    "予測と分離した購入判断シャドウ。軸 (本番1位) の"
+                    "人気を購入判断時点 (発走前の最後の odds_snapshots "
+                    "観測点) のオッズから復元し、人気帯 A=1人気 / "
+                    "B=2-3人気 / C=4-5人気 / D=6人気以下 に分ける。"
+                    "P6-0=現行 / P6-25=軸4番人気以下を25%減額 / "
+                    "P6-50=同50%減額 を同一レースで比較し、見送り"
+                    "方式は別実験 P6-SKIP (Dのみ見送り) に分ける。"
+                    "最終オッズでの再現は未来情報混入のため行わない。"
+                    "選定には一切使用しない。"),
+                "retro_reference": _p6_retro,
+                "forward": _p6_fwd,
+                "evaluation_forward": _p6_eval,
+            },
+            "P3_ticket_allocation": {
+                "experiment_id": "P3_TICKET_ALLOCATION",
+                "definition": (
+                    "券種配分のシャドウ。買い目の組み合わせは不変で、"
+                    "3連複ラインの金額だけを A=現行 / B=現行×50/75 / "
+                    "C=現行×25/75 に段階縮小し、削減分を馬連・ワイドへ"
+                    "現行金額比で振り替えて1レース総額を固定する。"
+                    "現行の3連複比率は実測でパターンA 31.6% / "
+                    "パターンB 40.0% であり、75/50/25 は現行を75とした"
+                    "相対段階として実装した (実比率は trio_share_pct "
+                    "に併記)。損益はレース単位で全券種合算して比較。"),
+                "retro_reference": _p3_retro,
+                "forward": _p3_fwd,
+                "evaluation_forward": _p3_eval,
+            },
+            "P1_risk_gate": {
+                "experiment_id": "P1_RISK_GATE",
+                "definition": (
+                    "第1次 P1 (T0/T1/T2) の前方集計を、収益改善型とは"
+                    "別系統のリスク改善型ゲートで判定する。実掛け金の"
+                    "最大DDに加え、総投資額で標準化したDD (100万円"
+                    "あたり) を併記し、単なる投資額縮小と選別による"
+                    "リスク改善を区別する。"),
+                "forward": _p1_risk,
+            },
+            "P4_sire_extended": {
+                "experiment_id": "P4_SIRE_EXTENDED",
+                "definition": (
+                    "第1次 P4 (固定閾値 sire_score >= 3.87) の評価"
+                    "拡張。スコア・閾値は凍結したまま、上位バンドと"
+                    "非上位バンドを並べて予測能力 (勝率) と収益能力 "
+                    "(単勝回収率) を分離し、中央/地方・人気帯・"
+                    "オッズ帯の内訳を追加する。母集団・定義は第1次と"
+                    "同一で、第1次の前方ブロックと上位バンドの数値は"
+                    "一致する。"),
+                "retro_insample_reference": _p4x_block(settled2_retro),
+                "forward": _p4x_block(settled2_fwd),
+            },
+        },
+        "note": (
+            "第2次シャドウ検証の集計。P2軸分析 / P6 / P3 / P1リスク"
+            "ゲート / P4拡張はいずれも計測専用で、本番 34.23 の予測・"
+            "買い目・配分と第1次の集計値には使用していない。遡及は"
+            "発見用の参考値、採用判定は前方 (2026-11-22 以降) のみで"
+            "行う。P6 の人気は購入判断時点のオッズから復元しており、"
+            "最終オッズは使っていない。"),
+    }
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -6598,6 +7378,8 @@ def calculate_stats(snapshots):
         "hybrid_selection": hybrid_selection,
         # 第1次シャドウ検証（P1/P2/P4・遡及/前方分離の集計ビュー）
         "phase1_experiments": phase1_stats,
+        # 第2次シャドウ検証（P2軸分析/P6/P3/P1リスクゲート/P4拡張）
+        "phase2_experiments": phase2_stats,
         # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）
         "pool_shadow": pool_shadow_stats,
         # v34.17: 本精算の 中央×芝／中央×ダート／地方 分割集計（報告専用）
