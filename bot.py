@@ -520,6 +520,18 @@ pedigree_cache を維持する。
   (予測能力/収益能力の分離) を stats["phase2_experiments"] に
   遡及/前方を分離して集計する。全て精算済みスナップショットからの
   集計時導出で、第1次の集計値にも本番にも一切影響しない
+
+第3次シャドウ検証 (34.23 計測追加・ENGINE_VERSION は無変更):
+- AXIS-SURVIVAL V1 (軸の3着内確率をレース前情報だけから推定する
+  凍結ロジスティック回帰。学習は前方開始日より前の遡及のみで、
+  係数は定数として凍結。閾値70%以上のみ購入した場合のシャドウ
+  成績と確率校正を測る)、CENTRAL-VALIDATION (中央全体/中央芝/
+  中央ダート/中央種別不明/地方全体の固定区分での独立評価)、
+  COMBINATION-ENGINE (軸が来たのに取りこぼしたレースの原因分類と、
+  3連複予算の軸込みtop5カバー再配分の前方比較) を
+  stats["phase3_experiments"] に遡及/前方を分離して集計する。
+  いずれも計測専用で、本番の予測順位・買い目・投資配分・ゲート・
+  グレードと、第1次・第2次の集計値には一切使用しない
 """
 import json, math, re, sys, time, html as html_lib
 from datetime import datetime, timedelta, timezone
@@ -678,6 +690,48 @@ PHASE2_P6_SKIP_FACTORS = {"A": 1.0, "B": 1.0, "C": 1.0, "D": 0.0}
 PHASE2_RISK_GATE = {"min_races": 300, "min_days": 14,
                     "roi_diff_floor_pt": -1.0,
                     "dd_improvement_min_pct": 20.0}
+# 第3次シャドウ検証（34.23 計測追加・モデル無変更）: AXIS-SURVIVAL V1 /
+# CENTRAL-VALIDATION / COMBINATION-ENGINE。設計書
+# phase3-shadow-design-2026-11-23.md で条件を事前に固定した。
+# 前方計測は 2026-11-24 の最初のサイクルから開始する。
+PHASE3_START_DATE = "2026-11-24"  # 前方計測の開始日（第3次検証）
+# AXIS-SURVIVAL V1 の主閾値（推定確率70%以上のみ購入）。60%・80% は
+# 探索的参考値として併記するだけで、採用判断には使用しない。
+PHASE3_AXIS_THRESHOLD_MAIN = 0.70
+PHASE3_AXIS_THRESHOLDS_REF = (0.60, 0.80)
+# AXIS-SURVIVAL V1 の凍結モデル。学習は前方開始日より前の本精算
+# レース 753 件（判断時点オッズなし 266・目的変数なし 3 を除外）に
+# 対してオフラインで実施し、係数をここに凍結した。評価期間での
+# 再学習は禁止。特徴量は全てレース前情報のみで、判断時点オッズは
+# 第2次 P6 と同一手順 (odds_snapshots の発走前最後の観測点) で復元
+# する。最終オッズ・最終人気・確定着順は特徴量に使わない。
+# 方式: 標準化した特徴量への L2 正則化つきロジスティック回帰
+# (lambda=1.0、切片は非正則化、Newton 法)。学習内の参考値:
+# ベースレート (軸3着内率) 0.6388 / AUC 0.712 / Brier 0.199。
+PHASE3_AXIS_MODEL = {
+    "features": ["gap12", "gap13", "spread15", "score1", "runners",
+                 "pop_decision", "log_odds_decision", "is_jra",
+                 "is_turf", "surf_unknown", "dist_km", "dist_missing",
+                 "conf"],
+    "means": [2.893891, 5.186228, 8.742218, 17.667065, 10.213811,
+              2.794157, 1.3066, 0.077025, 0.02656, 0.472776,
+              1.402762, 0.47012, 0.843588],
+    "stds": [3.141599, 4.321059, 5.7967, 9.476995, 1.467024,
+             2.47245, 0.860379, 0.266631, 0.160795, 0.499258,
+             0.194136, 0.499106, 0.118082],
+    "intercept": 0.650534,
+    "coefficients": [-0.067545, 0.067441, 0.424967, 0.319744,
+                     -0.113866, 0.050114, -0.436642, 0.13808,
+                     -0.099322, -0.433759, 0.029974, 0.460731,
+                     -0.239527],
+    "l2_lambda": 1.0,
+    "dist_median_km": 1.4,   # 距離欠損時の補完値（学習中央値・凍結）
+    "conf_median": 0.888,    # 信頼度欠損時の補完値（学習中央値・凍結）
+    "train_races": 753,
+    "train_base_rate": 0.6388,
+    "train_excluded": {"no_decision_odds": 266, "no_features": 0,
+                       "no_target": 3},
+}
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -7334,6 +7388,629 @@ def calculate_stats(snapshots):
             "行う。P6 の人気は購入判断時点のオッズから復元しており、"
             "最終オッズは使っていない。"),
     }
+    # ===== 第3次シャドウ検証（34.23 計測追加・モデル無変更）=====
+    # AXIS-SURVIVAL V1 / CENTRAL-VALIDATION / COMBINATION-ENGINE。
+    # 設計書 phase3-shadow-design-2026-11-23.md で条件を事前に固定した。
+    # 全て精算済みスナップショットからの読み取り専用集計で、本番と
+    # 第1次・第2次の集計値には一切影響しない。era は
+    # PHASE3_START_DATE (2026-11-24) で分離し、合算しない。
+    # 採用判定は forward のみで行う。
+    def _era3_of(x):
+        return ("forward" if str(x.get("date") or "") >= PHASE3_START_DATE
+                else "retro")
+
+    settled3_retro = [x for x in settled if _era3_of(x) == "retro"]
+    settled3_fwd = [x for x in settled if _era3_of(x) == "forward"]
+    _fwd3_dates = sorted(str(x.get("date")) for x in settled3_fwd
+                         if x.get("date"))
+    _fwd3_days = 0
+    if _fwd3_dates:
+        _d0 = datetime.strptime(PHASE3_START_DATE, "%Y-%m-%d")
+        _d1 = datetime.strptime(_fwd3_dates[-1], "%Y-%m-%d")
+        _fwd3_days = (_d1 - _d0).days + 1
+
+    _axm = PHASE3_AXIS_MODEL
+
+    def _p3_features(x, dec):
+        """AXIS-SURVIVAL の特徴量 (学習時と同一手順・同一順序)。
+        作れない場合は None。dec は _p6_decision の戻り値。"""
+        top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+        if len(top5) < 3 or not all(isinstance(h, dict) for h in top5):
+            return None
+        scores = [h.get("score") for h in top5]
+        if not all(isinstance(s, (int, float)) for s in scores):
+            return None
+        runners = x.get("runner_count")
+        if not isinstance(runners, (int, float)) or runners <= 0:
+            return None
+        surf = str(x.get("surface") or "")
+        is_turf = 1.0 if "芝" in surf else 0.0
+        surf_unknown = (0.0 if ("芝" in surf or "ダート" in surf)
+                        else 1.0)
+        dist = x.get("distance_m")
+        dist_missing = 0.0
+        if isinstance(dist, (int, float)) and dist > 0:
+            dist_km = float(dist) / 1000.0
+        else:
+            dist_km = _axm["dist_median_km"]
+            dist_missing = 1.0
+        conf = x.get("race_confidence_score")
+        conf_v = (float(conf) / 100.0
+                  if isinstance(conf, (int, float))
+                  else _axm["conf_median"])
+        odds = dec["axis_win_odds"]
+        return [
+            float(scores[0] - scores[1]),
+            float(scores[0] - scores[2]),
+            float(scores[0] - scores[-1]),
+            float(scores[0]),
+            float(runners),
+            float(dec["popularity"]),
+            math.log(odds) if odds > 0 else 0.0,
+            1.0 if x.get("kind") == "中央" else 0.0,
+            is_turf,
+            surf_unknown,
+            dist_km,
+            dist_missing,
+            conf_v,
+        ]
+
+    def _p3_prob(fv):
+        eta = _axm["intercept"] + sum(
+            c * (v - m) / s for c, v, m, s in zip(
+                _axm["coefficients"], fv, _axm["means"], _axm["stds"]))
+        eta = max(-35.0, min(35.0, eta))
+        return 1.0 / (1.0 + math.exp(-eta))
+
+    def _p3_prob_of(x):
+        """(推定確率, 除外理由)。確率は凍結モデルによる軸3着内確率。
+        除外の判定順序は学習時と同一 (判断時点オッズ→特徴量)。"""
+        dec = _p6_decision(x)
+        if dec is None:
+            return None, "no_decision_odds"
+        fv = _p3_features(x, dec)
+        if fv is None:
+            return None, "no_features"
+        return _p3_prob(fv), None
+
+    # ---- AXIS-SURVIVAL V1 ----
+    def _p3_axis_block(rows):
+        recs = []
+        excl = {"no_decision_odds": 0, "no_features": 0, "no_target": 0}
+        for x in rows:
+            prob, reason = _p3_prob_of(x)
+            if prob is None:
+                excl[reason] += 1
+                continue
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            axis = (top5[0].get("horse_no")
+                    if top5 and isinstance(top5[0], dict) else None)
+            axis_fin = _hybrid_finish(x, axis)
+            if axis_fin is None:
+                # 軸の着順が記録されていないレース (出走取消等で
+                # result_finishes に軸が無い) は学習時と同様に対象外
+                excl["no_target"] += 1
+                continue
+            recs.append({"x": x, "prob": prob, "axis_fin": axis_fin})
+        out = {"target_races": len(recs), "excluded": excl}
+        if not recs:
+            return out
+        bands = {}
+        for lo, hi, label in ((0.0, 0.5, "0.0-0.5"),
+                              (0.5, 0.6, "0.5-0.6"),
+                              (0.6, 0.7, "0.6-0.7"),
+                              (0.7, 0.8, "0.7-0.8"),
+                              (0.8, 1.01, "0.8-1.0")):
+            sub = [r for r in recs if lo <= r["prob"] < hi
+                   and r["axis_fin"] is not None]
+            if sub:
+                bands[label] = {
+                    "races": len(sub),
+                    "mean_pred": round(
+                        sum(r["prob"] for r in sub) / len(sub), 4),
+                    "actual_top3_rate": round(
+                        sum(1 for r in sub if r["axis_fin"] <= 3)
+                        / len(sub), 4),
+                }
+        known = [r for r in recs if r["axis_fin"] is not None]
+
+        def grp(sub):
+            b = _rec_agg(sub, lambda r: _main_stake(r["x"]),
+                         lambda r: _main_ret(r["x"]))
+            fins = [r["axis_fin"] for r in sub
+                    if r["axis_fin"] is not None]
+            if fins:
+                b["axis_top3_rate_pct"] = round(
+                    sum(1 for f in fins if f <= 3) / len(fins) * 100, 1)
+            return b
+
+        groups = {"A_all": _rec_agg(
+            [{"x": x} for x in rows],
+            lambda r: _main_stake(r["x"]),
+            lambda r: _main_ret(r["x"]))}
+        for name, th in (("B_ge70", PHASE3_AXIS_THRESHOLD_MAIN),
+                         ("ref_ge60", PHASE3_AXIS_THRESHOLDS_REF[0]),
+                         ("ref_ge80", PHASE3_AXIS_THRESHOLDS_REF[1])):
+            sub = [r for r in recs if r["prob"] >= th]
+            g = grp(sub)
+            g["roi_ci95_pct"] = _roi_ci95(
+                [r["x"] for r in sub], _main_stake, _main_ret)
+            groups[name] = g
+        out.update({
+            "calibration": bands,
+            "brier": (round(
+                sum((r["prob"]
+                     - (1.0 if r["axis_fin"] <= 3 else 0.0)) ** 2
+                    for r in known) / len(known), 4) if known else None),
+            "groups": groups,
+        })
+        return out
+
+    _p3_axis_retro = _p3_axis_block(settled3_retro)
+    _p3_axis_fwd = _p3_axis_block(settled3_fwd)
+    _p3_axis_eval = {
+        "sample_races_forward": len(settled3_fwd),
+        "b_races_forward": (
+            (_p3_axis_fwd.get("groups") or {}).get("B_ge70")
+            or {}).get("races", 0),
+        "measurement_days_forward": _fwd3_days,
+        "verdict": _verdict(len(settled3_fwd), _fwd3_days),
+    }
+
+    # ---- CENTRAL-VALIDATION ----
+    def _p3_surface_class(x):
+        surf = str(x.get("surface") or "")
+        if "芝" in surf:
+            return "芝"
+        if "ダート" in surf:
+            return "ダート"
+        return "不明"
+
+    def _p3_central_group(rows):
+        out = {
+            "races": len(rows),
+            "bet_ineligible_races": sum(
+                1 for x in rows if x.get("bet_eligible") is False),
+            "agg": _rec_agg([{"x": x} for x in rows],
+                            lambda r: _main_stake(r["x"]),
+                            lambda r: _main_ret(r["x"])),
+        }
+        fins = []
+        cover_shares = []
+        full_cover = 0
+        band_recs = {}
+        band_excl = 0
+        type_stake = {}
+        type_ret = {}
+        no_lines = 0
+        calib = []
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            axis = (top5[0].get("horse_no")
+                    if top5 and isinstance(top5[0], dict) else None)
+            fin = _hybrid_finish(x, axis)
+            if fin is not None:
+                fins.append(fin)
+            rf = x.get("result_finishes") or []
+            top5nos = {h.get("horse_no") for h in top5
+                       if isinstance(h, dict)}
+            if len(rf) >= 3 and top5nos:
+                share = len(set(rf[:3]) & top5nos) / 3.0
+                cover_shares.append(share)
+                if share >= 1.0:
+                    full_cover += 1
+            dec = _p6_decision(x)
+            if dec is None:
+                band_excl += 1
+            else:
+                band_recs.setdefault(dec["band"], []).append(
+                    {"x": x, "axis_fin": fin})
+                fv = _p3_features(x, dec)
+                if fv is not None and fin is not None:
+                    calib.append((_p3_prob(fv),
+                                  1 if fin <= 3 else 0))
+            lines = x.get("settled_lines") or []
+            if not lines:
+                no_lines += 1
+            for ln in lines:
+                if not isinstance(ln, dict):
+                    continue
+                t = ln.get("type") or "不明"
+                type_stake[t] = (type_stake.get(t, 0)
+                                 + safe_int(ln.get("stake_yen"), 0))
+                type_ret[t] = (type_ret.get(t, 0)
+                               + safe_int(ln.get("return_yen"), 0))
+        out["axis"] = _hybrid_rate(fins)
+        bands_out = {}
+        for band in ("A", "B", "C", "D"):
+            sub = band_recs.get(band) or []
+            if not sub:
+                bands_out[band] = {"races": 0}
+                continue
+            b = _rec_agg(sub, lambda r: _main_stake(r["x"]),
+                         lambda r: _main_ret(r["x"]))
+            b["axis"] = _hybrid_rate(
+                [r["axis_fin"] for r in sub
+                 if r["axis_fin"] is not None])
+            bands_out[band] = b
+        out["by_decision_band"] = bands_out
+        out["excluded_no_decision_odds"] = band_excl
+        out["top5_coverage"] = {
+            "races": len(cover_shares),
+            "mean_top3_share_pct": (
+                round(sum(cover_shares) / len(cover_shares) * 100, 1)
+                if cover_shares else 0.0),
+            "full_cover_rate_pct": (
+                round(full_cover / len(cover_shares) * 100, 1)
+                if cover_shares else 0.0),
+        }
+        bt = {}
+        for t in sorted(set(type_stake) | set(type_ret)):
+            s = type_stake.get(t, 0)
+            r = type_ret.get(t, 0)
+            bt[t] = {"stake_yen": s, "return_yen": r,
+                     "roi_pct": (round(r / s * 100, 1) if s else 0.0)}
+        out["bet_types"] = bt
+        out["races_without_settled_lines"] = no_lines
+        if calib:
+            out["calibration"] = {
+                "races": len(calib),
+                "mean_pred": round(
+                    sum(p for p, _ in calib) / len(calib), 4),
+                "actual_top3_rate": round(
+                    sum(y for _, y in calib) / len(calib), 4),
+                "brier": round(
+                    sum((p - y) ** 2 for p, y in calib) / len(calib), 4),
+            }
+        else:
+            out["calibration"] = {"races": 0}
+        return out
+
+    def _p3_central_block(rows):
+        jra = [x for x in rows if x.get("kind") == "中央"]
+        unk = [x for x in jra if _p3_surface_class(x) == "不明"]
+        g_unk = _p3_central_group(unk)
+        g_unk["surface_unknown_breakdown"] = {
+            "未取得": sum(
+                1 for x in unk
+                if str(x.get("surface") or "") in ("", "未取得")),
+            "障害": sum(
+                1 for x in unk
+                if "障害" in str(x.get("surface") or "")),
+            "その他": sum(
+                1 for x in unk
+                if str(x.get("surface") or "") not in ("", "未取得")
+                and "障害" not in str(x.get("surface") or "")),
+        }
+        return {
+            "中央全体": _p3_central_group(jra),
+            "中央芝": _p3_central_group(
+                [x for x in jra if _p3_surface_class(x) == "芝"]),
+            "中央ダート": _p3_central_group(
+                [x for x in jra if _p3_surface_class(x) == "ダート"]),
+            "中央種別不明": g_unk,
+            "地方全体": _p3_central_group(
+                [x for x in rows if x.get("kind") == "地方"]),
+        }
+
+    settled_all3_retro = [x for x in settled_all
+                          if _era3_of(x) == "retro"]
+    settled_all3_fwd = [x for x in settled_all
+                        if _era3_of(x) == "forward"]
+    _p3_central_retro = _p3_central_block(settled_all3_retro)
+    _p3_central_fwd = _p3_central_block(settled_all3_fwd)
+
+    # ---- COMBINATION-ENGINE 第1段: 遡及分類 ----
+    def _p3_combo_stage1(rows):
+        cats = {
+            "regeneration_drift": {
+                "races": 0, "stake_yen": 0,
+                "sub_all_finishers_in_lines": 0,
+                "sub_some_finisher_absent": 0},
+            "candidate_generation_missing": {"races": 0,
+                                             "stake_yen": 0},
+            "selection_excluded": {"races": 0, "stake_yen": 0},
+        }
+        n = 0
+        stake_total = 0
+        for x in rows:
+            top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            rf = x.get("result_finishes") or []
+            if (not top5 or not isinstance(top5[0], dict)
+                    or len(rf) < 3):
+                continue
+            axis = top5[0].get("horse_no")
+            if axis is None or axis not in rf[:3]:
+                continue
+            top5nos = {h.get("horse_no") for h in top5
+                       if isinstance(h, dict)}
+            if not set(rf[:3]) <= top5nos:
+                continue
+            if safe_int(x.get("all_bet_return"), 0) != 0:
+                continue
+            n += 1
+            cost = safe_int(x.get("cost"), 0)
+            stake_total += cost
+            lines = [ln for ln in (x.get("settled_lines") or [])
+                     if isinstance(ln, dict)]
+            win = [ln for ln in lines if ln.get("type") == "win"]
+            settled_axis = None
+            if win and (win[0].get("horses") or []):
+                settled_axis = win[0]["horses"][0]
+            gen_all = set()
+            for ln in lines:
+                gen_all |= set(ln.get("horses") or [])
+            W = set(rf[:3])
+            if settled_axis is not None and settled_axis != axis:
+                c = cats["regeneration_drift"]
+                c["races"] += 1
+                c["stake_yen"] += cost
+                if W <= gen_all:
+                    c["sub_all_finishers_in_lines"] += 1
+                else:
+                    c["sub_some_finisher_absent"] += 1
+            elif not W <= gen_all:
+                c = cats["candidate_generation_missing"]
+                c["races"] += 1
+                c["stake_yen"] += cost
+            else:
+                c = cats["selection_excluded"]
+                c["races"] += 1
+                c["stake_yen"] += cost
+        return {
+            "races": n,
+            "stake_yen": stake_total,
+            "categories": cats,
+            "budget_allocation": {
+                "identifiable_races": 0,
+                "verdict": "判定不能",
+                "reason": (
+                    "build_tickets の予算超過時の末尾ライン削除は"
+                    "スナップショットに記録されず、frozen tickets と"
+                    "settled_lines の差異も予測の再生成で説明できる"
+                    "ため、資金配分起因と断定できるレースは特定"
+                    "できない"),
+            },
+        }
+
+    _p3_stage1_rows = [x for x in settled_all if x.get("settled_lines")]
+    _p3_stage1_retro = _p3_combo_stage1(
+        [x for x in _p3_stage1_rows if _era3_of(x) == "retro"])
+    _p3_stage1_fwd = _p3_combo_stage1(
+        [x for x in _p3_stage1_rows if _era3_of(x) == "forward"])
+
+    # ---- COMBINATION-ENGINE 第2段: 組み合わせ再配分の前方比較 ----
+    def _p3_combo_realloc(x):
+        """軸込み top5 カバー再配分 (設計書 4.2 で固定したルール)。
+        戻り値は ((再配分の投資額, 払戻), None) または (None, 理由)。
+        総投資額は現行と同額 (3連複予算の配り直しのみ)。"""
+        lines = [ln for ln in (x.get("settled_lines") or [])
+                 if isinstance(ln, dict)]
+        trios = [ln for ln in lines if ln.get("type") == "trio"]
+        if not trios:
+            return None, "no_trio_lines"
+        div = safe_int(x.get("trio_payout"), 0)
+        if not div:
+            return None, "no_payout"
+        top5 = (x.get("frozen_prediction") or {}).get("top5") or []
+        if (len(top5) < 3
+                or not all(isinstance(h, dict) for h in top5)):
+            return None, "no_top5"
+        rf = x.get("result_finishes") or []
+        if len(rf) < 3:
+            return None, "no_finishes"
+        axis = top5[0].get("horse_no")
+        if axis is None:
+            return None, "no_top5"
+        budget = sum(safe_int(ln.get("stake_yen"), 0) for ln in trios)
+        partners = [(i + 1, h.get("horse_no"))
+                    for i, h in enumerate(top5)
+                    if i >= 1 and h.get("horse_no") is not None]
+        combos = []
+        for i in range(len(partners)):
+            for j in range(i + 1, len(partners)):
+                r1, h1 = partners[i]
+                r2, h2 = partners[j]
+                combos.append((r1 + r2,
+                               tuple(sorted((axis, h1, h2)))))
+        if not combos:
+            return None, "no_top5"
+        combos.sort(key=lambda c: (c[0], c[1]))
+        n_c = len(combos)
+        unit = (budget // n_c // 100) * 100
+        alloc = {}
+        if unit > 0:
+            for _, combo in combos:
+                alloc[combo] = unit
+            remainder = budget - unit * n_c
+            if remainder:
+                alloc[combos[0][1]] += remainder
+        else:
+            left = budget
+            for _, combo in combos:
+                if left < 100:
+                    break
+                alloc[combo] = 100
+                left -= 100
+        W = tuple(sorted(rf[:3]))
+        trio_ret = (div * alloc.get(W, 0) / 100.0) if W in alloc else 0.0
+        cur_trio_ret = sum(safe_int(ln.get("return_yen"), 0)
+                           for ln in trios)
+        stake_r = (_main_stake(x) - budget
+                   + sum(alloc.values()))
+        ret_r = _main_ret(x) - cur_trio_ret + trio_ret
+        return (stake_r, ret_r), None
+
+    def _p3_combo_block(rows):
+        recs = []
+        excl = {"no_trio_lines": 0, "no_payout": 0, "no_top5": 0,
+                "no_finishes": 0}
+        for x in rows:
+            res, reason = _p3_combo_realloc(x)
+            if res is None:
+                excl[reason] += 1
+                continue
+            stake_r, ret_r = res
+            recs.append({"x": x, "stake_r": stake_r, "ret_r": ret_r})
+        out = {"target_races": len(recs), "excluded": excl}
+        if not recs:
+            return out
+        cur = _rec_agg(recs, lambda r: _main_stake(r["x"]),
+                       lambda r: _main_ret(r["x"]))
+        rea = _rec_agg(recs, lambda r: r["stake_r"],
+                       lambda r: r["ret_r"])
+        d = _paired_diff_ci(
+            recs,
+            lambda r: _main_ret(r["x"]) - _main_stake(r["x"]),
+            lambda r: r["ret_r"] - r["stake_r"])
+        d["roi_diff_pt_vs_current"] = round(
+            rea["roi_pct"] - cur["roi_pct"], 1)
+        d["dd_not_worse_than_current"] = (
+            rea["max_dd_yen"] <= cur["max_dd_yen"])
+        out.update({"current": cur, "realloc": rea,
+                    "paired_diff_vs_current": d})
+        return out
+
+    _p3_combo_retro = _p3_combo_block(settled3_retro)
+    _p3_combo_fwd = _p3_combo_block(settled3_fwd)
+    _p3_combo_eval = {
+        "sample_races_forward": _p3_combo_fwd.get("target_races", 0),
+        "measurement_days_forward": _fwd3_days,
+        "verdict": _verdict(len(settled3_fwd), _fwd3_days),
+    }
+
+    _p3_config = {
+        "framework": "PHASE3_EXP_V1",
+        "start_date": PHASE3_START_DATE,
+        "AXIS_SURVIVAL_V1": {
+            "model": "logistic_regression_l2_standardized",
+            "l2_lambda": _axm["l2_lambda"],
+            "features": _axm["features"],
+            "means": _axm["means"],
+            "stds": _axm["stds"],
+            "intercept": _axm["intercept"],
+            "coefficients": _axm["coefficients"],
+            "dist_median_km": _axm["dist_median_km"],
+            "conf_median": _axm["conf_median"],
+            "train_races": _axm["train_races"],
+            "threshold_main": PHASE3_AXIS_THRESHOLD_MAIN,
+            "thresholds_reference": list(PHASE3_AXIS_THRESHOLDS_REF),
+            "odds_point": ("last odds_snapshots entry on race date "
+                           "before post_time (same as P6)"),
+        },
+        "CENTRAL_VALIDATION_V1": {
+            "population": "all settled incl. bet_eligible False",
+            "groups": ["中央全体", "中央芝", "中央ダート",
+                       "中央種別不明", "地方全体"],
+        },
+        "COMBINATION_ENGINE_V1": {
+            "stage1_population": ("settled with settled_lines "
+                                  "(decomposition population)"),
+            "stage1_categories": ["regeneration_drift",
+                                  "candidate_generation_missing",
+                                  "selection_excluded",
+                                  "budget_allocation_undeterminable"],
+            "stage2_rule": (
+                "trio budget reallocated over axis-inclusive top5 "
+                "trios; unit = floor(budget/combos/100)*100, "
+                "remainder to first combo by (partner rank sum, "
+                "horse numbers); total stake fixed"),
+        },
+    }
+    _config3_hash = _hashlib.sha1(json.dumps(
+        _p3_config, sort_keys=True, ensure_ascii=False
+    ).encode("utf-8")).hexdigest()
+
+    phase3_stats = {
+        "framework": "PHASE3_EXP_V1",
+        "model_version": ENGINE_VERSION,
+        "forward_start_date": PHASE3_START_DATE,
+        "experiment_end": max(
+            (str(x.get("date")) for x in settled if x.get("date")),
+            default=None),
+        "configuration_hash": _config3_hash,
+        "configuration": _p3_config,
+        "adoption_criteria": {
+            "roi_improvement_target_pt": 5.0,
+            "min_races": 300,
+            "min_days": 14,
+            "requirements": [
+                "本番比で回収率+5ポイント以上",
+                "同一レースのペア比較で統計的な改善を確認",
+                "最大DDが本番より悪化しない",
+                "別期間でも改善傾向が再現する",
+                "標本不足の場合は採用せず判断保留",
+                "複数実験の多重検定に配慮し、単独の有意性で採用しない",
+            ],
+        },
+        "experiments": {
+            "AXIS_SURVIVAL_V1": {
+                "experiment_id": "AXIS_SURVIVAL_V1",
+                "definition": (
+                    "本番1位 (軸) が3着以内に入る確率を、レース前情報"
+                    "だけから凍結ロジスティック回帰で推定する。特徴量は"
+                    "予測スコア差・top5分布・出走頭数・判断時点の人気と"
+                    "オッズ (P6 と同一手順で odds_snapshots から復元)・"
+                    "中央/地方・芝/ダート・距離・信頼度。最終オッズ・"
+                    "最終人気・確定着順は使わない。学習は前方開始日より"
+                    "前の遡及のみ (753件) で係数を凍結し、評価期間での"
+                    "再学習はしない。主評価は前方で B群 (推定確率70%以"
+                    "上のみ購入) の回収率・最大DDと確率校正。60%・80%は"
+                    "探索的参考値で採用判断には使わない。"),
+                "model": {
+                    "train_races": _axm["train_races"],
+                    "train_base_rate": _axm["train_base_rate"],
+                    "train_excluded": _axm["train_excluded"],
+                    "features": _axm["features"],
+                    "intercept": _axm["intercept"],
+                    "coefficients": _axm["coefficients"],
+                },
+                "retro": _p3_axis_retro,
+                "forward": _p3_axis_fwd,
+                "evaluation_forward": _p3_axis_eval,
+            },
+            "CENTRAL_VALIDATION_V1": {
+                "experiment_id": "CENTRAL_VALIDATION_V1",
+                "definition": (
+                    "中央全体/中央芝/中央ダート/中央種別不明/地方全体の"
+                    "固定区分で、軸3着内率・判断時点の人気帯別成績・"
+                    "top5カバー率・券種別ROI・確率校正 (AXIS-SURVIVAL の"
+                    "推定確率)・最大DDを独立評価する。母集団は予測能力の"
+                    "評価標本を確保するためゲート外を含む全精算とし、"
+                    "区分ごとに bet_eligible=False の件数を併記する。"
+                    "芝・ダート欠損は推測で埋めず種別不明として独立"
+                    "集計し、内訳 (未取得/障害/その他) を記録する。"),
+                "retro": _p3_central_retro,
+                "forward": _p3_central_fwd,
+            },
+            "COMBINATION_ENGINE_V1": {
+                "experiment_id": "COMBINATION_ENGINE_V1",
+                "definition": (
+                    "第1段: 軸が3着以内で入線3頭全てが予測 top5 内に"
+                    "いたのに払戻ゼロだったレース (分解の74件) の不的中"
+                    "原因を、再生成ドリフト/候補生成段階で欠落/買い目"
+                    "選択段階で除外に分類する。資金配分起因はスナップ"
+                    "ショットから判定不能として明示する。第2段: 3連複"
+                    "予算を軸込み top5 コンボ全体へ再配分する方式を、"
+                    "総投資額を現行と同額に固定して前方比較する"
+                    "(仮想払戻は trio_payout を使用し、無いレースは"
+                    "対象外として数える)。"),
+                "stage1_retro_classification": _p3_stage1_retro,
+                "stage1_forward_classification": _p3_stage1_fwd,
+                "stage2_retro_reference": _p3_combo_retro,
+                "stage2_forward": _p3_combo_fwd,
+                "stage2_evaluation_forward": _p3_combo_eval,
+            },
+        },
+        "note": (
+            "第3次シャドウ検証の集計。AXIS-SURVIVAL / "
+            "CENTRAL-VALIDATION / COMBINATION-ENGINE はいずれも計測"
+            "専用で、本番 34.23 の予測・買い目・配分と第1次・第2次の"
+            "集計値には使用していない。遡及は発見用の参考値、採用"
+            "判定は前方 (2026-11-24 以降) のみで行う。AXIS-SURVIVAL "
+            "の人気・オッズは購入判断時点のもので、最終オッズは"
+            "使っていない。"),
+    }
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -7380,6 +8057,8 @@ def calculate_stats(snapshots):
         "phase1_experiments": phase1_stats,
         # 第2次シャドウ検証（P2軸分析/P6/P3/P1リスクゲート/P4拡張）
         "phase2_experiments": phase2_stats,
+        # 第3次シャドウ検証（AXIS-SURVIVAL/CENTRAL-VALIDATION/COMBINATION-ENGINE）
+        "phase3_experiments": phase3_stats,
         # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）
         "pool_shadow": pool_shadow_stats,
         # v34.17: 本精算の 中央×芝／中央×ダート／地方 分割集計（報告専用）
