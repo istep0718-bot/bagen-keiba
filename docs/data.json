@@ -1,7 +1,7 @@
 {
   "site": "BAGEN KEIBA",
   "engine_version": "BAGEN_34.23_EXPERT",
-  "generated_at": "2026-11-23T09:31:14.037559+09:00",
+  "generated_at": "2026-11-23T10:01:00.462347+09:00",
   "race_date": "2026-11-23",
   "status": "OK",
   "warnings": [
@@ -8677,18 +8677,154 @@
           "note": "オッズ未取得時は配当妙味を評価していない。実購入禁止・利益保証なし。"
         }
       ],
-      "is_finished": false,
-      "result_finishes": [],
-      "payouts": {},
-      "win_hit": null,
-      "win_return": 0,
-      "all_bet_return": null,
+      "is_finished": true,
+      "result_finishes": [
+        5,
+        11,
+        1,
+        3,
+        15,
+        7,
+        4,
+        12,
+        13,
+        16,
+        9,
+        6,
+        8,
+        10,
+        14
+      ],
+      "payouts": {
+        "win": {
+          "5": 490
+        },
+        "place": {
+          "5": 190,
+          "11": 880,
+          "1": 260
+        },
+        "quinella": {
+          "5-11": 6150
+        },
+        "wide": {
+          "5-11": 1750,
+          "1-5": 440,
+          "1-11": 2310
+        },
+        "trio": {
+          "1-5-11": 9890
+        },
+        "trifecta": {
+          "5-11-1": 80100
+        },
+        "exacta": {
+          "5-11": 9760
+        }
+      },
+      "win_hit": true,
+      "win_return": 980,
+      "all_bet_return": 980,
       "race_cost": 1500,
-      "race_profit": null,
-      "settlement_complete": false,
-      "settled_lines": [],
-      "settlement_status": "結果精算待ち",
-      "payout_confirmed": false,
+      "race_profit": -520,
+      "settlement_complete": true,
+      "settled_lines": [
+        {
+          "label": "単勝 5 (200円)",
+          "type": "win",
+          "horses": [
+            5
+          ],
+          "stake_yen": 200,
+          "hit": true,
+          "finish_match": true,
+          "return_yen": 980,
+          "payout_per_100": 490
+        },
+        {
+          "label": "馬連 5-12 (200円)",
+          "type": "quinella",
+          "horses": [
+            5,
+            12
+          ],
+          "stake_yen": 200,
+          "hit": false,
+          "finish_match": false,
+          "return_yen": 0,
+          "payout_per_100": null
+        },
+        {
+          "label": "馬連 5-13 (300円)",
+          "type": "quinella",
+          "horses": [
+            5,
+            13
+          ],
+          "stake_yen": 300,
+          "hit": false,
+          "finish_match": false,
+          "return_yen": 0,
+          "payout_per_100": null
+        },
+        {
+          "label": "3連複 5-12-13 (400円)",
+          "type": "trio",
+          "horses": [
+            5,
+            12,
+            13
+          ],
+          "stake_yen": 400,
+          "hit": false,
+          "finish_match": false,
+          "return_yen": 0,
+          "payout_per_100": null
+        },
+        {
+          "label": "3連複 5-10-12 (200円)",
+          "type": "trio",
+          "horses": [
+            5,
+            10,
+            12
+          ],
+          "stake_yen": 200,
+          "hit": false,
+          "finish_match": false,
+          "return_yen": 0,
+          "payout_per_100": null
+        },
+        {
+          "label": "ワイド 5-10 (100円)",
+          "type": "wide",
+          "horses": [
+            5,
+            10
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "finish_match": false,
+          "return_yen": 0,
+          "payout_per_100": null
+        },
+        {
+          "label": "3連単 5→10→12 (100円)",
+          "type": "trifecta",
+          "horses": [
+            5,
+            10,
+            12
+          ],
+          "stake_yen": 100,
+          "hit": false,
+          "finish_match": false,
+          "return_yen": 0,
+          "payout_per_100": null
+        }
+      ],
+      "settlement_status": "払戻確認済み・精算完了",
+      "payout_confirmed": true,
       "is_recommended": true,
       "is_tomorrow": false,
       "race_confidence_score": 90.0,
@@ -8716,7 +8852,12 @@
           5
         ]
       ],
-      "occult_settlement": null,
+      "occult_settlement": {
+        "hit": false,
+        "return_yen": 0,
+        "payout_per_100": null,
+        "payout_missing": false
+      },
       "trifecta_challenge": {
         "p1": [
           [
@@ -8800,7 +8941,29 @@
           ]
         ]
       },
-      "trifecta_challenge_settlement": null,
+      "trifecta_challenge_settlement": {
+        "p1": {
+          "tickets": 6,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": null,
+          "payout_missing": false
+        },
+        "p2": {
+          "tickets": 3,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": null,
+          "payout_missing": false
+        },
+        "p3": {
+          "tickets": 6,
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": null,
+          "payout_missing": false
+        }
+      },
       "kind_pattern_shadow": [
         {
           "pattern_type": "B",
@@ -8865,7 +9028,99 @@
           "variant": "jra_large_realloc"
         }
       ],
-      "kind_pattern_shadow_settlement": null,
+      "kind_pattern_shadow_settlement": {
+        "settlement_complete": true,
+        "all_bet_return": 980,
+        "race_profit": -520,
+        "settled_lines": [
+          {
+            "label": "単勝 5 (200円)",
+            "type": "win",
+            "horses": [
+              5
+            ],
+            "stake_yen": 200,
+            "hit": true,
+            "finish_match": true,
+            "return_yen": 980,
+            "payout_per_100": 490
+          },
+          {
+            "label": "馬連 5-12 (400円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              12
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "馬連 5-13 (400円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              13
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "ワイド 5-10 (400円)",
+            "type": "wide",
+            "horses": [
+              5,
+              10
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連単 5→10→12 (100円)",
+            "type": "trifecta",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          }
+        ],
+        "win_hit": true,
+        "win_return": 980,
+        "settlement_status": "払戻確認済み・精算完了",
+        "result_finishes": [
+          5,
+          11,
+          1,
+          3,
+          15,
+          7,
+          4,
+          12,
+          13,
+          16,
+          9,
+          6,
+          8,
+          10,
+          14
+        ],
+        "payout_confirmed": true
+      },
       "alloc_d": [
         {
           "pattern_type": "B",
@@ -8950,7 +9205,127 @@
           "note": "v34.19 配分D shadow。現行A/Bと同一の買い目・同額で配分のみ変更した対照案。計測専用で実購入禁止。"
         }
       ],
-      "alloc_d_settlement": null,
+      "alloc_d_settlement": {
+        "settlement_complete": true,
+        "all_bet_return": 980,
+        "race_profit": -520,
+        "settled_lines": [
+          {
+            "label": "単勝 5 (200円)",
+            "type": "win",
+            "horses": [
+              5
+            ],
+            "stake_yen": 200,
+            "hit": true,
+            "finish_match": true,
+            "return_yen": 980,
+            "payout_per_100": 490
+          },
+          {
+            "label": "馬連 5-12 (400円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              12
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "馬連 5-13 (400円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              13
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 5-12-13 (200円)",
+            "type": "trio",
+            "horses": [
+              5,
+              12,
+              13
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 5-10-12 (100円)",
+            "type": "trio",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "ワイド 5-10 (100円)",
+            "type": "wide",
+            "horses": [
+              5,
+              10
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連単 5→10→12 (100円)",
+            "type": "trifecta",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          }
+        ],
+        "win_hit": true,
+        "win_return": 980,
+        "settlement_status": "払戻確認済み・精算完了",
+        "result_finishes": [
+          5,
+          11,
+          1,
+          3,
+          15,
+          7,
+          4,
+          12,
+          13,
+          16,
+          9,
+          6,
+          8,
+          10,
+          14
+        ],
+        "payout_confirmed": true
+      },
       "stake_shadow": [
         {
           "pattern_type": "B",
@@ -9037,7 +9412,127 @@
           "note": "v34.20 金額の強弱 shadow。現行A/Bと同一の買い目・同一配分比率で、総額だけをグレード×種別で段階化した対照案。計測専用で実購入禁止。"
         }
       ],
-      "stake_shadow_settlement": null,
+      "stake_shadow_settlement": {
+        "settlement_complete": true,
+        "all_bet_return": 980,
+        "race_profit": -520,
+        "settled_lines": [
+          {
+            "label": "単勝 5 (200円)",
+            "type": "win",
+            "horses": [
+              5
+            ],
+            "stake_yen": 200,
+            "hit": true,
+            "finish_match": true,
+            "return_yen": 980,
+            "payout_per_100": 490
+          },
+          {
+            "label": "馬連 5-12 (200円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              12
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "馬連 5-13 (300円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              13
+            ],
+            "stake_yen": 300,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 5-12-13 (400円)",
+            "type": "trio",
+            "horses": [
+              5,
+              12,
+              13
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 5-10-12 (200円)",
+            "type": "trio",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "ワイド 5-10 (100円)",
+            "type": "wide",
+            "horses": [
+              5,
+              10
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連単 5→10→12 (100円)",
+            "type": "trifecta",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          }
+        ],
+        "win_hit": true,
+        "win_return": 980,
+        "settlement_status": "払戻確認済み・精算完了",
+        "result_finishes": [
+          5,
+          11,
+          1,
+          3,
+          15,
+          7,
+          4,
+          12,
+          13,
+          16,
+          9,
+          6,
+          8,
+          10,
+          14
+        ],
+        "payout_confirmed": true
+      },
       "hybrid_shadow_tickets": [
         {
           "pattern_type": "B",
@@ -9173,7 +9668,127 @@
         ],
         "reason": null
       },
-      "hybrid_shadow_settlement": null,
+      "hybrid_shadow_settlement": {
+        "settlement_complete": true,
+        "all_bet_return": 0,
+        "race_profit": -1500,
+        "settled_lines": [
+          {
+            "label": "単勝 16 (200円)",
+            "type": "win",
+            "horses": [
+              16
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "馬連 12-16 (200円)",
+            "type": "quinella",
+            "horses": [
+              12,
+              16
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "馬連 10-16 (300円)",
+            "type": "quinella",
+            "horses": [
+              10,
+              16
+            ],
+            "stake_yen": 300,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 10-12-16 (400円)",
+            "type": "trio",
+            "horses": [
+              10,
+              12,
+              16
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 3-12-16 (200円)",
+            "type": "trio",
+            "horses": [
+              3,
+              12,
+              16
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "ワイド 3-16 (100円)",
+            "type": "wide",
+            "horses": [
+              3,
+              16
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連単 16→3→12 (100円)",
+            "type": "trifecta",
+            "horses": [
+              16,
+              3,
+              12
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          }
+        ],
+        "win_hit": false,
+        "win_return": 0,
+        "settlement_status": "払戻確認済み・的中なし・精算完了",
+        "result_finishes": [
+          5,
+          11,
+          1,
+          3,
+          15,
+          7,
+          4,
+          12,
+          13,
+          16,
+          9,
+          6,
+          8,
+          10,
+          14
+        ],
+        "payout_confirmed": true
+      },
       "phase1_sel_tickets": {
         "B": [
           {
@@ -9344,7 +9959,250 @@
           }
         ]
       },
-      "phase1_sel_settlement": null,
+      "phase1_sel_settlement": {
+        "B": {
+          "settlement_complete": true,
+          "all_bet_return": 980,
+          "race_profit": -520,
+          "settled_lines": [
+            {
+              "label": "単勝 5 (200円)",
+              "type": "win",
+              "horses": [
+                5
+              ],
+              "stake_yen": 200,
+              "hit": true,
+              "finish_match": true,
+              "return_yen": 980,
+              "payout_per_100": 490
+            },
+            {
+              "label": "馬連 5-16 (200円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 5-12 (300円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                12
+              ],
+              "stake_yen": 300,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-12-16 (400円)",
+              "type": "trio",
+              "horses": [
+                5,
+                12,
+                16
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-10-16 (200円)",
+              "type": "trio",
+              "horses": [
+                5,
+                10,
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "ワイド 5-10 (100円)",
+              "type": "wide",
+              "horses": [
+                5,
+                10
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連単 5→10→16 (100円)",
+              "type": "trifecta",
+              "horses": [
+                5,
+                10,
+                16
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            }
+          ],
+          "win_hit": true,
+          "win_return": 980,
+          "settlement_status": "払戻確認済み・精算完了",
+          "result_finishes": [
+            5,
+            11,
+            1,
+            3,
+            15,
+            7,
+            4,
+            12,
+            13,
+            16,
+            9,
+            6,
+            8,
+            10,
+            14
+          ],
+          "payout_confirmed": true
+        },
+        "C": {
+          "settlement_complete": true,
+          "all_bet_return": 0,
+          "race_profit": -1500,
+          "settled_lines": [
+            {
+              "label": "単勝 16 (200円)",
+              "type": "win",
+              "horses": [
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 5-16 (200円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 12-16 (300円)",
+              "type": "quinella",
+              "horses": [
+                12,
+                16
+              ],
+              "stake_yen": 300,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-12-16 (400円)",
+              "type": "trio",
+              "horses": [
+                5,
+                12,
+                16
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-10-16 (200円)",
+              "type": "trio",
+              "horses": [
+                5,
+                10,
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "ワイド 10-16 (100円)",
+              "type": "wide",
+              "horses": [
+                10,
+                16
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連単 16→10→5 (100円)",
+              "type": "trifecta",
+              "horses": [
+                16,
+                10,
+                5
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            }
+          ],
+          "win_hit": false,
+          "win_return": 0,
+          "settlement_status": "払戻確認済み・的中なし・精算完了",
+          "result_finishes": [
+            5,
+            11,
+            1,
+            3,
+            15,
+            7,
+            4,
+            12,
+            13,
+            16,
+            9,
+            6,
+            8,
+            10,
+            14
+          ],
+          "payout_confirmed": true
+        }
+      },
       "hybrid_features": {
         "time_standards_ver": "2026-11-06T20:24:14.121304+09:00",
         "pedigree_stats_built_at": "2026-11-06T20:34:02.026196+09:00",
@@ -9368,7 +10226,8 @@
       },
       "prediction_status": "未検証の簡易評価。レース評価も的中・利益を保証しない",
       "win_probability_note": "推定勝率は市場スコアと取得できた近走分析を合算して確率化した未校正の参考値。実績による校正は未実施。odds_free_rankはオッズ・人気を除いた参考順位。",
-      "past_form_status": "過去走は馬ページから最大5走を解析。サイト構造によって取得不能な場合があり、未取得を0評価として扱わない。"
+      "past_form_status": "過去走は馬ページから最大5走を解析。サイト構造によって取得不能な場合があり、未取得を0評価として扱わない。",
+      "trio_payout": 9890
     },
     {
       "id": "202605050601",
@@ -673716,7 +674575,7 @@
     "today_races": 69,
     "verified_races": 69,
     "unverified_races": 0,
-    "settled_races": 0,
+    "settled_races": 1,
     "note": "出走頭数未検証のレースは買い目を作成しません。実際の人気とAI予想順位は別項目です。"
   },
   "prediction_notice": "簡易スコアであり、校正済み勝率・的中・利益を保証しません。オッズ未取得時の穴・大穴候補は参考候補であり配当妙味未確認です。着順一致のみで払戻未確認のレースは収支確定しません。",
@@ -675805,7 +676664,7 @@
     "stats": {
       "races_seen": 1576,
       "races_settled": 986,
-      "races_settled_including_shadow": 1340,
+      "races_settled_including_shadow": 1341,
       "win_bets": 986,
       "win_hits": 388,
       "total_stake_yen": 1527900,
@@ -675879,15 +676738,15 @@
           }
         },
         "gate_out": {
-          "races": 199,
-          "shadow_stake_yen": 302500,
-          "shadow_return_yen": 163280,
-          "shadow_profit_yen": -139220,
+          "races": 200,
+          "shadow_stake_yen": 304000,
+          "shadow_return_yen": 164260,
+          "shadow_profit_yen": -139740,
           "shadow_roi_pct": 54.0,
           "actual_same_races": {
-            "races": 199,
-            "stake_yen": 302500,
-            "return_yen": 173870,
+            "races": 200,
+            "stake_yen": 304000,
+            "return_yen": 174850,
             "roi_pct": 57.5
           }
         },
@@ -675935,16 +676794,16 @@
               }
             },
             "gate_out": {
-              "races": 189,
-              "shadow_stake_yen": 283500,
-              "shadow_return_yen": 148940,
-              "shadow_profit_yen": -134560,
-              "shadow_roi_pct": 52.5,
+              "races": 190,
+              "shadow_stake_yen": 285000,
+              "shadow_return_yen": 149920,
+              "shadow_profit_yen": -135080,
+              "shadow_roi_pct": 52.6,
               "actual_same_races": {
-                "races": 189,
-                "stake_yen": 283500,
-                "return_yen": 159340,
-                "roi_pct": 56.2
+                "races": 190,
+                "stake_yen": 285000,
+                "return_yen": 160320,
+                "roi_pct": 56.3
               }
             }
           }
@@ -676088,35 +676947,35 @@
           "trio_half_races": 12
         },
         "shadow": {
-          "races": 156,
+          "races": 157,
           "as_is": {
-            "races": 156,
-            "hit_races": 41,
-            "hit_rate_pct": 26.3,
-            "stake_yen": 234000,
-            "return_yen": 80420,
-            "profit_yen": -153580,
-            "roi_pct": 34.4
+            "races": 157,
+            "hit_races": 42,
+            "hit_rate_pct": 26.8,
+            "stake_yen": 235500,
+            "return_yen": 81400,
+            "profit_yen": -154100,
+            "roi_pct": 34.6
           },
           "trio_off": {
-            "races": 156,
-            "hit_races": 41,
-            "hit_rate_pct": 26.3,
-            "stake_yen": 140400,
-            "return_yen": 50540,
-            "profit_yen": -89860,
-            "roi_pct": 36.0
+            "races": 157,
+            "hit_races": 42,
+            "hit_rate_pct": 26.8,
+            "stake_yen": 141300,
+            "return_yen": 51520,
+            "profit_yen": -89780,
+            "roi_pct": 36.5
           },
           "trio_half": {
-            "races": 156,
-            "hit_races": 41,
-            "hit_rate_pct": 26.3,
-            "stake_yen": 176800,
-            "return_yen": 59260,
-            "profit_yen": -117540,
-            "roi_pct": 33.5
+            "races": 157,
+            "hit_races": 42,
+            "hit_rate_pct": 26.8,
+            "stake_yen": 178100,
+            "return_yen": 60240,
+            "profit_yen": -117860,
+            "roi_pct": 33.8
           },
-          "trio_half_races": 156
+          "trio_half_races": 157
         },
         "note": "中央×13頭以上の精算レースで、3連複を外す/絞る構成を測る shadow 計測。本番配分・選定には使用していない。現行ゲートは13頭以上を常にゲート外にするため、本精算トラックはゲート前（〜2026-10-31）の再構成分のみで、前方標本はゲート外（shadow）トラックに貯まる。軸/穴の判定は frozen_prediction.top5 上位3頭の集合との一致による。trio_half は判定できたレースのみ集計。"
       },
@@ -676300,22 +677159,22 @@
         ]
       },
       "shadow": {
-        "races": 354,
-        "hit_races": 163,
-        "hit_rate_pct": 46.0,
-        "stake_yen": 538600,
-        "return_yen": 286730,
-        "profit_yen": -251870,
-        "roi_pct": 53.2,
+        "races": 355,
+        "hit_races": 164,
+        "hit_rate_pct": 46.2,
+        "stake_yen": 540100,
+        "return_yen": 287710,
+        "profit_yen": -252390,
+        "roi_pct": 53.3,
         "by_reason": {
           "13頭以上": {
-            "races": 218,
-            "hit_races": 76,
-            "hit_rate_pct": 34.9,
-            "stake_yen": 327400,
-            "return_yen": 134100,
-            "profit_yen": -193300,
-            "roi_pct": 41.0
+            "races": 219,
+            "hit_races": 77,
+            "hit_rate_pct": 35.2,
+            "stake_yen": 328900,
+            "return_yen": 135080,
+            "profit_yen": -193820,
+            "roi_pct": 41.1
           },
           "信頼度100以上": {
             "races": 151,
@@ -676359,15 +677218,15 @@
               "roi_pct": 81.1
             },
             "shadow": {
-              "races": 96,
-              "stake_yen": 146000,
-              "return_yen": 75710,
-              "roi_pct": 51.9
+              "races": 97,
+              "stake_yen": 147500,
+              "return_yen": 76690,
+              "roi_pct": 52.0
             },
             "all": {
-              "races": 228,
-              "stake_yen": 346800,
-              "return_yen": 238510,
+              "races": 229,
+              "stake_yen": 348300,
+              "return_yen": 239490,
               "roi_pct": 68.8
             }
           },
@@ -676481,15 +677340,15 @@
               "roi_pct": 77.2
             },
             "shadow": {
-              "races": 75,
-              "stake_yen": 114500,
-              "return_yen": 69300,
-              "roi_pct": 60.5
+              "races": 76,
+              "stake_yen": 116000,
+              "return_yen": 70280,
+              "roi_pct": 60.6
             },
             "all": {
-              "races": 231,
-              "stake_yen": 350600,
-              "return_yen": 251520,
+              "races": 232,
+              "stake_yen": 352100,
+              "return_yen": 252500,
               "roi_pct": 71.7
             }
           },
@@ -676580,98 +677439,98 @@
         {
           "num": 1,
           "wins": 106,
-          "expected": 125.17,
-          "sigma": -1.71
+          "expected": 125.23,
+          "sigma": -1.72
         },
         {
           "num": 2,
           "wins": 117,
-          "expected": 125.17,
-          "sigma": -0.73
+          "expected": 125.23,
+          "sigma": -0.74
         },
         {
           "num": 3,
           "wins": 117,
-          "expected": 125.17,
-          "sigma": -0.73
+          "expected": 125.23,
+          "sigma": -0.74
         },
         {
           "num": 4,
           "wins": 101,
-          "expected": 125.17,
-          "sigma": -2.16
+          "expected": 125.23,
+          "sigma": -2.17
         },
         {
           "num": 5,
-          "wins": 107,
-          "expected": 125.17,
-          "sigma": -1.62
+          "wins": 108,
+          "expected": 125.23,
+          "sigma": -1.54
         },
         {
           "num": 6,
           "wins": 115,
-          "expected": 124.17,
-          "sigma": -0.82
+          "expected": 124.23,
+          "sigma": -0.83
         },
         {
           "num": 7,
           "wins": 125,
-          "expected": 122.0,
+          "expected": 122.06,
           "sigma": 0.27
         },
         {
           "num": 8,
           "wins": 135,
-          "expected": 117.14,
-          "sigma": 1.65
+          "expected": 117.2,
+          "sigma": 1.64
         },
         {
           "num": 9,
           "wins": 111,
-          "expected": 108.14,
+          "expected": 108.2,
           "sigma": 0.27
         },
         {
           "num": 10,
           "wins": 112,
-          "expected": 91.59,
+          "expected": 91.65,
           "sigma": 2.13
         },
         {
           "num": 11,
           "wins": 73,
-          "expected": 59.99,
-          "sigma": 1.68
+          "expected": 60.05,
+          "sigma": 1.67
         },
         {
           "num": 12,
           "wins": 62,
-          "expected": 43.08,
-          "sigma": 2.88
+          "expected": 43.14,
+          "sigma": 2.87
         },
         {
           "num": 13,
           "wins": 17,
-          "expected": 17.24,
-          "sigma": -0.06
+          "expected": 17.31,
+          "sigma": -0.07
         },
         {
           "num": 14,
           "wins": 15,
-          "expected": 13.94,
-          "sigma": 0.29
+          "expected": 14.0,
+          "sigma": 0.27
         },
         {
           "num": 15,
           "wins": 17,
-          "expected": 8.65,
-          "sigma": 2.84
+          "expected": 8.71,
+          "sigma": 2.81
         },
         {
           "num": 16,
           "wins": 8,
-          "expected": 6.12,
-          "sigma": 0.76
+          "expected": 6.18,
+          "sigma": 0.73
         },
         {
           "num": 17,
@@ -676898,12 +677757,12 @@
           }
         },
         "福島|午前": {
-          "races": 21,
+          "races": 22,
           "best": {
             "num": 15,
             "wins": 3,
-            "expected": 1.09,
-            "sigma": 1.83
+            "expected": 1.15,
+            "sigma": 1.72
           }
         },
         "福島|午後": {
@@ -676978,10 +677837,10 @@
         }
       },
       "occult_track": {
-        "races": 683,
+        "races": 684,
         "hits": 10,
         "hit_rate_pct": 1.5,
-        "cost": 136600,
+        "cost": 136800,
         "return": 57550,
         "roi_pct": 42.1,
         "note": "オカルト注目馬を1着固定にした3連単2点（各100円）だけを追う別枠計測（夢枠とは独立）。払戻未確認のレースは収支集計から除外。34.10生成分から計測開始。"
@@ -677208,20 +678067,20 @@
           }
         },
         "shadow": {
-          "races_with_features": 199,
-          "top5_horses_with_time_index": 630,
-          "top5_horses_with_sire_score": 590,
+          "races_with_features": 200,
+          "top5_horses_with_time_index": 635,
+          "top5_horses_with_sire_score": 594,
           "time_index_samples_dist": {
             "3": 26,
             "5": 488,
-            "4": 48,
-            "1": 40,
-            "2": 28
+            "4": 49,
+            "1": 41,
+            "2": 31
           },
           "field_time_best": {
-            "horses": 164,
-            "win_rate_pct": 28.0,
-            "top3_rate_pct": 47.6
+            "horses": 165,
+            "win_rate_pct": 27.9,
+            "top3_rate_pct": 47.3
           },
           "field_time_best_by_rank1_agreement": {
             "agree": {
@@ -677230,52 +678089,52 @@
               "top3_rate_pct": 79.5
             },
             "disagree": {
-              "horses": 120,
-              "win_rate_pct": 14.2,
-              "top3_rate_pct": 35.8
+              "horses": 121,
+              "win_rate_pct": 14.0,
+              "top3_rate_pct": 35.5
             }
           },
           "top5_time_leader": {
-            "horses": 138,
-            "win_rate_pct": 30.4,
-            "top3_rate_pct": 56.5
+            "horses": 139,
+            "win_rate_pct": 30.2,
+            "top3_rate_pct": 56.1
           },
           "sire_score_top3_in_top5": {
-            "horses": 434,
-            "win_rate_pct": 15.2,
+            "horses": 437,
+            "win_rate_pct": 15.1,
             "top3_rate_pct": 41.2
           },
           "sire_score_bands": {
             "上位": {
-              "horses": 193,
-              "win_rate_pct": 14.0,
-              "top3_rate_pct": 42.5,
-              "win_roi_pct": 75.1,
-              "win_roi_horses": 193
+              "horses": 194,
+              "win_rate_pct": 13.9,
+              "top3_rate_pct": 42.3,
+              "win_roi_pct": 74.7,
+              "win_roi_horses": 194
             },
             "中位": {
-              "horses": 193,
-              "win_rate_pct": 17.1,
-              "top3_rate_pct": 40.4,
-              "win_roi_pct": 65.7,
-              "win_roi_horses": 193
+              "horses": 194,
+              "win_rate_pct": 16.5,
+              "top3_rate_pct": 40.2,
+              "win_roi_pct": 64.5,
+              "win_roi_horses": 194
             },
             "下位": {
-              "horses": 193,
-              "win_rate_pct": 16.1,
-              "top3_rate_pct": 37.8,
-              "win_roi_pct": 60.0,
-              "win_roi_horses": 193
+              "horses": 195,
+              "win_rate_pct": 16.4,
+              "top3_rate_pct": 37.9,
+              "win_roi_pct": 60.2,
+              "win_roi_horses": 195
             },
             "thresholds": {
-              "upper_min": 3.42,
-              "middle_min": -0.87
+              "upper_min": 3.18,
+              "middle_min": -0.82
             }
           },
           "top5_last3f_leader": {
-            "horses": 136,
-            "win_rate_pct": 29.4,
-            "top3_rate_pct": 49.3
+            "horses": 137,
+            "win_rate_pct": 29.2,
+            "top3_rate_pct": 48.9
           },
           "class_drop_top5": {
             "drop": {
@@ -677284,12 +678143,12 @@
               "top3_rate_pct": 42.4
             },
             "no_drop": {
-              "horses": 358,
+              "horses": 363,
               "win_rate_pct": 16.5,
               "top3_rate_pct": 41.9
             },
             "drop_horses": 33,
-            "no_drop_horses": 358
+            "no_drop_horses": 363
           },
           "by_kind_surface": {
             "中央×不明": {
@@ -677347,21 +678206,21 @@
               }
             },
             "中央×ダート": {
-              "races": 43,
+              "races": 44,
               "field_time_best": {
-                "horses": 28,
-                "win_rate_pct": 10.7,
-                "top3_rate_pct": 21.4
+                "horses": 29,
+                "win_rate_pct": 10.3,
+                "top3_rate_pct": 20.7
               },
               "top5_time_leader": {
-                "horses": 23,
-                "win_rate_pct": 13.0,
-                "top3_rate_pct": 39.1
+                "horses": 24,
+                "win_rate_pct": 12.5,
+                "top3_rate_pct": 37.5
               },
               "top5_last3f_leader": {
-                "horses": 23,
-                "win_rate_pct": 17.4,
-                "top3_rate_pct": 43.5
+                "horses": 24,
+                "win_rate_pct": 16.7,
+                "top3_rate_pct": 41.7
               }
             },
             "中央×芝": {
@@ -677527,46 +678386,46 @@
         },
         "gate_out": {
           "hybrid": {
-            "races": 116,
+            "races": 117,
             "hit_races": 32,
-            "hit_rate_pct": 27.6,
-            "stake_yen": 179200,
+            "hit_rate_pct": 27.4,
+            "stake_yen": 180700,
             "return_yen": 88150,
-            "profit_yen": -91050,
-            "roi_pct": 49.2,
-            "max_dd_yen": 91050
+            "profit_yen": -92550,
+            "roi_pct": 48.8,
+            "max_dd_yen": 92550
           },
           "actual_same_races": {
-            "races": 116,
-            "hit_races": 65,
-            "hit_rate_pct": 56.0,
-            "stake_yen": 177200,
-            "return_yen": 121430,
-            "profit_yen": -55770,
+            "races": 117,
+            "hit_races": 66,
+            "hit_rate_pct": 56.4,
+            "stake_yen": 178700,
+            "return_yen": 122410,
+            "profit_yen": -56290,
             "roi_pct": 68.5,
-            "max_dd_yen": 57670
+            "max_dd_yen": 58190
           },
           "by_kind": {
             "中央": {
               "hybrid": {
-                "races": 37,
+                "races": 38,
                 "hit_races": 9,
-                "hit_rate_pct": 24.3,
-                "stake_yen": 55500,
+                "hit_rate_pct": 23.7,
+                "stake_yen": 57000,
                 "return_yen": 28020,
-                "profit_yen": -27480,
-                "roi_pct": 50.5,
-                "max_dd_yen": 29840
+                "profit_yen": -28980,
+                "roi_pct": 49.2,
+                "max_dd_yen": 31340
               },
               "actual_same_races": {
-                "races": 37,
-                "hit_races": 13,
-                "hit_rate_pct": 35.1,
-                "stake_yen": 55500,
-                "return_yen": 21180,
-                "profit_yen": -34320,
-                "roi_pct": 38.2,
-                "max_dd_yen": 34320
+                "races": 38,
+                "hit_races": 14,
+                "hit_rate_pct": 36.8,
+                "stake_yen": 57000,
+                "return_yen": 22160,
+                "profit_yen": -34840,
+                "roi_pct": 38.9,
+                "max_dd_yen": 34840
               }
             },
             "地方": {
@@ -677614,14 +678473,14 @@
               "max_dd_yen": 26150
             },
             "13頭以上": {
-              "races": 63,
+              "races": 64,
               "hit_races": 13,
-              "hit_rate_pct": 20.6,
-              "stake_yen": 94900,
+              "hit_rate_pct": 20.3,
+              "stake_yen": 96400,
               "return_yen": 29710,
-              "profit_yen": -65190,
-              "roi_pct": 31.3,
-              "max_dd_yen": 65190
+              "profit_yen": -66690,
+              "roi_pct": 30.8,
+              "max_dd_yen": 66690
             },
             "頭数不明": {
               "races": 0
@@ -677629,43 +678488,43 @@
           },
           "by_bet_type": {
             "win": {
-              "lines": 116,
+              "lines": 117,
               "hit_lines": 26,
-              "stake_yen": 27100,
+              "stake_yen": 27300,
               "return_yen": 22490,
-              "roi_pct": 83.0,
-              "hit_rate_pct": 22.4
+              "roi_pct": 82.4,
+              "hit_rate_pct": 22.2
             },
             "quinella": {
-              "lines": 232,
+              "lines": 234,
               "hit_lines": 13,
-              "stake_yen": 59300,
+              "stake_yen": 59800,
               "return_yen": 31930,
-              "roi_pct": 53.8,
+              "roi_pct": 53.4,
               "hit_rate_pct": 5.6
             },
             "trio": {
-              "lines": 219,
+              "lines": 221,
               "hit_lines": 6,
-              "stake_yen": 69600,
+              "stake_yen": 70200,
               "return_yen": 25520,
-              "roi_pct": 36.7,
+              "roi_pct": 36.4,
               "hit_rate_pct": 2.7
             },
             "wide": {
-              "lines": 129,
+              "lines": 130,
               "hit_lines": 7,
-              "stake_yen": 12900,
+              "stake_yen": 13000,
               "return_yen": 2310,
-              "roi_pct": 17.9,
+              "roi_pct": 17.8,
               "hit_rate_pct": 5.4
             },
             "trifecta": {
-              "lines": 103,
+              "lines": 104,
               "hit_lines": 1,
-              "stake_yen": 10300,
+              "stake_yen": 10400,
               "return_yen": 5900,
-              "roi_pct": 57.3,
+              "roi_pct": 56.7,
               "hit_rate_pct": 1.0
             }
           }
@@ -677716,9 +678575,9 @@
         "samples": {
           "generated_races": 306,
           "settled_comparable_main": 133,
-          "settled_comparable_gate_out": 116,
+          "settled_comparable_gate_out": 117,
           "target": 200,
-          "feature_races_with_features": 630
+          "feature_races_with_features": 631
         },
         "start_date": "2026-11-17",
         "note": "時計指数・血統スコア・クラス評価の統合スコアで選定した shadow 買い目（買い目構造・総額は現行パターンA/Bと同一）。本番の選定・配分には使用していない。市場乖離は主成分に含めず post_odds で観測のみ。判定は結果確定済みの比較可能標本（本精算）が target 件に到達してから、回収率改善幅と最大DDの両面で行う。対象は 2026-11-17 以降の生成分のみ。"
@@ -681063,16 +681922,16 @@
             "races": 0
           },
           "gate_out": {
-            "races": 89,
+            "races": 90,
             "variant": "jra_large_realloc",
-            "shadow_stake_yen": 133500,
-            "shadow_return_yen": 46160,
-            "shadow_roi_pct": 34.6,
+            "shadow_stake_yen": 135000,
+            "shadow_return_yen": 47140,
+            "shadow_roi_pct": 34.9,
             "actual_same_races": {
-              "races": 89,
-              "stake_yen": 133500,
-              "return_yen": 39360,
-              "roi_pct": 29.5
+              "races": 90,
+              "stake_yen": 135000,
+              "return_yen": 40340,
+              "roi_pct": 29.9
             }
           }
         },
@@ -681158,17 +682017,17 @@
           }
         },
         "all_settled": {
-          "races": 613,
-          "winner_in_top5_rate_pct": 79.4,
+          "races": 614,
+          "winner_in_top5_rate_pct": 79.5,
           "calibrated": {
-            "horses": 3065,
+            "horses": 3070,
             "brier": 0.1211,
-            "log_loss": 0.3958
+            "log_loss": 0.3959
           },
           "uncalibrated": {
-            "horses": 3065,
-            "brier": 0.1205,
-            "log_loss": 0.3941
+            "horses": 3070,
+            "brier": 0.1206,
+            "log_loss": 0.3942
           },
           "calibration_bins": {
             "0-5": {
@@ -681177,19 +682036,19 @@
               "actual_win_rate_pct": 2.9
             },
             "5-10": {
-              "horses": 679,
+              "horses": 681,
               "predicted_mean_pct": 7.6,
               "actual_win_rate_pct": 9.0
             },
             "10-15": {
-              "horses": 922,
+              "horses": 923,
               "predicted_mean_pct": 12.7,
               "actual_win_rate_pct": 11.5
             },
             "15-20": {
-              "horses": 619,
+              "horses": 621,
               "predicted_mean_pct": 16.5,
-              "actual_win_rate_pct": 17.4
+              "actual_win_rate_pct": 17.6
             },
             "20-25": {
               "horses": 228,
@@ -681313,33 +682172,33 @@
             }
           },
           "中央×ダート": {
-            "races": 54,
-            "winner_in_top5_rate_pct": 59.3,
+            "races": 55,
+            "winner_in_top5_rate_pct": 60.0,
             "calibrated": {
-              "horses": 270,
-              "brier": 0.1039,
-              "log_loss": 0.3623
+              "horses": 275,
+              "brier": 0.1047,
+              "log_loss": 0.3638
             },
             "uncalibrated": {
-              "horses": 270,
-              "brier": 0.1049,
-              "log_loss": 0.3683
+              "horses": 275,
+              "brier": 0.1059,
+              "log_loss": 0.3703
             },
             "calibration_bins": {
               "5-10": {
-                "horses": 29,
+                "horses": 31,
                 "predicted_mean_pct": 8.9,
-                "actual_win_rate_pct": 6.9
+                "actual_win_rate_pct": 6.5
               },
               "10-15": {
-                "horses": 184,
+                "horses": 185,
                 "predicted_mean_pct": 12.7,
                 "actual_win_rate_pct": 11.4
               },
               "15-20": {
-                "horses": 49,
-                "predicted_mean_pct": 16.2,
-                "actual_win_rate_pct": 12.2
+                "horses": 51,
+                "predicted_mean_pct": 16.3,
+                "actual_win_rate_pct": 13.7
               },
               "20-25": {
                 "horses": 6,
@@ -681504,17 +682363,17 @@
             }
           },
           "13頭以上": {
-            "races": 132,
-            "winner_in_top5_rate_pct": 66.7,
+            "races": 133,
+            "winner_in_top5_rate_pct": 66.9,
             "calibrated": {
-              "horses": 660,
-              "brier": 0.1074,
-              "log_loss": 0.3638
+              "horses": 665,
+              "brier": 0.1077,
+              "log_loss": 0.3645
             },
             "uncalibrated": {
-              "horses": 660,
-              "brier": 0.1068,
-              "log_loss": 0.3629
+              "horses": 665,
+              "brier": 0.1072,
+              "log_loss": 0.3638
             },
             "calibration_bins": {
               "0-5": {
@@ -681523,19 +682382,19 @@
                 "actual_win_rate_pct": 5.3
               },
               "5-10": {
-                "horses": 124,
-                "predicted_mean_pct": 7.8,
-                "actual_win_rate_pct": 10.5
+                "horses": 126,
+                "predicted_mean_pct": 7.9,
+                "actual_win_rate_pct": 10.3
               },
               "10-15": {
-                "horses": 371,
+                "horses": 372,
                 "predicted_mean_pct": 12.5,
-                "actual_win_rate_pct": 9.2
+                "actual_win_rate_pct": 9.1
               },
               "15-20": {
-                "horses": 72,
+                "horses": 74,
                 "predicted_mean_pct": 16.8,
-                "actual_win_rate_pct": 20.8
+                "actual_win_rate_pct": 21.6
               },
               "20-25": {
                 "horses": 28,
@@ -681560,6 +682419,2365 @@
       "accounting_note": "払戻確認済みの精算済みレースのみ集計。単勝と全券種の集計対象・金額は別管理。着順一致のみで払戻未確認のレースは回収率から除外。パターンA=上位評価中心 / パターンB=穴候補含む。v34.5: ベット対象ゲート外のレースは本集計から除き shadow に別集計。post_odds はオッズ判明後の参考分析で、選定には使用していない。"
     },
     "history": [
+      {
+        "race_id": "202603030601",
+        "date": "2026-11-23",
+        "kind": "中央",
+        "course": "福島",
+        "race_no": 1,
+        "post_time": "09:45",
+        "name": "2歳未勝利",
+        "cost": 1500,
+        "surface": "ダート",
+        "distance_m": 1150,
+        "engine_version": "BAGEN_34.23_EXPERT",
+        "going": "未取得",
+        "weather": "未取得",
+        "pattern_type": "B",
+        "race_grade": "データ不足・様子見",
+        "is_recommended": true,
+        "race_confidence_score": 90.0,
+        "is_finished": true,
+        "win_hit": true,
+        "win_return": 980,
+        "race_profit": -520,
+        "all_bet_return": 980,
+        "settlement_complete": true,
+        "settlement_status": "払戻確認済み・精算完了",
+        "payout_confirmed": true,
+        "settled_lines": [
+          {
+            "label": "単勝 5 (200円)",
+            "type": "win",
+            "horses": [
+              5
+            ],
+            "stake_yen": 200,
+            "hit": true,
+            "finish_match": true,
+            "return_yen": 980,
+            "payout_per_100": 490
+          },
+          {
+            "label": "馬連 5-12 (200円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              12
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "馬連 5-13 (300円)",
+            "type": "quinella",
+            "horses": [
+              5,
+              13
+            ],
+            "stake_yen": 300,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 5-12-13 (400円)",
+            "type": "trio",
+            "horses": [
+              5,
+              12,
+              13
+            ],
+            "stake_yen": 400,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連複 5-10-12 (200円)",
+            "type": "trio",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 200,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "ワイド 5-10 (100円)",
+            "type": "wide",
+            "horses": [
+              5,
+              10
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          },
+          {
+            "label": "3連単 5→10→12 (100円)",
+            "type": "trifecta",
+            "horses": [
+              5,
+              10,
+              12
+            ],
+            "stake_yen": 100,
+            "hit": false,
+            "finish_match": false,
+            "return_yen": 0,
+            "payout_per_100": null
+          }
+        ],
+        "result_finishes": [
+          5,
+          11,
+          1,
+          3,
+          15,
+          7,
+          4,
+          12,
+          13,
+          16,
+          9,
+          6,
+          8,
+          10,
+          14
+        ],
+        "updated_at": "2026-11-23T10:01:00.462347+09:00",
+        "frozen_prediction": {
+          "top5": [
+            {
+              "horse_no": 5,
+              "name": "サノノソルジャー",
+              "score": 5.64,
+              "odds": 5.2,
+              "rank": 1,
+              "horse_id": "2024101608",
+              "sire": "グレーターロンドン",
+              "damsire": "Sea The Stars",
+              "time_index_best": 33.7,
+              "time_index_med": 32.8,
+              "time_index_samples": 2,
+              "time_index_std_level": 2,
+              "last3f_dev": 0.65,
+              "sire_score": null,
+              "sire_score_win": null,
+              "sire_score_n": 0,
+              "damsire_score": null,
+              "prev_class_rank": 1,
+              "prev_class_label": "未勝利",
+              "peak_class_rank": 1,
+              "today_class_rank": 1,
+              "class_drop": false
+            },
+            {
+              "horse_no": 12,
+              "name": "イリスロッソ",
+              "score": 5.33,
+              "odds": 2.2,
+              "rank": 2,
+              "horse_id": "2024101054",
+              "sire": "フィレンツェファイア",
+              "damsire": "スターリングローズ",
+              "time_index_best": 60.6,
+              "time_index_med": 40.0,
+              "time_index_samples": 4,
+              "time_index_std_level": 3,
+              "last3f_dev": 1.15,
+              "sire_score": 2.22,
+              "sire_score_win": -0.25,
+              "sire_score_n": 10,
+              "damsire_score": -2.61,
+              "prev_class_rank": 1,
+              "prev_class_label": "未勝利",
+              "peak_class_rank": 1,
+              "today_class_rank": 1,
+              "class_drop": false
+            },
+            {
+              "horse_no": 13,
+              "name": "アルビオンライズ",
+              "score": 3.18,
+              "odds": 6.6,
+              "rank": 3,
+              "horse_id": "2024105970",
+              "sire": "ミッキーアイル",
+              "damsire": "Lord of England",
+              "time_index_best": 35.4,
+              "time_index_med": 31.5,
+              "time_index_samples": 2,
+              "time_index_std_level": 1,
+              "last3f_dev": -0.19999999999999998,
+              "sire_score": -0.05,
+              "sire_score_win": -0.32,
+              "sire_score_n": 29,
+              "damsire_score": null,
+              "prev_class_rank": 1,
+              "prev_class_label": "未勝利",
+              "peak_class_rank": 1,
+              "today_class_rank": 1,
+              "class_drop": false
+            },
+            {
+              "horse_no": 1,
+              "name": "レーヴデリオン",
+              "score": 1.27,
+              "odds": 6.0,
+              "rank": 4,
+              "horse_id": "2024100209",
+              "sire": "フォーウィールドライブ",
+              "damsire": "Unusual Heat",
+              "time_index_best": 29.8,
+              "time_index_med": 29.8,
+              "time_index_samples": 1,
+              "time_index_std_level": 1,
+              "last3f_dev": 0.8,
+              "sire_score": 0.73,
+              "sire_score_win": 0.78,
+              "sire_score_n": 15,
+              "damsire_score": null,
+              "prev_class_rank": 0,
+              "prev_class_label": "新馬",
+              "peak_class_rank": 0,
+              "today_class_rank": 1,
+              "class_drop": false
+            },
+            {
+              "horse_no": 3,
+              "name": "サザンマキシム",
+              "score": 0.6,
+              "odds": 11.8,
+              "rank": 5,
+              "horse_id": "2024100402",
+              "sire": "ダノンスマッシュ",
+              "damsire": "スペシャルウィーク",
+              "time_index_best": 35.0,
+              "time_index_med": 31.6,
+              "time_index_samples": 2,
+              "time_index_std_level": 1,
+              "last3f_dev": -0.9,
+              "sire_score": 0.96,
+              "sire_score_win": 3.1,
+              "sire_score_n": 15,
+              "damsire_score": 1.72,
+              "prev_class_rank": 1,
+              "prev_class_label": "未勝利",
+              "peak_class_rank": 1,
+              "today_class_rank": 1,
+              "class_drop": false
+            }
+          ],
+          "tickets": {
+            "pattern_type": "B",
+            "pattern": "パターンB（参考穴候補を含む紙上買い目）",
+            "cost_yen": 1500,
+            "lines": [
+              "単勝 5 (200円)",
+              "馬連 5-12 (200円)",
+              "馬連 5-13 (300円)",
+              "3連複 5-12-13 (400円)",
+              "3連複 5-10-12 (200円)",
+              "ワイド 5-10 (100円)",
+              "3連単 5→10→12 (100円)"
+            ],
+            "line_items": [
+              {
+                "type": "win",
+                "horses": [
+                  5
+                ],
+                "stake_yen": 200,
+                "label": "単勝 5 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  12
+                ],
+                "stake_yen": 200,
+                "label": "馬連 5-12 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  13
+                ],
+                "stake_yen": 300,
+                "label": "馬連 5-13 (300円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  5,
+                  12,
+                  13
+                ],
+                "stake_yen": 400,
+                "label": "3連複 5-12-13 (400円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 200,
+                "label": "3連複 5-10-12 (200円)"
+              },
+              {
+                "type": "wide",
+                "horses": [
+                  5,
+                  10
+                ],
+                "stake_yen": 100,
+                "label": "ワイド 5-10 (100円)"
+              },
+              {
+                "type": "trifecta",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 100,
+                "label": "3連単 5→10→12 (100円)"
+              }
+            ],
+            "note": "オッズ未取得時は配当妙味を評価していない。実購入禁止・利益保証なし。"
+          },
+          "prediction_status": "未検証の簡易評価。レース評価も的中・利益を保証しない",
+          "all_horses": [
+            {
+              "horse_no": 5,
+              "name": "サノノソルジャー",
+              "horse_id": "2024101608",
+              "rank": 1,
+              "score": 5.64,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": 5.64,
+              "market_score": 0.0,
+              "odds_free_rank": 1,
+              "odds": 5.2,
+              "popularity": 2,
+              "running_style": "先行",
+              "sire": "グレーターロンドン",
+              "damsire": "Sea The Stars",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 13.77,
+              "calibrated_win_probability_pct": 17.72,
+              "calibrated_place_probability_pct": 49.0,
+              "calibrated_show_probability_pct": 63.0
+            },
+            {
+              "horse_no": 12,
+              "name": "イリスロッソ",
+              "horse_id": "2024101054",
+              "rank": 2,
+              "score": 5.33,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": 5.33,
+              "market_score": 0.0,
+              "odds_free_rank": 2,
+              "odds": 2.2,
+              "popularity": 1,
+              "running_style": "先行",
+              "sire": "フィレンツェファイア",
+              "damsire": "スターリングローズ",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 13.25,
+              "calibrated_win_probability_pct": 16.9,
+              "calibrated_place_probability_pct": 38.1,
+              "calibrated_show_probability_pct": 50.6
+            },
+            {
+              "horse_no": 13,
+              "name": "アルビオンライズ",
+              "horse_id": "2024105970",
+              "rank": 3,
+              "score": 3.18,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": 3.18,
+              "market_score": 0.0,
+              "odds_free_rank": 3,
+              "odds": 6.6,
+              "popularity": 4,
+              "running_style": "先行",
+              "sire": "ミッキーアイル",
+              "damsire": "Lord of England",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 10.13,
+              "calibrated_win_probability_pct": 12.15,
+              "calibrated_place_probability_pct": 26.5,
+              "calibrated_show_probability_pct": 40.7
+            },
+            {
+              "horse_no": 1,
+              "name": "レーヴデリオン",
+              "horse_id": "2024100209",
+              "rank": 4,
+              "score": 1.27,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": 1.27,
+              "market_score": 0.0,
+              "odds_free_rank": 4,
+              "odds": 6.0,
+              "popularity": 3,
+              "running_style": "逃げ",
+              "sire": "フォーウィールドライブ",
+              "damsire": "Unusual Heat",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 7.98,
+              "calibrated_win_probability_pct": 9.06,
+              "calibrated_place_probability_pct": 21.0,
+              "calibrated_show_probability_pct": 35.1
+            },
+            {
+              "horse_no": 3,
+              "name": "サザンマキシム",
+              "horse_id": "2024100402",
+              "rank": 5,
+              "score": 0.6,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": 0.6,
+              "market_score": 0.0,
+              "odds_free_rank": 5,
+              "odds": 11.8,
+              "popularity": 5,
+              "running_style": "先行",
+              "sire": "ダノンスマッシュ",
+              "damsire": "スペシャルウィーク",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 7.33,
+              "calibrated_win_probability_pct": 8.17,
+              "calibrated_place_probability_pct": 17.4,
+              "calibrated_show_probability_pct": 28.8
+            },
+            {
+              "horse_no": 10,
+              "name": "アースグリッパー",
+              "horse_id": "2024100733",
+              "rank": 6,
+              "score": -0.61,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -0.61,
+              "market_score": 0.0,
+              "odds_free_rank": 6,
+              "odds": 26.2,
+              "popularity": 7,
+              "running_style": "先行",
+              "sire": "ヘニーヒューズ",
+              "damsire": "ダノンシャンティ",
+              "pedigree_bonus": 1.0,
+              "pedigree_bonus_kind": "dirt",
+              "estimated_win_probability_pct": 6.31,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 16,
+              "name": "リキサンステラ",
+              "horse_id": "2024105553",
+              "rank": 7,
+              "score": -1.7,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -1.7,
+              "market_score": 0.0,
+              "odds_free_rank": 7,
+              "odds": 87.0,
+              "popularity": 12,
+              "running_style": "差し",
+              "sire": "ミッキーアイル",
+              "damsire": "ケープブランコ",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 5.5,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 11,
+              "name": "ヴァーヴイレヴン",
+              "horse_id": "2024108319",
+              "rank": 8,
+              "score": -2.14,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -2.14,
+              "market_score": 0.0,
+              "odds_free_rank": 8,
+              "odds": 34.3,
+              "popularity": 8,
+              "running_style": "先行",
+              "sire": "Jack Christopher",
+              "damsire": "Bernardini",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 5.21,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 4,
+              "name": "アイビーカイロス",
+              "horse_id": "2024108316",
+              "rank": 9,
+              "score": -2.66,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -2.66,
+              "market_score": 0.0,
+              "odds_free_rank": 9,
+              "odds": 51.1,
+              "popularity": 10,
+              "running_style": "先行",
+              "sire": "Maximus Mischief",
+              "damsire": "Munnings",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 4.88,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 8,
+              "name": "リオビーチ",
+              "horse_id": "2024104146",
+              "rank": 10,
+              "score": -3.47,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -3.47,
+              "market_score": 0.0,
+              "odds_free_rank": 10,
+              "odds": 100.7,
+              "popularity": 14,
+              "running_style": "差し",
+              "sire": "ビーチパトロール",
+              "damsire": "アグネスデジタル",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 4.41,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 9,
+              "name": "ジンクピリチオン",
+              "horse_id": "2024105250",
+              "rank": 11,
+              "score": -3.51,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -3.51,
+              "market_score": 0.0,
+              "odds_free_rank": 11,
+              "odds": 109.3,
+              "popularity": 15,
+              "running_style": "先行",
+              "sire": "ビッグアーサー",
+              "damsire": "ネオユニヴァース",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 4.39,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 6,
+              "name": "ルーストカール",
+              "horse_id": "2024109106",
+              "rank": 12,
+              "score": -3.86,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -3.86,
+              "market_score": 0.0,
+              "odds_free_rank": 12,
+              "odds": 68.4,
+              "popularity": 11,
+              "running_style": "追込",
+              "sire": "フィレンツェファイア",
+              "damsire": "スペシャルウィーク",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 4.2,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 7,
+              "name": "スウィートライト",
+              "horse_id": "2024100736",
+              "rank": 13,
+              "score": -4.76,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -4.76,
+              "market_score": 0.0,
+              "odds_free_rank": 13,
+              "odds": 21.9,
+              "popularity": 6,
+              "running_style": "逃げ",
+              "sire": "Earthlight",
+              "damsire": "Champs Elysees",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 3.75,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 14,
+              "name": "アフォーダビリティ",
+              "horse_id": "2024109052",
+              "rank": 14,
+              "score": -6.4,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -6.4,
+              "market_score": 0.0,
+              "odds_free_rank": 14,
+              "odds": 43.2,
+              "popularity": 9,
+              "running_style": "追込",
+              "sire": "エスケンデレヤ",
+              "damsire": "ディープインパクト",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 3.06,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 2,
+              "name": "ブレイズリー",
+              "horse_id": "2024104106",
+              "rank": 15,
+              "score": -6.73,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -6.73,
+              "market_score": 0.0,
+              "odds_free_rank": 15,
+              "odds": 98.6,
+              "popularity": 13,
+              "running_style": "先行",
+              "sire": "ホットロッドチャーリー",
+              "damsire": "Graydar",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 2.93,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            },
+            {
+              "horse_no": 15,
+              "name": "ソウラスフロス",
+              "horse_id": "2024102190",
+              "rank": 16,
+              "score": -6.81,
+              "today_class_rank": 1,
+              "class_drop": false,
+              "form_score": -6.81,
+              "market_score": 0.0,
+              "odds_free_rank": 16,
+              "odds": 193.2,
+              "popularity": 16,
+              "running_style": "差し",
+              "sire": "フォーウィールドライブ",
+              "damsire": "ディープインパクト",
+              "pedigree_bonus": 0.0,
+              "pedigree_bonus_kind": null,
+              "estimated_win_probability_pct": 2.9,
+              "calibrated_win_probability_pct": null,
+              "calibrated_place_probability_pct": null,
+              "calibrated_show_probability_pct": null
+            }
+          ],
+          "pace_shadow": {
+            "front_count": 2,
+            "lead_count": 9,
+            "pace_prediction": "平均〜ハイ想定"
+          }
+        },
+        "last_odds": {
+          "5": 4.1,
+          "12": 2.5,
+          "13": 6.8,
+          "1": 5.2,
+          "3": 16.7,
+          "10": 28.3,
+          "16": 51.2,
+          "11": 25.0,
+          "4": 21.2,
+          "8": 140.6,
+          "9": 116.9,
+          "6": 131.6,
+          "7": 25.3,
+          "14": 106.5,
+          "2": 119.9,
+          "15": 201.6
+        },
+        "last_popularity": {
+          "5": 2,
+          "12": 1,
+          "13": 4,
+          "1": 3,
+          "3": 5,
+          "10": 9,
+          "16": 10,
+          "11": 7,
+          "4": 6,
+          "8": 15,
+          "9": 12,
+          "6": 14,
+          "7": 8,
+          "14": 11,
+          "2": 13,
+          "15": 16
+        },
+        "post_odds": {
+          "horse_no": 5,
+          "win_odds": 4.1,
+          "popularity": 2
+        },
+        "occult_pick": {
+          "number": 12,
+          "name": "イリスロッソ",
+          "sigma": 2.88,
+          "source": "number"
+        },
+        "occult_trifecta": [
+          [
+            12,
+            5,
+            13
+          ],
+          [
+            12,
+            13,
+            5
+          ]
+        ],
+        "occult_settlement": {
+          "hit": false,
+          "return_yen": 0,
+          "payout_per_100": null,
+          "payout_missing": false
+        },
+        "trifecta_challenge": {
+          "p1": [
+            [
+              5,
+              12,
+              13
+            ],
+            [
+              5,
+              12,
+              1
+            ],
+            [
+              5,
+              13,
+              12
+            ],
+            [
+              5,
+              13,
+              1
+            ],
+            [
+              5,
+              1,
+              12
+            ],
+            [
+              5,
+              1,
+              13
+            ]
+          ],
+          "p2": [
+            [
+              5,
+              12,
+              13
+            ],
+            [
+              5,
+              12,
+              1
+            ],
+            [
+              5,
+              12,
+              3
+            ]
+          ],
+          "p3": [
+            [
+              5,
+              12,
+              13
+            ],
+            [
+              5,
+              13,
+              12
+            ],
+            [
+              12,
+              5,
+              13
+            ],
+            [
+              12,
+              13,
+              5
+            ],
+            [
+              13,
+              5,
+              12
+            ],
+            [
+              13,
+              12,
+              5
+            ]
+          ]
+        },
+        "trifecta_challenge_settlement": {
+          "p1": {
+            "tickets": 6,
+            "hit": false,
+            "return_yen": 0,
+            "payout_per_100": null,
+            "payout_missing": false
+          },
+          "p2": {
+            "tickets": 3,
+            "hit": false,
+            "return_yen": 0,
+            "payout_per_100": null,
+            "payout_missing": false
+          },
+          "p3": {
+            "tickets": 6,
+            "hit": false,
+            "return_yen": 0,
+            "payout_per_100": null,
+            "payout_missing": false
+          }
+        },
+        "kind_pattern_shadow": [
+          {
+            "pattern_type": "B",
+            "pattern": "種別shadow（中央・13頭以上）",
+            "cost_yen": 1500,
+            "lines": [
+              "単勝 5 (200円)",
+              "馬連 5-12 (400円)",
+              "馬連 5-13 (400円)",
+              "ワイド 5-10 (400円)",
+              "3連単 5→10→12 (100円)"
+            ],
+            "line_items": [
+              {
+                "type": "win",
+                "horses": [
+                  5
+                ],
+                "stake_yen": 200,
+                "label": "単勝 5 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  12
+                ],
+                "stake_yen": 400,
+                "label": "馬連 5-12 (400円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  13
+                ],
+                "stake_yen": 400,
+                "label": "馬連 5-13 (400円)"
+              },
+              {
+                "type": "wide",
+                "horses": [
+                  5,
+                  10
+                ],
+                "stake_yen": 400,
+                "label": "ワイド 5-10 (400円)"
+              },
+              {
+                "type": "trifecta",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 100,
+                "label": "3連単 5→10→12 (100円)"
+              }
+            ],
+            "note": "v34.17 種別専用買い方 shadow。現行A/Bと同額の対照案で計測専用。",
+            "bucket": "中央・13頭以上",
+            "variant": "jra_large_realloc"
+          }
+        ],
+        "kind_pattern_shadow_settlement": {
+          "settlement_complete": true,
+          "all_bet_return": 980,
+          "race_profit": -520,
+          "settled_lines": [
+            {
+              "label": "単勝 5 (200円)",
+              "type": "win",
+              "horses": [
+                5
+              ],
+              "stake_yen": 200,
+              "hit": true,
+              "finish_match": true,
+              "return_yen": 980,
+              "payout_per_100": 490
+            },
+            {
+              "label": "馬連 5-12 (400円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                12
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 5-13 (400円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                13
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "ワイド 5-10 (400円)",
+              "type": "wide",
+              "horses": [
+                5,
+                10
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連単 5→10→12 (100円)",
+              "type": "trifecta",
+              "horses": [
+                5,
+                10,
+                12
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            }
+          ],
+          "win_hit": true,
+          "win_return": 980,
+          "settlement_status": "払戻確認済み・精算完了",
+          "result_finishes": [
+            5,
+            11,
+            1,
+            3,
+            15,
+            7,
+            4,
+            12,
+            13,
+            16,
+            9,
+            6,
+            8,
+            10,
+            14
+          ],
+          "payout_confirmed": true
+        },
+        "alloc_d": [
+          {
+            "pattern_type": "B",
+            "pattern": "配分D shadow（パターンB・馬連寄せ）",
+            "cost_yen": 1500,
+            "lines": [
+              "単勝 5 (200円)",
+              "馬連 5-12 (400円)",
+              "馬連 5-13 (400円)",
+              "3連複 5-12-13 (200円)",
+              "3連複 5-10-12 (100円)",
+              "ワイド 5-10 (100円)",
+              "3連単 5→10→12 (100円)"
+            ],
+            "line_items": [
+              {
+                "type": "win",
+                "horses": [
+                  5
+                ],
+                "stake_yen": 200,
+                "label": "単勝 5 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  12
+                ],
+                "stake_yen": 400,
+                "label": "馬連 5-12 (400円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  13
+                ],
+                "stake_yen": 400,
+                "label": "馬連 5-13 (400円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  5,
+                  12,
+                  13
+                ],
+                "stake_yen": 200,
+                "label": "3連複 5-12-13 (200円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 100,
+                "label": "3連複 5-10-12 (100円)"
+              },
+              {
+                "type": "wide",
+                "horses": [
+                  5,
+                  10
+                ],
+                "stake_yen": 100,
+                "label": "ワイド 5-10 (100円)"
+              },
+              {
+                "type": "trifecta",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 100,
+                "label": "3連単 5→10→12 (100円)"
+              }
+            ],
+            "note": "v34.19 配分D shadow。現行A/Bと同一の買い目・同額で配分のみ変更した対照案。計測専用で実購入禁止。"
+          }
+        ],
+        "alloc_d_settlement": {
+          "settlement_complete": true,
+          "all_bet_return": 980,
+          "race_profit": -520,
+          "settled_lines": [
+            {
+              "label": "単勝 5 (200円)",
+              "type": "win",
+              "horses": [
+                5
+              ],
+              "stake_yen": 200,
+              "hit": true,
+              "finish_match": true,
+              "return_yen": 980,
+              "payout_per_100": 490
+            },
+            {
+              "label": "馬連 5-12 (400円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                12
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 5-13 (400円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                13
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-12-13 (200円)",
+              "type": "trio",
+              "horses": [
+                5,
+                12,
+                13
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-10-12 (100円)",
+              "type": "trio",
+              "horses": [
+                5,
+                10,
+                12
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "ワイド 5-10 (100円)",
+              "type": "wide",
+              "horses": [
+                5,
+                10
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連単 5→10→12 (100円)",
+              "type": "trifecta",
+              "horses": [
+                5,
+                10,
+                12
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            }
+          ],
+          "win_hit": true,
+          "win_return": 980,
+          "settlement_status": "払戻確認済み・精算完了",
+          "result_finishes": [
+            5,
+            11,
+            1,
+            3,
+            15,
+            7,
+            4,
+            12,
+            13,
+            16,
+            9,
+            6,
+            8,
+            10,
+            14
+          ],
+          "payout_confirmed": true
+        },
+        "stake_shadow": [
+          {
+            "pattern_type": "B",
+            "pattern": "金額強弱 shadow（通常×1・パターンB）",
+            "cost_yen": 1500,
+            "lines": [
+              "単勝 5 (200円)",
+              "馬連 5-12 (200円)",
+              "馬連 5-13 (300円)",
+              "3連複 5-12-13 (400円)",
+              "3連複 5-10-12 (200円)",
+              "ワイド 5-10 (100円)",
+              "3連単 5→10→12 (100円)"
+            ],
+            "line_items": [
+              {
+                "type": "win",
+                "horses": [
+                  5
+                ],
+                "stake_yen": 200,
+                "label": "単勝 5 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  12
+                ],
+                "stake_yen": 200,
+                "label": "馬連 5-12 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  5,
+                  13
+                ],
+                "stake_yen": 300,
+                "label": "馬連 5-13 (300円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  5,
+                  12,
+                  13
+                ],
+                "stake_yen": 400,
+                "label": "3連複 5-12-13 (400円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 200,
+                "label": "3連複 5-10-12 (200円)"
+              },
+              {
+                "type": "wide",
+                "horses": [
+                  5,
+                  10
+                ],
+                "stake_yen": 100,
+                "label": "ワイド 5-10 (100円)"
+              },
+              {
+                "type": "trifecta",
+                "horses": [
+                  5,
+                  10,
+                  12
+                ],
+                "stake_yen": 100,
+                "label": "3連単 5→10→12 (100円)"
+              }
+            ],
+            "stake_tier": "通常",
+            "stake_multiplier": 1,
+            "note": "v34.20 金額の強弱 shadow。現行A/Bと同一の買い目・同一配分比率で、総額だけをグレード×種別で段階化した対照案。計測専用で実購入禁止。"
+          }
+        ],
+        "stake_shadow_settlement": {
+          "settlement_complete": true,
+          "all_bet_return": 980,
+          "race_profit": -520,
+          "settled_lines": [
+            {
+              "label": "単勝 5 (200円)",
+              "type": "win",
+              "horses": [
+                5
+              ],
+              "stake_yen": 200,
+              "hit": true,
+              "finish_match": true,
+              "return_yen": 980,
+              "payout_per_100": 490
+            },
+            {
+              "label": "馬連 5-12 (200円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                12
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 5-13 (300円)",
+              "type": "quinella",
+              "horses": [
+                5,
+                13
+              ],
+              "stake_yen": 300,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-12-13 (400円)",
+              "type": "trio",
+              "horses": [
+                5,
+                12,
+                13
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 5-10-12 (200円)",
+              "type": "trio",
+              "horses": [
+                5,
+                10,
+                12
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "ワイド 5-10 (100円)",
+              "type": "wide",
+              "horses": [
+                5,
+                10
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連単 5→10→12 (100円)",
+              "type": "trifecta",
+              "horses": [
+                5,
+                10,
+                12
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            }
+          ],
+          "win_hit": true,
+          "win_return": 980,
+          "settlement_status": "払戻確認済み・精算完了",
+          "result_finishes": [
+            5,
+            11,
+            1,
+            3,
+            15,
+            7,
+            4,
+            12,
+            13,
+            16,
+            9,
+            6,
+            8,
+            10,
+            14
+          ],
+          "payout_confirmed": true
+        },
+        "hybrid_shadow_tickets": [
+          {
+            "pattern_type": "B",
+            "pattern": "HYBRID_SHADOW（時計・血統・クラス統合／パターンB）",
+            "cost_yen": 1500,
+            "lines": [
+              "単勝 16 (200円)",
+              "馬連 12-16 (200円)",
+              "馬連 10-16 (300円)",
+              "3連複 10-12-16 (400円)",
+              "3連複 3-12-16 (200円)",
+              "ワイド 3-16 (100円)",
+              "3連単 16→3→12 (100円)"
+            ],
+            "line_items": [
+              {
+                "type": "win",
+                "horses": [
+                  16
+                ],
+                "stake_yen": 200,
+                "label": "単勝 16 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  12,
+                  16
+                ],
+                "stake_yen": 200,
+                "label": "馬連 12-16 (200円)"
+              },
+              {
+                "type": "quinella",
+                "horses": [
+                  10,
+                  16
+                ],
+                "stake_yen": 300,
+                "label": "馬連 10-16 (300円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  10,
+                  12,
+                  16
+                ],
+                "stake_yen": 400,
+                "label": "3連複 10-12-16 (400円)"
+              },
+              {
+                "type": "trio",
+                "horses": [
+                  3,
+                  12,
+                  16
+                ],
+                "stake_yen": 200,
+                "label": "3連複 3-12-16 (200円)"
+              },
+              {
+                "type": "wide",
+                "horses": [
+                  3,
+                  16
+                ],
+                "stake_yen": 100,
+                "label": "ワイド 3-16 (100円)"
+              },
+              {
+                "type": "trifecta",
+                "horses": [
+                  16,
+                  3,
+                  12
+                ],
+                "stake_yen": 100,
+                "label": "3連単 16→3→12 (100円)"
+              }
+            ],
+            "note": "v34.22 HYBRID_SHADOW。時計指数・血統スコア・クラス評価の統合スコア順位で組み立てた shadow 買い目。買い目の構造と総額は現行パターンA/Bと同一。本番の選定・配分には一切使用しない計測専用で実購入禁止。"
+          }
+        ],
+        "hybrid_shadow_meta": {
+          "evaluated_horses": 16,
+          "top": [
+            {
+              "horse_no": 16,
+              "hybrid_score": -8.75,
+              "time_pts": -5.7,
+              "pedigree_pts": -0.05,
+              "class_pts": -3.0,
+              "odds_free_rank": 7,
+              "production_rank": 7
+            },
+            {
+              "horse_no": 12,
+              "hybrid_score": -9.08,
+              "time_pts": -10.0,
+              "pedigree_pts": 0.92,
+              "class_pts": 0.0,
+              "odds_free_rank": 2,
+              "production_rank": 2
+            },
+            {
+              "horse_no": 10,
+              "hybrid_score": -11.16,
+              "time_pts": -9.6,
+              "pedigree_pts": -1.56,
+              "class_pts": 0.0,
+              "odds_free_rank": 6,
+              "production_rank": 6
+            },
+            {
+              "horse_no": 3,
+              "hybrid_score": -16.58,
+              "time_pts": -18.4,
+              "pedigree_pts": 1.82,
+              "class_pts": 0.0,
+              "odds_free_rank": 5,
+              "production_rank": 5
+            },
+            {
+              "horse_no": 5,
+              "hybrid_score": -17.2,
+              "time_pts": -17.2,
+              "pedigree_pts": null,
+              "class_pts": 0.0,
+              "odds_free_rank": 1,
+              "production_rank": 1
+            }
+          ],
+          "reason": null
+        },
+        "hybrid_shadow_settlement": {
+          "settlement_complete": true,
+          "all_bet_return": 0,
+          "race_profit": -1500,
+          "settled_lines": [
+            {
+              "label": "単勝 16 (200円)",
+              "type": "win",
+              "horses": [
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 12-16 (200円)",
+              "type": "quinella",
+              "horses": [
+                12,
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "馬連 10-16 (300円)",
+              "type": "quinella",
+              "horses": [
+                10,
+                16
+              ],
+              "stake_yen": 300,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 10-12-16 (400円)",
+              "type": "trio",
+              "horses": [
+                10,
+                12,
+                16
+              ],
+              "stake_yen": 400,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連複 3-12-16 (200円)",
+              "type": "trio",
+              "horses": [
+                3,
+                12,
+                16
+              ],
+              "stake_yen": 200,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "ワイド 3-16 (100円)",
+              "type": "wide",
+              "horses": [
+                3,
+                16
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            },
+            {
+              "label": "3連単 16→3→12 (100円)",
+              "type": "trifecta",
+              "horses": [
+                16,
+                3,
+                12
+              ],
+              "stake_yen": 100,
+              "hit": false,
+              "finish_match": false,
+              "return_yen": 0,
+              "payout_per_100": null
+            }
+          ],
+          "win_hit": false,
+          "win_return": 0,
+          "settlement_status": "払戻確認済み・的中なし・精算完了",
+          "result_finishes": [
+            5,
+            11,
+            1,
+            3,
+            15,
+            7,
+            4,
+            12,
+            13,
+            16,
+            9,
+            6,
+            8,
+            10,
+            14
+          ],
+          "payout_confirmed": true
+        },
+        "phase1_sel_tickets": {
+          "B": [
+            {
+              "pattern_type": "B",
+              "pattern": "PHASE1_B（本番軸+hybrid相手／パターンB）",
+              "cost_yen": 1500,
+              "lines": [
+                "単勝 5 (200円)",
+                "馬連 5-16 (200円)",
+                "馬連 5-12 (300円)",
+                "3連複 5-12-16 (400円)",
+                "3連複 5-10-16 (200円)",
+                "ワイド 5-10 (100円)",
+                "3連単 5→10→16 (100円)"
+              ],
+              "line_items": [
+                {
+                  "type": "win",
+                  "horses": [
+                    5
+                  ],
+                  "stake_yen": 200,
+                  "label": "単勝 5 (200円)"
+                },
+                {
+                  "type": "quinella",
+                  "horses": [
+                    5,
+                    16
+                  ],
+                  "stake_yen": 200,
+                  "label": "馬連 5-16 (200円)"
+                },
+                {
+                  "type": "quinella",
+                  "horses": [
+                    5,
+                    12
+                  ],
+                  "stake_yen": 300,
+                  "label": "馬連 5-12 (300円)"
+                },
+                {
+                  "type": "trio",
+                  "horses": [
+                    5,
+                    12,
+                    16
+                  ],
+                  "stake_yen": 400,
+                  "label": "3連複 5-12-16 (400円)"
+                },
+                {
+                  "type": "trio",
+                  "horses": [
+                    5,
+                    10,
+                    16
+                  ],
+                  "stake_yen": 200,
+                  "label": "3連複 5-10-16 (200円)"
+                },
+                {
+                  "type": "wide",
+                  "horses": [
+                    5,
+                    10
+                  ],
+                  "stake_yen": 100,
+                  "label": "ワイド 5-10 (100円)"
+                },
+                {
+                  "type": "trifecta",
+                  "horses": [
+                    5,
+                    10,
+                    16
+                  ],
+                  "stake_yen": 100,
+                  "label": "3連単 5→10→16 (100円)"
+                }
+              ],
+              "note": "第1次検証 P2 の shadow 買い目。軸は本番1位、相手は hybrid 統合順位で組み立てた。構造と総額は現行パターンA/B と同一。本番には一切使用しない計測専用。"
+            }
+          ],
+          "C": [
+            {
+              "pattern_type": "B",
+              "pattern": "PHASE1_C（hybrid軸+本番相手／パターンB）",
+              "cost_yen": 1500,
+              "lines": [
+                "単勝 16 (200円)",
+                "馬連 5-16 (200円)",
+                "馬連 12-16 (300円)",
+                "3連複 5-12-16 (400円)",
+                "3連複 5-10-16 (200円)",
+                "ワイド 10-16 (100円)",
+                "3連単 16→10→5 (100円)"
+              ],
+              "line_items": [
+                {
+                  "type": "win",
+                  "horses": [
+                    16
+                  ],
+                  "stake_yen": 200,
+                  "label": "単勝 16 (200円)"
+                },
+                {
+                  "type": "quinella",
+                  "horses": [
+                    5,
+                    16
+                  ],
+                  "stake_yen": 200,
+                  "label": "馬連 5-16 (200円)"
+                },
+                {
+                  "type": "quinella",
+                  "horses": [
+                    12,
+                    16
+                  ],
+                  "stake_yen": 300,
+                  "label": "馬連 12-16 (300円)"
+                },
+                {
+                  "type": "trio",
+                  "horses": [
+                    5,
+                    12,
+                    16
+                  ],
+                  "stake_yen": 400,
+                  "label": "3連複 5-12-16 (400円)"
+                },
+                {
+                  "type": "trio",
+                  "horses": [
+                    5,
+                    10,
+                    16
+                  ],
+                  "stake_yen": 200,
+                  "label": "3連複 5-10-16 (200円)"
+                },
+                {
+                  "type": "wide",
+                  "horses": [
+                    10,
+                    16
+                  ],
+                  "stake_yen": 100,
+                  "label": "ワイド 10-16 (100円)"
+                },
+                {
+                  "type": "trifecta",
+                  "horses": [
+                    16,
+                    10,
+                    5
+                  ],
+                  "stake_yen": 100,
+                  "label": "3連単 16→10→5 (100円)"
+                }
+              ],
+              "note": "第1次検証 P2 の shadow 買い目。軸は hybrid 統合1位、相手は本番順位で組み立てた。構造と総額は現行パターンA/B と同一。本番には一切使用しない計測専用。"
+            }
+          ]
+        },
+        "phase1_sel_settlement": {
+          "B": {
+            "settlement_complete": true,
+            "all_bet_return": 980,
+            "race_profit": -520,
+            "settled_lines": [
+              {
+                "label": "単勝 5 (200円)",
+                "type": "win",
+                "horses": [
+                  5
+                ],
+                "stake_yen": 200,
+                "hit": true,
+                "finish_match": true,
+                "return_yen": 980,
+                "payout_per_100": 490
+              },
+              {
+                "label": "馬連 5-16 (200円)",
+                "type": "quinella",
+                "horses": [
+                  5,
+                  16
+                ],
+                "stake_yen": 200,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "馬連 5-12 (300円)",
+                "type": "quinella",
+                "horses": [
+                  5,
+                  12
+                ],
+                "stake_yen": 300,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "3連複 5-12-16 (400円)",
+                "type": "trio",
+                "horses": [
+                  5,
+                  12,
+                  16
+                ],
+                "stake_yen": 400,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "3連複 5-10-16 (200円)",
+                "type": "trio",
+                "horses": [
+                  5,
+                  10,
+                  16
+                ],
+                "stake_yen": 200,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "ワイド 5-10 (100円)",
+                "type": "wide",
+                "horses": [
+                  5,
+                  10
+                ],
+                "stake_yen": 100,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "3連単 5→10→16 (100円)",
+                "type": "trifecta",
+                "horses": [
+                  5,
+                  10,
+                  16
+                ],
+                "stake_yen": 100,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              }
+            ],
+            "win_hit": true,
+            "win_return": 980,
+            "settlement_status": "払戻確認済み・精算完了",
+            "result_finishes": [
+              5,
+              11,
+              1,
+              3,
+              15,
+              7,
+              4,
+              12,
+              13,
+              16,
+              9,
+              6,
+              8,
+              10,
+              14
+            ],
+            "payout_confirmed": true
+          },
+          "C": {
+            "settlement_complete": true,
+            "all_bet_return": 0,
+            "race_profit": -1500,
+            "settled_lines": [
+              {
+                "label": "単勝 16 (200円)",
+                "type": "win",
+                "horses": [
+                  16
+                ],
+                "stake_yen": 200,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "馬連 5-16 (200円)",
+                "type": "quinella",
+                "horses": [
+                  5,
+                  16
+                ],
+                "stake_yen": 200,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "馬連 12-16 (300円)",
+                "type": "quinella",
+                "horses": [
+                  12,
+                  16
+                ],
+                "stake_yen": 300,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "3連複 5-12-16 (400円)",
+                "type": "trio",
+                "horses": [
+                  5,
+                  12,
+                  16
+                ],
+                "stake_yen": 400,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "3連複 5-10-16 (200円)",
+                "type": "trio",
+                "horses": [
+                  5,
+                  10,
+                  16
+                ],
+                "stake_yen": 200,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "ワイド 10-16 (100円)",
+                "type": "wide",
+                "horses": [
+                  10,
+                  16
+                ],
+                "stake_yen": 100,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              },
+              {
+                "label": "3連単 16→10→5 (100円)",
+                "type": "trifecta",
+                "horses": [
+                  16,
+                  10,
+                  5
+                ],
+                "stake_yen": 100,
+                "hit": false,
+                "finish_match": false,
+                "return_yen": 0,
+                "payout_per_100": null
+              }
+            ],
+            "win_hit": false,
+            "win_return": 0,
+            "settlement_status": "払戻確認済み・的中なし・精算完了",
+            "result_finishes": [
+              5,
+              11,
+              1,
+              3,
+              15,
+              7,
+              4,
+              12,
+              13,
+              16,
+              9,
+              6,
+              8,
+              10,
+              14
+            ],
+            "payout_confirmed": true
+          }
+        },
+        "hybrid_features": {
+          "time_standards_ver": "2026-11-06T20:24:14.121304+09:00",
+          "pedigree_stats_built_at": "2026-11-06T20:34:02.026196+09:00",
+          "time_best_horse_no": 12,
+          "time_best_value": 60.6
+        },
+        "last_top6": [
+          {
+            "horse_no": 5,
+            "rank": 1,
+            "score": 6.14,
+            "form_score": 6.14,
+            "market_score": 0.0
+          },
+          {
+            "horse_no": 12,
+            "rank": 2,
+            "score": 5.33,
+            "form_score": 5.33,
+            "market_score": 0.0
+          },
+          {
+            "horse_no": 13,
+            "rank": 3,
+            "score": 3.18,
+            "form_score": 3.18,
+            "market_score": 0.0
+          },
+          {
+            "horse_no": 1,
+            "rank": 4,
+            "score": 1.77,
+            "form_score": 1.77,
+            "market_score": 0.0
+          },
+          {
+            "horse_no": 3,
+            "rank": 5,
+            "score": 0.6,
+            "form_score": 0.6,
+            "market_score": 0.0
+          },
+          {
+            "horse_no": 10,
+            "rank": 6,
+            "score": -0.61,
+            "form_score": -0.61,
+            "market_score": 0.0
+          }
+        ],
+        "last_outsiders": [
+          10,
+          1,
+          3,
+          16,
+          11
+        ],
+        "trio_payout": 9890,
+        "odds_coverage": 1.0,
+        "bet_eligible": false,
+        "gate_reasons": [
+          "13頭以上"
+        ],
+        "runner_count": 16,
+        "runner_count_verified": true,
+        "odds_snapshots": [
+          {
+            "at": "2026-11-23T00:02:13.815964+09:00",
+            "odds": {
+              "5": 5.2,
+              "12": 2.2,
+              "13": 6.6,
+              "1": 6.0,
+              "3": 11.8,
+              "10": 26.2,
+              "16": 87.0,
+              "11": 34.3,
+              "4": 51.1,
+              "8": 100.7,
+              "9": 109.3,
+              "6": 68.4,
+              "7": 21.9,
+              "14": 43.2,
+              "2": 98.6,
+              "15": 193.2
+            }
+          },
+          {
+            "at": "2026-11-23T06:01:59.777624+09:00",
+            "odds": {
+              "5": 5.7,
+              "12": 2.0,
+              "13": 6.6,
+              "1": 5.8,
+              "3": 14.2,
+              "10": 27.7,
+              "16": 68.7,
+              "11": 33.0,
+              "4": 45.0,
+              "8": 106.1,
+              "9": 117.8,
+              "6": 88.2,
+              "7": 20.9,
+              "14": 64.1,
+              "2": 108.3,
+              "15": 204.6
+            }
+          },
+          {
+            "at": "2026-11-23T06:08:07.686650+09:00",
+            "odds": {
+              "5": 5.7,
+              "12": 2.0,
+              "13": 6.5,
+              "1": 5.8,
+              "3": 14.3,
+              "10": 27.7,
+              "16": 68.9,
+              "11": 33.0,
+              "4": 44.9,
+              "8": 106.2,
+              "9": 117.8,
+              "6": 88.3,
+              "7": 21.0,
+              "14": 64.4,
+              "2": 100.3,
+              "15": 203.9
+            }
+          },
+          {
+            "at": "2026-11-23T08:01:31.359451+09:00",
+            "odds": {
+              "5": 5.1,
+              "12": 2.3,
+              "13": 6.0,
+              "1": 5.5,
+              "3": 14.1,
+              "10": 27.8,
+              "16": 68.7,
+              "11": 24.4,
+              "4": 33.5,
+              "8": 114.3,
+              "9": 117.2,
+              "6": 96.6,
+              "7": 23.5,
+              "14": 73.0,
+              "2": 105.0,
+              "15": 207.8
+            }
+          },
+          {
+            "at": "2026-11-23T08:31:08.724263+09:00",
+            "odds": {
+              "5": 5.1,
+              "12": 2.3,
+              "13": 6.2,
+              "1": 5.3,
+              "3": 14.9,
+              "10": 28.5,
+              "16": 69.9,
+              "11": 24.2,
+              "4": 31.4,
+              "8": 121.6,
+              "9": 107.4,
+              "6": 103.0,
+              "7": 24.6,
+              "14": 76.8,
+              "2": 109.2,
+              "15": 210.4
+            }
+          },
+          {
+            "at": "2026-11-23T09:01:18.138415+09:00",
+            "odds": {
+              "5": 5.3,
+              "12": 2.5,
+              "13": 6.4,
+              "1": 5.1,
+              "3": 14.2,
+              "10": 24.2,
+              "16": 46.5,
+              "11": 22.5,
+              "4": 27.6,
+              "8": 116.1,
+              "9": 99.0,
+              "6": 99.5,
+              "7": 18.1,
+              "14": 80.1,
+              "2": 111.5,
+              "15": 220.2
+            }
+          },
+          {
+            "at": "2026-11-23T09:31:14.037559+09:00",
+            "odds": {
+              "5": 4.1,
+              "12": 2.5,
+              "13": 6.8,
+              "1": 5.2,
+              "3": 16.7,
+              "10": 28.3,
+              "16": 51.2,
+              "11": 25.0,
+              "4": 21.2,
+              "8": 140.6,
+              "9": 116.9,
+              "6": 131.6,
+              "7": 25.3,
+              "14": 106.5,
+              "2": 119.9,
+              "15": 201.6
+            }
+          }
+        ],
+        "prediction_created_at": "2026-11-23T00:02:13.815964+09:00",
+        "trio_trim": {
+          "trio_off": {
+            "stake_yen": 900,
+            "return_yen": 980,
+            "profit_yen": 80
+          },
+          "trio_half": {
+            "stake_yen": 1300,
+            "return_yen": 980,
+            "profit_yen": -320
+          }
+        }
+      },
       {
         "race_id": "202665112212",
         "date": "2026-11-22",
