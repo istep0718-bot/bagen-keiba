@@ -532,6 +532,20 @@ pedigree_cache を維持する。
   stats["phase3_experiments"] に遡及/前方を分離して集計する。
   いずれも計測専用で、本番の予測順位・買い目・投資配分・ゲート・
   グレードと、第1次・第2次の集計値には一切使用しない
+
+第4次シャドウ検証 (34.23 計測追加・ENGINE_VERSION は無変更):
+- AXIS-STABILITY (本番スコアの2成分 form/market それぞれでの
+  再順位付けに対する軸の順位安定性と軸3着内率の関係、ハイブリッド
+  順位との不一致、第3次生存確率モデルとの併用評価)、
+  CORE-RESERVE (本番 top5 の外から脚質×展開適合と降級で選ぶ
+  予備候補を加えた場合の3連複の取りこぼし削減。追加投資型)、
+  CENTRAL-TURF (中央芝の全面除外/条件付き参加 (gap12>=2.0)/
+  中央芝専用モデル (top5 内 time_index 再順位・馬レベルのみ) の
+  独立比較) を stats["phase4_experiments"] に遡及/前方を分離して
+  集計する。COMBINATION は第3次の前方比較を正とし、第4次では
+  新規方式・集計を追加しない。いずれも計測専用で、本番の予測
+  順位・買い目・投資配分・ゲート・グレードと、第1次〜第3次の
+  集計値には一切使用しない
 """
 import json, math, re, sys, time, html as html_lib
 from datetime import datetime, timedelta, timezone
@@ -732,6 +746,20 @@ PHASE3_AXIS_MODEL = {
     "train_excluded": {"no_decision_odds": 266, "no_features": 0,
                        "no_target": 3},
 }
+# v34.23: 第4次シャドウ検証の凍結定数 (PHASE4_EXP_V1・計測専用)。
+# 設計: phase4-shadow-design-2026-11-24.md。本番予測には使わない。
+PHASE4_START_DATE = "2026-11-25"
+PHASE4_RESERVE_FIT = {
+    "スロー想定": {"逃げ": 2, "先行": 3, "差し": 1, "追込": 0},
+    "単騎逃げ想定": {"逃げ": 2, "先行": 2, "差し": 1, "追込": 0},
+    "平均〜ハイ想定": {"逃げ": 0, "先行": 1, "差し": 2, "追込": 2},
+    "ハイ想定": {"逃げ": 0, "先行": 1, "差し": 3, "追込": 3},
+}
+PHASE4_RESERVE_MAX = 2
+PHASE4_RESERVE_COMBO_STAKE = 100
+PHASE4_TURF_GAP12_MIN = 2.0
+PHASE4_BOOTSTRAP_REPS = 1000
+PHASE4_BOOTSTRAP_SEED = 20261124
 # v34.13: 3連複トリム計測（shadow計測専用。本番配分・選定には一切使わない）。
 # 対象は中央（JRA）×この頭数以上の精算レース。
 TRIO_TRIM_MIN_RUNNERS = 13
@@ -6236,6 +6264,7 @@ def calculate_stats(snapshots):
     # スナップショット (frozen_prediction / 各 shadow 買い目と精算) が
     # レース単位の原記録で、ここはその集計ビューにあたる。
     import hashlib as _hashlib
+    import random as _random
 
     def _p1_agreement(x):
         """_hybrid_track と同一ゲート・同一の一致定義。"""
@@ -8011,6 +8040,695 @@ def calculate_stats(snapshots):
             "の人気・オッズは購入判断時点のもので、最終オッズは"
             "使っていない。"),
     }
+    # ==== v34.23: 第4次シャドウ検証 (PHASE4_EXP_V1) ====
+    # 設計: phase4-shadow-design-2026-11-24.md。本番予測・買い目・
+    # 配分・既存統計には一切使わない計測専用ブロック。生存確率は
+    # 第3次の凍結モデル (_p3_prob_of) を再利用し、再学習しない。
+    def _era4_of(x):
+        return ("forward" if str(x.get("date") or "") >= PHASE4_START_DATE
+                else "retro")
+
+    settled4 = {"retro": [], "forward": []}
+    for _x in settled:
+        settled4[_era4_of(_x)].append(_x)
+    settled_all4 = {"retro": [], "forward": []}
+    for _x in settled_all:
+        settled_all4[_era4_of(_x)].append(_x)
+    _fwd4_days = len({str(x.get("date")) for x in settled4["forward"]
+                      if x.get("date")})
+    _fwd_all4_days = len({str(x.get("date"))
+                          for x in settled_all4["forward"] if x.get("date")})
+
+    def _p4_roi_cluster_ci95(recs, stake_fn, ret_fn):
+        """回収率の95%CI (開催日クラスター・ブートストラップ)。"""
+        per_date = {}
+        for r in recs:
+            d = str(r["x"].get("date") or "")
+            s0, r0 = per_date.get(d, (0, 0))
+            per_date[d] = (s0 + stake_fn(r), r0 + ret_fn(r))
+        dates = sorted(per_date)
+        if len(dates) < 2:
+            return None
+        rng = _random.Random(PHASE4_BOOTSTRAP_SEED)
+        vals = []
+        for _ in range(PHASE4_BOOTSTRAP_REPS):
+            ts = tr = 0
+            for _i in range(len(dates)):
+                s0, r0 = per_date[dates[rng.randrange(len(dates))]]
+                ts += s0
+                tr += r0
+            if ts > 0:
+                vals.append(tr / ts * 100.0)
+        if len(vals) < 100:
+            return None
+        vals.sort()
+        return [round(vals[int(0.025 * len(vals))], 1),
+                round(vals[min(len(vals) - 1,
+                               int(0.975 * len(vals)))], 1)]
+
+    def _p4_diff_cluster_ci95(recs, diff_fn):
+        """1レースあたり純利益差の平均と開催日クラスター95%CI。"""
+        per_date = {}
+        n = 0
+        tot = 0.0
+        for r in recs:
+            d = str(r["x"].get("date") or "")
+            v = diff_fn(r)
+            a, c = per_date.get(d, (0.0, 0))
+            per_date[d] = (a + v, c + 1)
+            tot += v
+            n += 1
+        if n == 0:
+            return None
+        out = {"mean_diff_yen": round(tot / n, 1)}
+        dates = sorted(per_date)
+        if len(dates) < 2:
+            out["ci95_yen"] = None
+            return out
+        rng = _random.Random(PHASE4_BOOTSTRAP_SEED)
+        vals = []
+        for _ in range(PHASE4_BOOTSTRAP_REPS):
+            tv = 0.0
+            tc = 0
+            for _i in range(len(dates)):
+                a, c = per_date[dates[rng.randrange(len(dates))]]
+                tv += a
+                tc += c
+            if tc > 0:
+                vals.append(tv / tc)
+        if len(vals) < 100:
+            out["ci95_yen"] = None
+            return out
+        vals.sort()
+        out["ci95_yen"] = [round(vals[int(0.025 * len(vals))], 1),
+                           round(vals[min(len(vals) - 1,
+                                          int(0.975 * len(vals)))], 1)]
+        return out
+
+    # ---- 実験1: AXIS-STABILITY ----
+    def _p4_axis_rows(rows):
+        recs = []
+        excluded = {"no_all_horses": 0, "no_scores": 0, "no_finish": 0}
+        for x in rows:
+            fp = x.get("frozen_prediction") or {}
+            top5 = fp.get("top5") or []
+            ah = fp.get("all_horses") or []
+            if (not top5 or not isinstance(top5[0], dict)
+                    or not isinstance(ah, list) or len(ah) < 6):
+                excluded["no_all_horses"] += 1
+                continue
+            axis = top5[0].get("horse_no")
+            entries = []
+            ok = axis is not None
+            for h in ah:
+                if (not isinstance(h, dict) or h.get("horse_no") is None
+                        or not isinstance(h.get("form_score"), (int, float))
+                        or not isinstance(h.get("market_score"),
+                                          (int, float))):
+                    ok = False
+                    break
+                entries.append(h)
+            if not ok:
+                excluded["no_scores"] += 1
+                continue
+            afin = _hybrid_finish(x, axis)
+            if afin is None:
+                excluded["no_finish"] += 1
+                continue
+
+            def _rank_of(key):
+                srt = sorted(entries, key=lambda h: (
+                    -h[key],
+                    h.get("rank") if isinstance(h.get("rank"), int) else 99,
+                    h["horse_no"]))
+                for i, h in enumerate(srt):
+                    if h["horse_no"] == axis:
+                        return i + 1
+                return len(srt) + 1
+
+            prob, _pr = _p3_prob_of(x)
+            meta = (x.get("hybrid_shadow_meta") or {}).get("top") or []
+            dis = None
+            hnos = [m.get("horse_no") for m in meta
+                    if isinstance(m, dict)]
+            if hnos:
+                pnos = {h.get("horse_no") for h in top5
+                        if isinstance(h, dict)}
+                dis = {"axis_same": hnos[0] == axis,
+                       "axis_hybrid_rank": (hnos.index(axis) + 1
+                                            if axis in hnos else 6),
+                       "top5_overlap": len(pnos & set(hnos))}
+            recs.append({"x": x, "axis": axis, "axis_fin": afin,
+                         "r_f": _rank_of("form_score"),
+                         "r_m": _rank_of("market_score"),
+                         "prob": prob, "dis": dis})
+        for r in recs:
+            r["worst"] = max(1, r["r_f"], r["r_m"])
+        return recs, excluded
+
+    def _p4_axis_block(rows):
+        recs, excluded = _p4_axis_rows(rows)
+        out = {"target_races": len(recs), "excluded": excluded}
+        if not recs:
+            return out
+
+        def _top3(rs):
+            return (round(sum(1 for r in rs if r["axis_fin"] <= 3)
+                          / len(rs) * 100, 1) if rs else None)
+
+        def _grp(rs):
+            if not rs:
+                return {"races": 0}
+            b = _rec_agg(rs, lambda r: _main_stake(r["x"]),
+                         lambda r: _main_ret(r["x"]))
+            b["roi_cluster_ci95_pct"] = _p4_roi_cluster_ci95(
+                rs, lambda r: _main_stake(r["x"]),
+                lambda r: _main_ret(r["x"]))
+            return b
+
+        base = _grp(recs)
+        base["axis_top3_rate_pct"] = _top3(recs)
+        out["all"] = base
+        out["top3_retention"] = {
+            "form_pct": round(sum(1 for r in recs if r["r_f"] <= 3)
+                              / len(recs) * 100, 1),
+            "market_pct": round(sum(1 for r in recs if r["r_m"] <= 3)
+                                / len(recs) * 100, 1),
+            "both_pct": round(sum(1 for r in recs
+                                  if r["r_f"] <= 3 and r["r_m"] <= 3)
+                              / len(recs) * 100, 1),
+        }
+        strata = {}
+        for lab, sel in (("worst_1", lambda r: r["worst"] == 1),
+                         ("worst_2", lambda r: r["worst"] == 2),
+                         ("worst_3", lambda r: r["worst"] == 3),
+                         ("worst_4plus", lambda r: r["worst"] >= 4),
+                         ("worst_le2", lambda r: r["worst"] <= 2),
+                         ("worst_ge3", lambda r: r["worst"] >= 3)):
+            sub = [r for r in recs if sel(r)]
+            if not sub:
+                strata[lab] = {"races": 0}
+                continue
+            b = _rec_agg(sub, lambda r: _main_stake(r["x"]),
+                         lambda r: _main_ret(r["x"]))
+            b["axis_top3_rate_pct"] = _top3(sub)
+            known = [r["prob"] for r in sub if r["prob"] is not None]
+            b["mean_survival_prob"] = (round(sum(known) / len(known), 3)
+                                       if known else None)
+            strata[lab] = b
+        out["strata"] = strata
+        lo = [r for r in recs if r["worst"] <= 2]
+        hi = [r for r in recs if r["worst"] >= 3]
+        out["primary_axis_top3_diff_pt"] = (
+            round(_top3(lo) - _top3(hi), 1) if lo and hi else None)
+        drecs = [r for r in recs if r["dis"] is not None]
+        dout = {"races": len(drecs)}
+        if drecs:
+            same = [r for r in drecs if r["dis"]["axis_same"]]
+            diff = [r for r in drecs if not r["dis"]["axis_same"]]
+            dout["axis_same"] = {"races": len(same),
+                                 "axis_top3_rate_pct": _top3(same)}
+            dout["axis_diff"] = {"races": len(diff),
+                                 "axis_top3_rate_pct": _top3(diff)}
+            for lab, sel in (
+                    ("hybrid_rank_1",
+                     lambda r: r["dis"]["axis_hybrid_rank"] == 1),
+                    ("hybrid_rank_2_3",
+                     lambda r: 2 <= r["dis"]["axis_hybrid_rank"] <= 3),
+                    ("hybrid_rank_4plus",
+                     lambda r: r["dis"]["axis_hybrid_rank"] >= 4)):
+                sub = [r for r in drecs if sel(r)]
+                dout[lab] = {"races": len(sub),
+                             "axis_top3_rate_pct": _top3(sub)}
+            dout["mean_top5_overlap"] = round(
+                sum(r["dis"]["top5_overlap"] for r in drecs)
+                / len(drecs), 2)
+        out["disagreement"] = dout
+        precs = [r for r in recs if r["prob"] is not None]
+        cout = {"prob_known_races": len(precs),
+                "prob_unknown_races": len(recs) - len(precs)}
+        if precs:
+            for lab, sel in (
+                    ("prob70_stable",
+                     lambda r: r["prob"] >= 0.7 and r["worst"] <= 2),
+                    ("prob70_unstable",
+                     lambda r: r["prob"] >= 0.7 and r["worst"] >= 3),
+                    ("prob_lt70_stable",
+                     lambda r: r["prob"] < 0.7 and r["worst"] <= 2),
+                    ("prob_lt70_unstable",
+                     lambda r: r["prob"] < 0.7 and r["worst"] >= 3)):
+                sub = [r for r in precs if sel(r)]
+                cout[lab] = {"races": len(sub),
+                             "axis_top3_rate_pct": _top3(sub)}
+            p70 = [r for r in precs if r["prob"] >= 0.7]
+            cout["group_prob70_only"] = _grp(p70)
+            cout["group_prob70_and_stable"] = _grp(
+                [r for r in p70 if r["worst"] <= 2])
+        out["survival_comparison"] = cout
+        return out
+
+    # ---- 実験2: CORE-RESERVE ----
+    def _p4_reserve_pick(x):
+        fp = x.get("frozen_prediction") or {}
+        ah = fp.get("all_horses") or []
+        pace = ((fp.get("pace_shadow") or {}).get("pace_prediction"))
+        fit_tab = PHASE4_RESERVE_FIT.get(pace) or {}
+        cand = []
+        for h in ah:
+            if not isinstance(h, dict) or h.get("horse_no") is None:
+                continue
+            if not isinstance(h.get("rank"), int) or h["rank"] < 6:
+                continue
+            if (h.get("running_style") is None
+                    and h.get("class_drop") is None):
+                continue
+            score = (fit_tab.get(h.get("running_style"), 0)
+                     + (1 if h.get("class_drop") is True else 0))
+            cand.append((score, h["rank"], h["horse_no"]))
+        cand.sort(key=lambda t: (-t[0], t[1], t[2]))
+        return [c[2] for c in cand[:PHASE4_RESERVE_MAX]]
+
+    def _p4_core_reserve_block(rows):
+        recs = []
+        excluded = {"no_all_horses": 0, "no_trio_lines": 0,
+                    "no_trio_payout": 0, "no_finish": 0}
+        for x in rows:
+            fp = x.get("frozen_prediction") or {}
+            ah = fp.get("all_horses") or []
+            top5 = fp.get("top5") or []
+            if (len(ah) < 6 or not top5
+                    or not isinstance(top5[0], dict)):
+                excluded["no_all_horses"] += 1
+                continue
+            lines = [ln for ln in (x.get("settled_lines") or [])
+                     if isinstance(ln, dict)]
+            trios = [ln for ln in lines if ln.get("type") == "trio"]
+            if not trios:
+                excluded["no_trio_lines"] += 1
+                continue
+            if not x.get("trio_payout"):
+                excluded["no_trio_payout"] += 1
+                continue
+            rf = x.get("result_finishes") or []
+            if len(rf) < 3:
+                excluded["no_finish"] += 1
+                continue
+            axis = top5[0].get("horse_no")
+            second = (top5[1].get("horse_no")
+                      if len(top5) > 1 and isinstance(top5[1], dict)
+                      else None)
+            core_pool = {h.get("horse_no") for h in top5
+                         if isinstance(h, dict)}
+            res = _p4_reserve_pick(x)
+            W = set(rf[:3])
+            ext_pool = core_pool | set(res)
+            t_stake = sum(int(ln.get("stake_yen") or 0) for ln in trios)
+            t_ret = sum(int(ln.get("return_yen") or 0) for ln in trios)
+            n_combo = len(res) if second is not None else 0
+            add_ret = 0.0
+            if second is not None:
+                for rno in res:
+                    if {axis, second, rno} == W:
+                        add_ret += float(x["trio_payout"])
+            recs.append({
+                "x": x, "reserves": res,
+                "recall_core": len(W & core_pool) / 3.0,
+                "recall_ext": len(W & ext_pool) / 3.0,
+                "full_core": W <= core_pool,
+                "full_ext": W <= ext_pool,
+                "axis_fin": _hybrid_finish(x, axis),
+                "trio_stake": t_stake, "trio_ret": t_ret,
+                "add_stake": PHASE4_RESERVE_COMBO_STAKE * n_combo,
+                "add_ret": add_ret,
+            })
+        out = {"target_races": len(recs), "excluded": excluded}
+        if not recs:
+            return out
+        n = len(recs)
+        ts = sum(r["trio_stake"] for r in recs)
+        tr = sum(r["trio_ret"] for r in recs)
+        a_stake = sum(r["add_stake"] for r in recs)
+        a_ret = sum(r["add_ret"] for r in recs)
+        fc = sum(1 for r in recs if r["full_core"])
+        fe = sum(1 for r in recs if r["full_ext"])
+        out["recall"] = {
+            "core_pool_top5": round(
+                sum(r["recall_core"] for r in recs) / n, 3),
+            "extended_pool": round(
+                sum(r["recall_ext"] for r in recs) / n, 3),
+        }
+        out["full_capture"] = {
+            "core_pct": round(fc / n * 100, 1),
+            "extended_pct": round(fe / n * 100, 1),
+            "diff_pt": round((fe - fc) / n * 100, 1),
+        }
+        out["pool_rescue_races"] = sum(
+            1 for r in recs if not r["full_core"] and r["full_ext"])
+        out["ticket_rescue_races"] = sum(
+            1 for r in recs if r["trio_ret"] == 0 and r["add_ret"] > 0)
+        ax = [r for r in recs
+              if r["axis_fin"] is not None and r["axis_fin"] <= 3]
+        if ax:
+            out["axis_top3_trio_payout_rate"] = {
+                "races": len(ax),
+                "core_pct": round(
+                    sum(1 for r in ax if r["trio_ret"] > 0)
+                    / len(ax) * 100, 1),
+                "extended_pct": round(
+                    sum(1 for r in ax
+                        if r["trio_ret"] + r["add_ret"] > 0)
+                    / len(ax) * 100, 1),
+            }
+        out["trio_core"] = {
+            "stake_yen": ts, "return_yen": tr,
+            "roi_pct": round(tr / ts * 100, 1) if ts else None,
+            "profit_yen": tr - ts}
+        out["trio_extended"] = {
+            "stake_yen": ts + a_stake, "return_yen": round(tr + a_ret),
+            "roi_pct": (round((tr + a_ret) / (ts + a_stake) * 100, 1)
+                        if ts + a_stake else None),
+            "profit_yen": round(tr + a_ret) - (ts + a_stake)}
+        out["added_only"] = {
+            "stake_yen": a_stake, "return_yen": round(a_ret),
+            "incremental_roi_pct": (round(a_ret / a_stake * 100, 1)
+                                    if a_stake else None),
+            "avg_added_stake_yen": round(a_stake / n)}
+        out["paired_trio_profit_diff"] = _p4_diff_cluster_ci95(
+            recs, lambda r: r["add_ret"] - r["add_stake"])
+        out["trio_roi_cluster_ci95_pct"] = {
+            "core": _p4_roi_cluster_ci95(
+                recs, lambda r: r["trio_stake"],
+                lambda r: r["trio_ret"]),
+            "extended": _p4_roi_cluster_ci95(
+                recs, lambda r: r["trio_stake"] + r["add_stake"],
+                lambda r: r["trio_ret"] + r["add_ret"]),
+        }
+        return out
+
+    # ---- 実験3: CENTRAL-TURF ----
+    def _p4_turf_group(x):
+        if x.get("kind") != "中央":
+            return None
+        surf = str(x.get("surface") or "")
+        if "芝" in surf:
+            return "turf"
+        if "ダート" in surf:
+            return "dirt"
+        return "unknown"
+
+    def _p4_central_turf_block(rows_all):
+        turf = [x for x in rows_all if _p4_turf_group(x) == "turf"]
+        dirt = [x for x in rows_all if _p4_turf_group(x) == "dirt"]
+        unk = [x for x in rows_all if _p4_turf_group(x) == "unknown"]
+        out = {"target_races_turf": len(turf),
+               "reference_groups": {
+                   "dirt": _sys_agg(dirt, _main_stake, _main_ret),
+                   "surface_unknown": _sys_agg(unk, _main_stake,
+                                               _main_ret)}}
+        if not turf:
+            return out
+        cur = _sys_agg(turf, _main_stake, _main_ret)
+        cur["roi_cluster_ci95_pct"] = _p4_roi_cluster_ci95(
+            [{"x": x} for x in turf], lambda r: _main_stake(r["x"]),
+            lambda r: _main_ret(r["x"]))
+        fins = []
+        for x in turf:
+            t5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            fins.append(_hybrid_finish(x, t5[0].get("horse_no"))
+                        if t5 and isinstance(t5[0], dict) else None)
+        known = [f for f in fins if f is not None]
+        cur["axis_top3_rate_pct"] = (
+            round(sum(1 for f in known if f <= 3) / len(known) * 100, 1)
+            if known else None)
+        out["current_all_participation"] = cur
+
+        def _gap12(x):
+            t5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            if (len(t5) >= 2 and all(isinstance(h, dict) for h in t5[:2])
+                    and all(isinstance(h.get("score"), (int, float))
+                            for h in t5[:2])):
+                return t5[0]["score"] - t5[1]["score"]
+            return None
+
+        def _dist_band(x):
+            d = x.get("distance_m")
+            if not isinstance(d, (int, float)):
+                return "不明"
+            if d <= 1400:
+                return "1400m以下"
+            if d <= 1600:
+                return "1600m"
+            if d <= 1800:
+                return "1800m"
+            return "2000m以上"
+
+        bd = {}
+        for name, keyfn in (
+                ("by_distance", _dist_band),
+                ("by_runners",
+                 lambda x: ("12頭以下"
+                            if (x.get("runner_count") or 99) <= 12
+                            else "13頭以上")),
+                ("by_grade", lambda x: x.get("race_grade") or "不明"),
+                ("by_course", lambda x: x.get("course") or "不明")):
+            groups = {}
+            for x in turf:
+                groups.setdefault(keyfn(x), []).append(x)
+            bd[name] = {k: _sys_agg(v, _main_stake, _main_ret)
+                        for k, v in sorted(groups.items())}
+        out["breakdowns"] = bd
+        _b_ids = set()
+        b_in = []
+        for x in turf:
+            g = _gap12(x)
+            if g is not None and g >= PHASE4_TURF_GAP12_MIN:
+                b_in.append(x)
+                _b_ids.add(id(x))
+        b_out = [x for x in turf if id(x) not in _b_ids]
+        out["approach_b_conditional"] = {
+            "condition": "gap12 >= 2.0",
+            "participation_rate_pct": round(len(b_in) / len(turf) * 100, 1),
+            "participating": _sys_agg(b_in, _main_stake, _main_ret),
+            "skipped_current_result": _sys_agg(b_out, _main_stake,
+                                               _main_ret)}
+        out["approach_a_exclusion"] = {
+            "participating_races": 0,
+            "note": ("全面除外の損益は構造的に0。"
+                     "current_all_participation が除外で回避できる"
+                     "損失の参照になる。")}
+        c_rows = []
+        c_excl = 0
+        for x in turf:
+            t5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            if (len(t5) < 2 or not all(isinstance(h, dict) for h in t5)
+                    or not all(isinstance(h.get("time_index_best"),
+                                          (int, float)) for h in t5)):
+                c_excl += 1
+                continue
+            ded = max(t5, key=lambda h: (
+                h["time_index_best"],
+                -(h.get("rank") if isinstance(h.get("rank"), int)
+                  else 99)))
+            d_fin = _hybrid_finish(x, ded.get("horse_no"))
+            p_fin = _hybrid_finish(x, t5[0].get("horse_no"))
+            if d_fin is None or p_fin is None:
+                c_excl += 1
+                continue
+            lo = x.get("last_odds") or {}
+            c_rows.append({
+                "d_fin": d_fin, "p_fin": p_fin,
+                "d_odds": lo.get(str(ded.get("horse_no"))),
+                "p_odds": lo.get(str(t5[0].get("horse_no"))),
+                "changed": ded.get("horse_no") != t5[0].get("horse_no")})
+        cout = {"races": len(c_rows),
+                "excluded_no_time_index_or_finish": c_excl,
+                "definition": ("top5 内で time_index_best 最大の馬を"
+                               "専用軸とする馬レベルのみの評価")}
+        if c_rows:
+            cout["axis_changed_races"] = sum(
+                1 for r in c_rows if r["changed"])
+            cout["dedicated_axis_top3_rate_pct"] = round(
+                sum(1 for r in c_rows if r["d_fin"] <= 3)
+                / len(c_rows) * 100, 1)
+            cout["production_axis_top3_rate_pct"] = round(
+                sum(1 for r in c_rows if r["p_fin"] <= 3)
+                / len(c_rows) * 100, 1)
+            cout["top3_diff_pt"] = round(
+                cout["dedicated_axis_top3_rate_pct"]
+                - cout["production_axis_top3_rate_pct"], 1)
+
+            def _wroi(fk, ok_):
+                s = t = 0
+                for r in c_rows:
+                    o = r[ok_]
+                    if isinstance(o, (int, float)) and o > 0:
+                        s += 100
+                        if r[fk] == 1:
+                            t += int(float(o) * 100)
+                return round(t / s * 100, 1) if s else None
+
+            cout["dedicated_axis_win_roi_pct"] = _wroi("d_fin", "d_odds")
+            cout["production_axis_win_roi_pct"] = _wroi("p_fin", "p_odds")
+        h_rows = []
+        for x in turf:
+            meta = (x.get("hybrid_shadow_meta") or {}).get("top") or []
+            t5 = (x.get("frozen_prediction") or {}).get("top5") or []
+            if not meta or not t5 or not isinstance(t5[0], dict):
+                continue
+            hf = _hybrid_finish(x, meta[0].get("horse_no"))
+            pf = _hybrid_finish(x, t5[0].get("horse_no"))
+            if hf is None or pf is None:
+                continue
+            h_rows.append((hf, pf))
+        if h_rows:
+            cout["hybrid_axis_reference"] = {
+                "races": len(h_rows),
+                "hybrid_axis_top3_rate_pct": round(
+                    sum(1 for a, _b in h_rows if a <= 3)
+                    / len(h_rows) * 100, 1),
+                "production_axis_top3_rate_pct": round(
+                    sum(1 for _a, b in h_rows if b <= 3)
+                    / len(h_rows) * 100, 1)}
+        out["approach_c_dedicated_model"] = cout
+        return out
+
+    _p4_axis_retro = _p4_axis_block(settled4["retro"])
+    _p4_axis_fwd = _p4_axis_block(settled4["forward"])
+    _p4_core_retro = _p4_core_reserve_block(settled4["retro"])
+    _p4_core_fwd = _p4_core_reserve_block(settled4["forward"])
+    _p4_turf_retro = _p4_central_turf_block(settled_all4["retro"])
+    _p4_turf_fwd = _p4_central_turf_block(settled_all4["forward"])
+    _p4_config = {
+        "framework": "PHASE4_EXP_V1",
+        "phase4_start_date": PHASE4_START_DATE,
+        "axis_stability": {
+            "perturbations": ["rank_by_form_score_only",
+                              "rank_by_market_score_only"],
+            "tie_break": ["production_rank_asc", "horse_no_asc"],
+            "worst_case_rank": "max(1, axis_form_rank, axis_market_rank)",
+            "stable_threshold_worst_le": 2,
+            "survival_prob_threshold": 0.7,
+            "survival_model": ("phase3 frozen model reused via "
+                               "_p3_prob_of (not retrained)"),
+            "disagreement_source": "hybrid_shadow_meta.top (top5 only)",
+        },
+        "core_reserve": {
+            "core_pool": "production top5",
+            "reserve_eligibility": ("production rank>=6 and "
+                                    "(running_style or class_drop "
+                                    "recorded)"),
+            "reserve_fit_table": PHASE4_RESERVE_FIT,
+            "class_drop_bonus": 1,
+            "reserve_max_horses": PHASE4_RESERVE_MAX,
+            "combo": "{axis, production rank2, reserve} trio, 100 yen each",
+            "budget": ("additional stake, accounted separately "
+                       "(not total-equalized)"),
+        },
+        "central_turf": {
+            "approach_b_condition": "gap12 >= 2.0",
+            "approach_c_model": ("within production top5, axis = max "
+                                 "time_index_best (tie: production "
+                                 "rank asc); horse-level only"),
+            "grade_breakdown_uses": ("race_grade (site recommendation "
+                                     "grade; true race class is not "
+                                     "recorded)"),
+        },
+        "combination": ("no new method; reference to phase3 "
+                        "combination_engine only"),
+        "bootstrap": {"cluster": "race date",
+                      "reps": PHASE4_BOOTSTRAP_REPS,
+                      "seed": PHASE4_BOOTSTRAP_SEED},
+        "adoption_gate": {"min_forward_races": 300,
+                          "min_forward_days": 14},
+    }
+    _p4_config_hash = _hashlib.sha1(json.dumps(
+        _p4_config, ensure_ascii=False,
+        sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    phase4_stats = {
+        "framework": "PHASE4_EXP_V1",
+        "experiment_start": PHASE4_START_DATE,
+        "experiment_end": max(
+            (str(x.get("date")) for x in settled if x.get("date")),
+            default=None),
+        "configuration": _p4_config,
+        "configuration_hash": _p4_config_hash,
+        "forward_days": _fwd4_days,
+        "axis_stability": {
+            "retro": _p4_axis_retro,
+            "forward": _p4_axis_fwd,
+            "evaluation_forward": _verdict(
+                _p4_axis_fwd.get("target_races", 0), _fwd4_days),
+            "primary_metrics_preregistered": [
+                "forward axis top3 rate diff (worst<=2 minus worst>=3)",
+                "combined group (prob>=0.70 and worst<=2) ROI and "
+                "max drawdown vs prob>=0.70 only group",
+            ],
+            "adoption_criteria": (
+                "前方300件・14日到達後に、主指標1の差が正で、主指標2で"
+                "併用群が確率単独群を回収率・最大DDの両面で上回る場合に"
+                "「安定性指標に独立の情報あり」とする。遡及では "
+                "worst=1 群が最も低く単調性は支持されていないため、"
+                "遡及のみでの採用・不採用はしない。"),
+        },
+        "core_reserve": {
+            "retro": _p4_core_retro,
+            "forward": _p4_core_fwd,
+            "evaluation_forward": _verdict(
+                _p4_core_fwd.get("target_races", 0), _fwd4_days),
+            "primary_metrics_preregistered": [
+                "forward paired trio ROI diff (extended minus core)",
+                "forward full-capture rate diff (extended pool minus "
+                "core pool)",
+            ],
+            "adoption_criteria": (
+                "前方300件・14日到達後に、主指標1のペア差が正で"
+                "クラスターCIが0を含まず、主指標2が正の場合に"
+                "「取りこぼし削減に有効」とする。追加投資型のため、"
+                "採用時も追加分は分離計上を維持する。"),
+        },
+        "central_turf": {
+            "retro": _p4_turf_retro,
+            "forward": _p4_turf_fwd,
+            "evaluation_forward": _verdict(
+                _p4_turf_fwd.get("target_races_turf", 0),
+                _fwd_all4_days),
+            "primary_metrics_preregistered": [
+                "approach B ROI, max drawdown and participation rate "
+                "(vs current all-participation)",
+                "approach C dedicated axis top3 rate diff vs "
+                "production axis (same races)",
+            ],
+            "adoption_criteria": (
+                "中央芝の前方母集団は小さく、共通ゲート (300件) に"
+                "到達するまで長期間を要する見込み。その間は判断保留"
+                "とし、単期間の数値で方式を入れ替えない。"),
+        },
+        "combination_reference": {
+            "policy": (
+                "第4次では新規の組み合わせ方式・集計を追加しない。"
+                "第3次 COMBINATION-ENGINE の前方比較 "
+                "(phase3_experiments.combination_engine) を正として"
+                "扱う。別方式を試す場合は別ID・別設計で完全分離し、"
+                "stage2 の前方標本が共通ゲートに達するまでは方式を"
+                "増やさない。"),
+            "authoritative_stats": "phase3_experiments.combination_engine",
+            "comparison_axes": [
+                "cause classification (stage1)",
+                "stake reallocation at equal total (stage2)",
+                "restricted population: axis in top3 and partner "
+                "opportunity present (stage2)",
+            ],
+            "retro_pure_construction_failures": 74,
+        },
+        "note": (
+            "第4次シャドウ検証の集計。AXIS-STABILITY / CORE-RESERVE / "
+            "CENTRAL-TURF はいずれも計測専用で、本番 34.23 の予測・"
+            "買い目・配分と第1次〜第3次の集計値には使用していない。"
+            "遡及は発見用の参考値、採用判定は前方 (2026-11-25 以降) "
+            "のみで行う。信頼区間は開催日クラスター・ブートストラップ"
+            " (1,000回・シード固定)。"),
+    }
+
     return {
         "races_seen": len(items),
         "races_settled": len(settled),
@@ -8059,6 +8777,7 @@ def calculate_stats(snapshots):
         "phase2_experiments": phase2_stats,
         # 第3次シャドウ検証（AXIS-SURVIVAL/CENTRAL-VALIDATION/COMBINATION-ENGINE）
         "phase3_experiments": phase3_stats,
+        "phase4_experiments": phase4_stats,
         # v34.16: 候補プール shadow 計測（案C 保険枠 / 案A6 最終6位まで）
         "pool_shadow": pool_shadow_stats,
         # v34.17: 本精算の 中央×芝／中央×ダート／地方 分割集計（報告専用）
