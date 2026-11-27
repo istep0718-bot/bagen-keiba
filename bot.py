@@ -558,6 +558,16 @@ ROOT = Path(__file__).resolve().parent
 DOCS = ROOT / "docs"
 OUT = DOCS / "data.json"
 HISTORY = DOCS / "history.json"
+# 2026-11-27 修理: キャッシュ3種（horse_form_cache / people_cache /
+# pedigree_cache）を history.json から docs/cache.json へ分離する。
+# history.json が GitHub の1ファイル上限（100MiB）に達し、データ更新の
+# push が全て弾かれるようになったための保存先構造だけの変更で、
+# 予測ロジック・重み・ENGINE_VERSION は一切変更しない。
+# 読み込みは cache.json を正とし、無い場合（移行前の初回）は
+# history.json 内蔵分へフォールバックする。保存は常に cache.json 側へ
+# 行い、history.json にはキャッシュを含めない。
+CACHE_FILE = DOCS / "cache.json"
+CACHE_KEYS = ("horse_form_cache", "people_cache", "pedigree_cache")
 # v34.22: shadow 累計の軽量サマリ（系統別・日次別）。判定材料を
 # history.json 本体から分離し、小さいファイルだけで取り出せるようにする
 SHADOW_SUMMARY = DOCS / "shadow_summary.json"
@@ -4317,6 +4327,48 @@ def load_history():
     except Exception as e:
         warn("history.json読み込み失敗。既存履歴保護のため処理中止: " + type(e).__name__)
         raise
+
+
+def load_caches(history):
+    """キャッシュ3種の読み込み（2026-11-27 分離修理）。
+
+    docs/cache.json があればそちらを正とする。無い場合（移行前の初回
+    実行）や読み込みに失敗した場合は、history.json 内蔵分（移行前の
+    保存形式）へフォールバックし、既存キャッシュを失わない。
+    """
+    if CACHE_FILE.exists():
+        try:
+            v = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+            if isinstance(v, dict):
+                return {
+                    k: (v.get(k) if isinstance(v.get(k), dict) else {})
+                    for k in CACHE_KEYS}
+        except Exception as e:
+            warn("cache.json読み込み失敗。history内蔵キャッシュへ"
+                 "フォールバック: " + type(e).__name__)
+    return {
+        k: (history.get(k) if isinstance(history.get(k), dict) else {})
+        for k in CACHE_KEYS}
+
+
+def save_caches(caches):
+    """キャッシュ3種を docs/cache.json へ保存する（history.json には
+    含めない）。書き込みは save_json の tmp 経由の原子的書き換え。"""
+    payload = {"schema_version": 1, "updated_at": NOW.isoformat()}
+    for k in CACHE_KEYS:
+        v = caches.get(k)
+        payload[k] = v if isinstance(v, dict) else {}
+    save_json(CACHE_FILE, payload)
+
+
+def save_history_file(history):
+    """history.json の保存（2026-11-27 分離修理）。
+
+    キャッシュ3種は cache.json 側の責務のため、保存ペイロードからは
+    除外する。呼び出し側の history dict 自体は変更しない。
+    """
+    payload = {k: v for k, v in history.items() if k not in CACHE_KEYS}
+    save_json(HISTORY, payload)
 
 
 def _popularity_rank(odds, odds_values):
@@ -8989,20 +9041,17 @@ def main():
     backfill_settled_lines(snapshots)
     # v34.11: 旧会場マッピングで焼き付いた履歴の会場名を自己修復する
     repair_snapshot_venues(snapshots)
+    # 2026-11-27 分離修理: キャッシュ3種は cache.json を正として読み込む
+    # （無い場合は history.json 内蔵分へフォールバック。load_caches 参照）
+    _caches = load_caches(history)
     global HORSE_FORM_CACHE
-    HORSE_FORM_CACHE = (
-        history.get("horse_form_cache", {})
-        if isinstance(history.get("horse_form_cache", {}), dict) else {})
+    HORSE_FORM_CACHE = _caches["horse_form_cache"]
     # v34.2: 人物キャッシュの読み込みと、履歴からの枠順バイアス算出
     global PEOPLE_CACHE, VENUE_FRAME_BIAS
-    PEOPLE_CACHE = (
-        history.get("people_cache", {})
-        if isinstance(history.get("people_cache", {}), dict) else {})
+    PEOPLE_CACHE = _caches["people_cache"]
     # v34.14: 血統キャッシュの読み込み（馬IDキー・永続）
     global PEDIGREE_CACHE
-    PEDIGREE_CACHE = (
-        history.get("pedigree_cache", {})
-        if isinstance(history.get("pedigree_cache", {}), dict) else {})
+    PEDIGREE_CACHE = _caches["pedigree_cache"]
     # v34.15: hybrid 特徴量の基準テーブル（時計指数・血統スコア）を読み込む。
     # 無ければ特徴量は全て None になり従来動作と同一になる
     load_hybrid_tables()
@@ -9047,11 +9096,16 @@ def main():
         "updated_at": NOW.isoformat(),
         "stats": stats,
         "snapshots": snapshots,
+    })
+    # 2026-11-27 分離修理: キャッシュ3種は cache.json へ先に保存し、
+    # history.json には含めない（cache.json の保存に失敗した場合は
+    # ここで異常終了し、キャッシュを含む history.json は無傷で残る）
+    save_caches({
         "horse_form_cache": HORSE_FORM_CACHE,
         "people_cache": PEOPLE_CACHE,
         "pedigree_cache": PEDIGREE_CACHE,
     })
-    save_json(HISTORY, history)
+    save_history_file(history)
     # v34.22: shadow 累計の軽量サマリを分離保存（判定用・小さいファイル）
     write_shadow_summary(snapshots, stats)
     verified = sum(1 for r in today_races if r.get("runner_count_verified"))
@@ -9306,7 +9360,16 @@ def main_settle_only():
         "stats": stats,
         "snapshots": snapshots,
     })
-    save_json(HISTORY, history)
+    # 2026-11-27 分離修理: キャッシュはこのモードでは上書きしないが、
+    # 移行前（cache.json が無く history.json 内蔵キャッシュが残っている）
+    # 場合は内蔵分をそのまま cache.json へ移してから history を保存し、
+    # キャッシュを失わないようにする
+    _embedded = {
+        k: history.get(k) for k in CACHE_KEYS
+        if isinstance(history.get(k), dict) and history.get(k)}
+    if _embedded and not CACHE_FILE.exists():
+        save_caches({k: history.get(k) for k in CACHE_KEYS})
+    save_history_file(history)
     # v34.22: shadow 累計の軽量サマリを分離保存（判定用・小さいファイル）
     write_shadow_summary(snapshots, stats)
     if existing is not None:
